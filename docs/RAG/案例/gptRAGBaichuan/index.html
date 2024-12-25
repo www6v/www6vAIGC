@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Baichuan RAG[1] # 借鉴了Meta的CoVe技术 自研的TSF（Think-Step Further)技术 猜测其本质应该是对Step-back prompting方法的改良 自研了Baichuan-Text-Embedding向量模型 混合检索 向量检索与稀疏检索并行的 self-Critique 总结[2] # **多轮问答等场景的召回和传统搜索引擎的召回分布还不太一样。**百川借助子问题检索效果更高的特点，对原始复杂问题进行拆解、拓展来解决复杂问题检索质量偏差的问题。 **对于没见过的语料直接用向量检索的结果可能不太理想。**百川在大量语料上利用无监督方法训练embedding模型来优化效果。而行业大模型更倾向于私有的数据，要提升私有数据的训练效果还得继续在私有化数据上训练效果会更佳。 **Query拓展 &#43; 多路召回 &#43; Rerank &#43; self-Critique可能是现阶段比较好的一种RAG方式，但是其也会带来更多成本。**总体思路有点像ReAct[3]系列的进阶版本，其在搜索侧和答案修正侧都做了更多的一些工作来优化实际效果。其缺点是需要多次调用大模型，会带来额外的成本，真实线上是否采用这种策略还有待验证。 参考 # 大模型RAG问答行业最佳案例及微调、推理双阶段实现模式：基于模块化(Modular)RAG自定义RAG Flow
+百川智能RAG方案总结：搜索出生的百川智能大模型RAG爬坑之路
+1xx. LLM/百川Baichuan2-53B搜索增强-开放API
+1xx. 大模型&#43;搜索构建完整技术栈，百川智能用搜索增强给企业定制化下了一剂「猛药」
+1xx. 百川智能RAG方案总结：搜索出生的百川智能大模型RAG爬坑之路">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/gptRAGBaichuan/">
+  <meta property="og:site_name" content="AIGC">
+  <meta property="og:title" content="(原理)RAG Baichuan案例">
+  <meta property="og:description" content="Baichuan RAG[1] # 借鉴了Meta的CoVe技术 自研的TSF（Think-Step Further)技术 猜测其本质应该是对Step-back prompting方法的改良 自研了Baichuan-Text-Embedding向量模型 混合检索 向量检索与稀疏检索并行的 self-Critique 总结[2] # **多轮问答等场景的召回和传统搜索引擎的召回分布还不太一样。**百川借助子问题检索效果更高的特点，对原始复杂问题进行拆解、拓展来解决复杂问题检索质量偏差的问题。 **对于没见过的语料直接用向量检索的结果可能不太理想。**百川在大量语料上利用无监督方法训练embedding模型来优化效果。而行业大模型更倾向于私有的数据，要提升私有数据的训练效果还得继续在私有化数据上训练效果会更佳。 **Query拓展 &#43; 多路召回 &#43; Rerank &#43; self-Critique可能是现阶段比较好的一种RAG方式，但是其也会带来更多成本。**总体思路有点像ReAct[3]系列的进阶版本，其在搜索侧和答案修正侧都做了更多的一些工作来优化实际效果。其缺点是需要多次调用大模型，会带来额外的成本，真实线上是否采用这种策略还有待验证。 参考 # 大模型RAG问答行业最佳案例及微调、推理双阶段实现模式：基于模块化(Modular)RAG自定义RAG Flow
+百川智能RAG方案总结：搜索出生的百川智能大模型RAG爬坑之路
+1xx. LLM/百川Baichuan2-53B搜索增强-开放API
+1xx. 大模型&#43;搜索构建完整技术栈，百川智能用搜索增强给企业定制化下了一剂「猛药」
+1xx. 百川智能RAG方案总结：搜索出生的百川智能大模型RAG爬坑之路">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>(原理)RAG Baichuan案例 | AIGC</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/gptRAGBaichuan/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.c2c043aadb1e5053e0683fb375f51a9ac840d1585ed4e8261b053a797449fee5.js" integrity="sha256-wsBDqtseUFPgaD&#43;zdfUamshA0Vhe1OgmGwU6eXRJ/uU=" crossorigin="anonymous"></script>
+
+  
+
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/gptRAGBaichuan/index.xml" title="AIGC" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>AIGC</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>(RAG)</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAG/" class="">(综述)RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGModularRAG/" class="">(原理)Modular RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGPerformance/" class="">(原理)Advanced RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实战</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGBestPractice/" class="">RAG 最佳实践</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGOptimize/" class="">RAG 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGchatchat/" class="">(实战)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGQanything/" class="">RAG Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGRAGflow/" class="">RAG RAGflow</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Pattern</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/gptRAGPattern/" class="">(原理) RAG Pattern</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptAgenticRAG/" class="">Agentic RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptRAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptRAGMultimodal/" class="">(原理)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptRAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptDocumentAI/" class="">文档智能</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>phase</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptQueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGIndex/" class="">(原理|实战) Index&amp;Chunk</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>案例</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/gptRAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/gptRAGBaichuan/" class="active">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>(原理)RAG Baichuan案例</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#baichuan-rag1">Baichuan RAG[1]</a></li>
+    <li><a href="#总结2">总结[2]</a></li>
+    <li><a href="#参考">参考</a></li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><p></p>
+<!-- more -->
+<h1 id="baichuan-rag1">
+  Baichuan RAG[1]
+  <a class="anchor" href="#baichuan-rag1">#</a>
+</h1>
+<ul>
+<li>借鉴了Meta的CoVe技术</li>
+<li>自研的TSF（Think-Step Further)技术
+猜测其本质应该是对Step-back prompting方法的改良</li>
+<li>自研了Baichuan-Text-Embedding向量模型</li>
+<li>混合检索
+向量检索与稀疏检索并行的</li>
+<li>self-Critique</li>
+</ul>
+<h1 id="总结2">
+  总结[2]
+  <a class="anchor" href="#%e6%80%bb%e7%bb%932">#</a>
+</h1>
+<ol>
+<li>**多轮问答等场景的召回和传统搜索引擎的召回分布还不太一样。**百川借助子问题检索效果更高的特点，对原始复杂问题进行拆解、拓展来解决复杂问题检索质量偏差的问题。</li>
+<li>**对于没见过的语料直接用向量检索的结果可能不太理想。**百川在大量语料上利用无监督方法训练embedding模型来优化效果。而行业大模型更倾向于私有的数据，要提升私有数据的训练效果还得继续在私有化数据上训练效果会更佳。</li>
+<li>**Query拓展 + 多路召回 + Rerank + self-Critique可能是现阶段比较好的一种RAG方式，但是其也会带来更多成本。**总体思路有点像ReAct[3]系列的进阶版本，其在搜索侧和答案修正侧都做了更多的一些工作来优化实际效果。其缺点是需要多次调用大模型，会带来额外的成本，真实线上是否采用这种策略还有待验证。</li>
+</ol>
+<h1 id="参考">
+  参考
+  <a class="anchor" href="#%e5%8f%82%e8%80%83">#</a>
+</h1>
+<ol>
+<li>
+<p><a href="https://mp.weixin.qq.com/s?__biz=MzAxMjc3MjkyMg==&amp;mid=2648407638&amp;idx=1&amp;sn=5c167b4a11bc483f5790ef1e0340d670">大模型RAG问答行业最佳案例及微调、推理双阶段实现模式：基于模块化(Modular)RAG自定义RAG Flow</a></p>
+</li>
+<li>
+<p><a href="https://zhuanlan.zhihu.com/p/675770700">百川智能RAG方案总结：搜索出生的百川智能大模型RAG爬坑之路</a></p>
+</li>
+</ol>
+<p>1xx. <a href="https://zhuanlan.zhihu.com/p/658469464">LLM/百川Baichuan2-53B搜索增强-开放API</a></p>
+<p>1xx. <a href="https://mp.weixin.qq.com/s?__biz=MzA3MzI4MjgzMw==&amp;mid=2650901201&amp;idx=1&amp;sn=3a9bd61403fb4b024ec5d8c128990495">大模型+搜索构建完整技术栈，百川智能用搜索增强给企业定制化下了一剂「猛药」</a></p>
+<p>1xx. <a href="https://blog.csdn.net/qq_27590277/article/details/135421245">百川智能RAG方案总结：搜索出生的百川智能大模型RAG爬坑之路</a></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#baichuan-rag1">Baichuan RAG[1]</a></li>
+    <li><a href="#总结2">总结[2]</a></li>
+    <li><a href="#参考">参考</a></li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="QAnything # Arch[1] # 索引（indexing） 通过Embedding为每一个文本块生成一个向量表示，用于计算文本向量和问题向量之间的相似度。创建索引将原始文本块和Embedding向量以键值对的形式存储，以便将来进行快速和频繁的搜索。
+检索（Retrieval） 使用Embedding模型将用户输入问题转换为向量，计算问题的Embedding向量和语料库中文本块Embedding向量之间的相似度，选择相似度最高的前K个文档块作为当前问题的增强上下文信息。
+生成（Generation） 将检索得到的前K个文本块和用户问题一起送进大模型，让大模型基于给定的文本块来回答用户的问题。
+1st Retrieval（embedding）[1] # Bcembedding模型 [3]
+中英双语和跨语种能力 多领域覆盖 Embedding 可以给出一个得分，但是这个得分描述的更多的是相似性。Embedding本质上是一个双编码器，两个文本在模型内部没有任何信息交互。只在最后计算两个向量的余弦相似度时才进行唯一一次交互。所以Embedding检索只能把最相似的文本片段给你，没有能力来判断候选文本和query之间的相关性。但是相似又不等于相关。
+【embedding -&gt; 相似性】
+2nd Retrieval（rerank）[1] # Rerank [3]
+Rerank本质是一个Cross-Encoder的模型。Cross-Encoder能让两个文本片段一开始就在BERT模型各层中通过self-attention进行交互。
+【rerank -&gt; 相关性】
+参考 # QAnything # QAnything Repo git xxx 有道QAnything背后的故事：关于RAG的一点经验分享 V 有道QAnything背后的故事&mdash;关于RAG的一点经验分享 文字版 [公众号有其他文章] 1xx. 前沿重器[45] RAG开源项目Qanything源码阅读1-概述&#43;服务">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGQanything/">
+  <meta property="og:site_name" content="AIGC">
+  <meta property="og:title" content="RAG Qanything">
+  <meta property="og:description" content="QAnything # Arch[1] # 索引（indexing） 通过Embedding为每一个文本块生成一个向量表示，用于计算文本向量和问题向量之间的相似度。创建索引将原始文本块和Embedding向量以键值对的形式存储，以便将来进行快速和频繁的搜索。
+检索（Retrieval） 使用Embedding模型将用户输入问题转换为向量，计算问题的Embedding向量和语料库中文本块Embedding向量之间的相似度，选择相似度最高的前K个文档块作为当前问题的增强上下文信息。
+生成（Generation） 将检索得到的前K个文本块和用户问题一起送进大模型，让大模型基于给定的文本块来回答用户的问题。
+1st Retrieval（embedding）[1] # Bcembedding模型 [3]
+中英双语和跨语种能力 多领域覆盖 Embedding 可以给出一个得分，但是这个得分描述的更多的是相似性。Embedding本质上是一个双编码器，两个文本在模型内部没有任何信息交互。只在最后计算两个向量的余弦相似度时才进行唯一一次交互。所以Embedding检索只能把最相似的文本片段给你，没有能力来判断候选文本和query之间的相关性。但是相似又不等于相关。
+【embedding -&gt; 相似性】
+2nd Retrieval（rerank）[1] # Rerank [3]
+Rerank本质是一个Cross-Encoder的模型。Cross-Encoder能让两个文本片段一开始就在BERT模型各层中通过self-attention进行交互。
+【rerank -&gt; 相关性】
+参考 # QAnything # QAnything Repo git xxx 有道QAnything背后的故事：关于RAG的一点经验分享 V 有道QAnything背后的故事—关于RAG的一点经验分享 文字版 [公众号有其他文章] 1xx. 前沿重器[45] RAG开源项目Qanything源码阅读1-概述&#43;服务">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>RAG Qanything | AIGC</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGQanything/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.c2c043aadb1e5053e0683fb375f51a9ac840d1585ed4e8261b053a797449fee5.js" integrity="sha256-wsBDqtseUFPgaD&#43;zdfUamshA0Vhe1OgmGwU6eXRJ/uU=" crossorigin="anonymous"></script>
+
+  
+
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGQanything/index.xml" title="AIGC" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>AIGC</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>(RAG)</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAG/" class="">(综述)RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGModularRAG/" class="">(原理)Modular RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGPerformance/" class="">(原理)Advanced RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实战</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGBestPractice/" class="">RAG 最佳实践</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGOptimize/" class="">RAG 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGchatchat/" class="">(实战)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGQanything/" class="active">RAG Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGRAGflow/" class="">RAG RAGflow</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Pattern</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/gptRAGPattern/" class="">(原理) RAG Pattern</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptAgenticRAG/" class="">Agentic RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptRAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptRAGMultimodal/" class="">(原理)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptRAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptDocumentAI/" class="">文档智能</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>phase</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptQueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGIndex/" class="">(原理|实战) Index&amp;Chunk</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>案例</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/gptRAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/gptRAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>RAG Qanything</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#qanything">QAnything</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#arch1">Arch[1]</a></li>
+            <li><a href="#1st-retrievalembedding1">1st Retrieval（embedding）[1]</a></li>
+            <li><a href="#2nd-retrievalrerank1">2nd Retrieval（rerank）[1]</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+    <li><a href="#参考">参考</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#qanything-1">QAnything</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><p></p>
+<!-- more -->
+<h1 id="qanything">
+  QAnything
+  <a class="anchor" href="#qanything">#</a>
+</h1>
+<h3 id="arch1">
+  Arch[1]
+  <a class="anchor" href="#arch1">#</a>
+</h3>
+<p><img src="https://github.com/netease-youdao/QAnything/raw/master/docs/images/qanything_arch.png" alt="Arch" /></p>
+<ul>
+<li>
+<p>索引（indexing）
+通过Embedding为每一个文本块生成一个向量表示，用于计算<strong>文本向量</strong>和<strong>问题向量</strong>之间的<strong>相似度</strong>。创建索引将原始文本块和Embedding向量以键值对的形式存储，以便将来进行快速和频繁的搜索。</p>
+</li>
+<li>
+<p>检索（Retrieval）
+使用Embedding模型将用户输入问题转换为向量，计算问题的Embedding向量和语料库中文本块Embedding向量之间的相似度，选择<strong>相似度最高的前K个文档块</strong>作为当前问题的增强上下文信息。</p>
+</li>
+<li>
+<p>生成（Generation）
+将检索得到的前K个文本块和用户问题一起送进大模型，让大模型基于给定的文本块来回答用户的问题。</p>
+</li>
+</ul>
+<h3 id="1st-retrievalembedding1">
+  1st Retrieval（embedding）[1]
+  <a class="anchor" href="#1st-retrievalembedding1">#</a>
+</h3>
+<ul>
+<li>
+<p>Bcembedding模型 [3]</p>
+<ul>
+<li>中英双语和跨语种能力</li>
+<li>多领域覆盖</li>
+</ul>
+</li>
+<li>
+<p>Embedding 可以给出一个得分，但是这个得分描述的更多的是<strong>相似性</strong>。Embedding本质上是一个<strong>双编码器</strong>，两个文本在模型内部没有任何信息交互。只在最后计算两个向量的余弦相似度时才进行唯一一次交互。所以Embedding检索只能把<strong>最相似的</strong>文本片段给你，<strong>没有</strong>能力来判断候选文本和query之间的<strong>相关性</strong>。但是<strong>相似又不等于相关</strong>。</p>
+</li>
+</ul>
+<p>【embedding -&gt; 相似性】</p>
+<p><img src="./images/embedding.png" alt="embedding" /></p>
+<h3 id="2nd-retrievalrerank1">
+  2nd Retrieval（rerank）[1]
+  <a class="anchor" href="#2nd-retrievalrerank1">#</a>
+</h3>
+<ul>
+<li>
+<p>Rerank [3]</p>
+</li>
+<li>
+<p>Rerank本质是一个<strong>Cross-Encoder</strong>的模型。Cross-Encoder能让两个文本片段一开始就在BERT模型各层中通过self-attention进行交互。</p>
+</li>
+</ul>
+<p><img src="./images/reranker.png" alt="reranker" /></p>
+<p>【rerank -&gt; 相关性】</p>
+<h1 id="参考">
+  参考
+  <a class="anchor" href="#%e5%8f%82%e8%80%83">#</a>
+</h1>
+<h3 id="qanything-1">
+  QAnything
+  <a class="anchor" href="#qanything-1">#</a>
+</h3>
+<ol>
+<li><a href="https://github.com/netease-youdao/QAnything">QAnything Repo</a> git</li>
+<li>xxx</li>
+<li><a href="https://www.bilibili.com/video/BV1HF4m1w7rY/">有道QAnything背后的故事：关于RAG的一点经验分享</a> V
+<a href="https://mp.weixin.qq.com/s/FUex1Q984-IhQ-FoLZTf5Q">有道QAnything背后的故事&mdash;关于RAG的一点经验分享</a>   文字版
+[公众号有其他文章]</li>
+</ol>
+<p>1xx. <a href="https://mp.weixin.qq.com/s?__biz=MzIzMzYwNzY2NQ==&amp;mid=2247489671&amp;idx=1&amp;sn=564a232c3c7919c70a7a1cf5efa77628">前沿重器[45] RAG开源项目Qanything源码阅读1-概述+服务</a></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#qanything">QAnything</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#arch1">Arch[1]</a></li>
+            <li><a href="#1st-retrievalembedding1">1st Retrieval（embedding）[1]</a></li>
+            <li><a href="#2nd-retrievalrerank1">2nd Retrieval（rerank）[1]</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+    <li><a href="#参考">参考</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#qanything-1">QAnything</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
