@@ -1,0 +1,1615 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="问题和局限性 [4] # 记忆召回问题 只是做简单的 embedding 相似性召回，很容易发现召回的结果不是很好
+错误累积问题
+探索效率问题 中途引入人工的判断干预和反馈输入
+任务终止与结果验证 模型 agent 的工作如何终止也是一个挑战
+挑战 [8] # 如何让 agent 选择合适的工具 # Toolformer - fine tune Gorilla - retrieval，fine tune 不必要的工具使用 # “Human Input”也写成一种工具，让模型来主动发起对人类的提问 Human as a tool
+Agent 返回的格式不稳定 # 这里常见的做法是让 LLM 按照 json 这类常见的 schema 来返回，一般稳定性会高一些（相比“Action:”这种）。 此外自动修复重试也很实用，可以利用 LangChain 里的 output parsers 来帮助完成。
+记住之前的操作，避免重复 # AutoGPT - retrieval 结合近期操作记录
+处理超长的 observation # 需要用一些工具从中提取有用信息，或者放到外部存储中再借助 retrieval 来使用。
+专注于目标 # 简单的做法是在 prompt 结尾处再把目标加上，引起 agent 的注意。 另外像 BabyAGI，HuggingGPT 这种把 planning 和 execution 分开的做法也是很有用。拆分的比较细的任务往往步骤比较短，也不容易丢失目标。">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Agent/Overview/gptAgentChallenge/">
+  <meta property="og:site_name" content="AIGC">
+  <meta property="og:title" content="(原理)Agent Challenge">
+  <meta property="og:description" content="问题和局限性 [4] # 记忆召回问题 只是做简单的 embedding 相似性召回，很容易发现召回的结果不是很好
+错误累积问题
+探索效率问题 中途引入人工的判断干预和反馈输入
+任务终止与结果验证 模型 agent 的工作如何终止也是一个挑战
+挑战 [8] # 如何让 agent 选择合适的工具 # Toolformer - fine tune Gorilla - retrieval，fine tune 不必要的工具使用 # “Human Input”也写成一种工具，让模型来主动发起对人类的提问 Human as a tool
+Agent 返回的格式不稳定 # 这里常见的做法是让 LLM 按照 json 这类常见的 schema 来返回，一般稳定性会高一些（相比“Action:”这种）。 此外自动修复重试也很实用，可以利用 LangChain 里的 output parsers 来帮助完成。
+记住之前的操作，避免重复 # AutoGPT - retrieval 结合近期操作记录
+处理超长的 observation # 需要用一些工具从中提取有用信息，或者放到外部存储中再借助 retrieval 来使用。
+专注于目标 # 简单的做法是在 prompt 结尾处再把目标加上，引起 agent 的注意。 另外像 BabyAGI，HuggingGPT 这种把 planning 和 execution 分开的做法也是很有用。拆分的比较细的任务往往步骤比较短，也不容易丢失目标。">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>(原理)Agent Challenge | AIGC</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Agent/Overview/gptAgentChallenge/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.0d2c730e33feadc439a98c6f463781e7c25346959e6de45068876903b370f5d6.js" integrity="sha256-DSxzDjP&#43;rcQ5qYxvRjeB58JTRpWebeRQaIdpA7Nw9dY=" crossorigin="anonymous"></script>
+
+  
+
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Agent/Overview/gptAgentChallenge/index.xml" title="AIGC" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>AIGC</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>(RAG)</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAG/" class="">(综述)RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGModularRAG/" class="">(原理)Modular RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGPerformance/" class="">(原理)Advanced RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实战</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGBestPractice/" class="">RAG 最佳实践</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGOptimize/" class="">RAG 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGchatchat/" class="">(实战)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGQanything/" class="">RAG Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGRAGflow/" class="">RAG RAGflow</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Pattern</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/gptRAGPattern/" class="">(原理) RAG Pattern</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptAgenticRAG/" class="">Agentic RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptRAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptRAGMultimodal/" class="">(原理)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptRAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptDocumentAI/" class="">文档智能</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>phase</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptQueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGIndex/" class="">(原理|实战) Index&amp;Chunk</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>案例</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/gptRAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/gptRAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>(Agent)</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/gptAgent/" class="">(原理)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/gptAgentCategory/" class="">Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/gptAgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/gptAgentChallenge/" class="active">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Project&amp;Product</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/ProjectProduct/gptAgentList/" class="">(List)Agent 开源 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Reflection</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/gptAgentReflection/" class="">Reflection Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Planning</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/gptAgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/gptAgentPlanAndExecute/" class="">(原理|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Memory/gptAgentMemory/" class="">Agent  Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multi-agent collaboration</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent-collaboration/gptMultiAgents/" class="">(原理)Multi-Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent-collaboration/gptMultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent-collaboration/gptAgentAutogen/" class="">AutoGen</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Tool use</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptFunctionCall/" class="">(原理|实战) OpenAI Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptAgentTool/" class="">(原理)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptAgentToolGorilla/" class="">(原理)Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptAgentTuning/" class="">Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptAgentToolformer/" class="">(原理)Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>(Langchain)</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/gptLangchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/gptRetrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/gptLangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>(Prompt)</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt/gptPromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt/gptCOT/" class="">COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt/gptPromptCode/" class="">Prompt-Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt/gptPrompt/" class="">Prompt-How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>(Application)</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gptVectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gptNL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>(原理)Agent Challenge</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#问题和局限性-4">问题和局限性 [4]</a></li>
+    <li><a href="#挑战-8">挑战 [8]</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#如何让-agent-选择合适的工具">如何让 agent 选择合适的工具</a></li>
+            <li><a href="#不必要的工具使用">不必要的工具使用</a></li>
+            <li><a href="#agent-返回的格式不稳定">Agent 返回的格式不稳定</a></li>
+            <li><a href="#记住之前的操作避免重复">记住之前的操作，避免重复</a></li>
+            <li><a href="#处理超长的-observation">处理超长的 observation</a></li>
+            <li><a href="#专注于目标">专注于目标</a></li>
+            <li><a href="#结果评估">结果评估</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+    <li><a href="#参考">参考</a></li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><p></p>
+<!-- more -->
+<h1 id="问题和局限性-4">
+  问题和局限性 [4]
+  <a class="anchor" href="#%e9%97%ae%e9%a2%98%e5%92%8c%e5%b1%80%e9%99%90%e6%80%a7-4">#</a>
+</h1>
+<ul>
+<li>
+<p>记忆召回问题
+只是做简单的 embedding 相似性召回，很容易发现召回的结果不是很好</p>
+</li>
+<li>
+<p>错误累积问题</p>
+</li>
+<li>
+<p>探索效率问题
+中途引入人工的判断干预和反馈输入</p>
+</li>
+<li>
+<p>任务终止与结果验证
+模型 agent 的工作如何终止也是一个挑战</p>
+</li>
+</ul>
+<h1 id="挑战-8">
+  挑战 [8]
+  <a class="anchor" href="#%e6%8c%91%e6%88%98-8">#</a>
+</h1>
+<h3 id="如何让-agent-选择合适的工具">
+  如何让 agent 选择合适的工具
+  <a class="anchor" href="#%e5%a6%82%e4%bd%95%e8%ae%a9-agent-%e9%80%89%e6%8b%a9%e5%90%88%e9%80%82%e7%9a%84%e5%b7%a5%e5%85%b7">#</a>
+</h3>
+<ul>
+<li>Toolformer - fine tune</li>
+<li>Gorilla - retrieval，fine tune</li>
+</ul>
+<h3 id="不必要的工具使用">
+  不必要的工具使用
+  <a class="anchor" href="#%e4%b8%8d%e5%bf%85%e8%a6%81%e7%9a%84%e5%b7%a5%e5%85%b7%e4%bd%bf%e7%94%a8">#</a>
+</h3>
+<p>“Human Input”也写成一种工具，让模型来主动发起对人类的提问
+<a href="https://python.langchain.com/docs/integrations/tools/human_tools">Human as a tool</a></p>
+<h3 id="agent-返回的格式不稳定">
+  Agent 返回的格式不稳定
+  <a class="anchor" href="#agent-%e8%bf%94%e5%9b%9e%e7%9a%84%e6%a0%bc%e5%bc%8f%e4%b8%8d%e7%a8%b3%e5%ae%9a">#</a>
+</h3>
+<p>这里常见的做法是让 LLM <strong>按照 json 这类常见的 schema 来返回</strong>，一般稳定性会高一些（相比“Action:”这种）。
+此外自动修复重试也很实用，可以利用 LangChain 里的 <strong>output parsers</strong> 来帮助完成。</p>
+<h3 id="记住之前的操作避免重复">
+  记住之前的操作，避免重复
+  <a class="anchor" href="#%e8%ae%b0%e4%bd%8f%e4%b9%8b%e5%89%8d%e7%9a%84%e6%93%8d%e4%bd%9c%e9%81%bf%e5%85%8d%e9%87%8d%e5%a4%8d">#</a>
+</h3>
+<p>AutoGPT - retrieval 结合近期操作记录</p>
+<h3 id="处理超长的-observation">
+  处理超长的 observation
+  <a class="anchor" href="#%e5%a4%84%e7%90%86%e8%b6%85%e9%95%bf%e7%9a%84-observation">#</a>
+</h3>
+<p>需要用一些工具从中<strong>提取有用信息</strong>，或者<strong>放到外部存储中再借助 retrieval 来使用</strong>。</p>
+<h3 id="专注于目标">
+  专注于目标
+  <a class="anchor" href="#%e4%b8%93%e6%b3%a8%e4%ba%8e%e7%9b%ae%e6%a0%87">#</a>
+</h3>
+<p>简单的做法是<strong>在 prompt 结尾处再把目标加上</strong>，引起 agent 的注意。
+另外像 BabyAGI，HuggingGPT 这种把 <strong>planning 和 execution 分开</strong>的做法也是很有用。<strong>拆分的比较细</strong>的任务往往步骤比较短，也不容易丢失目标。</p>
+<h3 id="结果评估">
+  结果评估
+  <a class="anchor" href="#%e7%bb%93%e6%9e%9c%e8%af%84%e4%bc%b0">#</a>
+</h3>
+<ul>
+<li><strong>评估最终结果</strong>是否正确</li>
+<li><strong>过程的细化评估</strong>
+<ul>
+<li>选择的中间步骤是否正确。</li>
+<li>生成 action 的 input 是否正确。</li>
+<li>生成的步骤序列是否合理高效。</li>
+</ul>
+</li>
+</ul>
+<h1 id="参考">
+  参考
+  <a class="anchor" href="#%e5%8f%82%e8%80%83">#</a>
+</h1>
+<ol start="4">
+<li><a href="https://zhuanlan.zhihu.com/p/622947810">AutoGPT与LLM Agent解析</a> ***</li>
+<li><a href="https://zhuanlan.zhihu.com/p/633033220">LLM 全栈开发指南补遗</a>  Agents  ***
+<a href="https://fullstackdeeplearning.com/llm-bootcamp/spring-2023/chase-agents/">Harrison Chase: Agents</a>  ***</li>
+</ol>
+<p>1xx. <a href="https://zhuanlan.zhihu.com/p/679032270">LLM Agent 现状和一些思考 （202401）</a>
+当前 Agent 的缺陷和挑战</p>
+<p>1xx. <a href="https://mp.weixin.qq.com/s/kCXZN7Wli-RCvZXRb6mF7g">Agent开发者坦白：窘境中前行</a></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#问题和局限性-4">问题和局限性 [4]</a></li>
+    <li><a href="#挑战-8">挑战 [8]</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#如何让-agent-选择合适的工具">如何让 agent 选择合适的工具</a></li>
+            <li><a href="#不必要的工具使用">不必要的工具使用</a></li>
+            <li><a href="#agent-返回的格式不稳定">Agent 返回的格式不稳定</a></li>
+            <li><a href="#记住之前的操作避免重复">记住之前的操作，避免重复</a></li>
+            <li><a href="#处理超长的-observation">处理超长的 observation</a></li>
+            <li><a href="#专注于目标">专注于目标</a></li>
+            <li><a href="#结果评估">结果评估</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+    <li><a href="#参考">参考</a></li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+

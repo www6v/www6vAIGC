@@ -1,0 +1,1634 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Plan-and-execute [0] # 原理
+Figure 2 - 基于prompt [1] 代码
+plan [2] Planning Step Re-Plan Step 问题
+冗余的提示和重复的执行 -&gt; ReWOO ReWOO [0] # 原理
+Abstract [10] 增强语言模型（ALM）将大型语言模型（LLM）的推理能力与允许知识检索和执行操作的工具相结合。现有的ALM系统以交错的方式触发LLM的思考过程，同时从这些工具中获取观察结果。具体而言，LLM推理过程中会调用外部工具，然后在获取工具响应后停止，基于之前的响应令牌来决定下一步的操作。这种范式虽然直观且易于实现，但常常由于冗余的提示和重复的执行而导致计算复杂度极高。本研究首次解决了这些挑战，提出了一种模块化的范式ReWOO（无观察推理），将推理过程与外部观察结果分离，从而显著减少了令牌的消耗。 Figure 1 [10] Planner里有格式化的#E Figure 2 [10] 代码 [11]
+Executor-tool_execution() -&gt; 状态机 问题
+是否可以并行？-&gt; LLMCompiler LLMCompiler # 原理
+Abstract [20] LLM的多函数调用能力催生了基于LLM的软件开发，使其能够解决更复杂的问题。然而，当前的多函数调用方法通常需要针对每个函数进行顺序推理和执行，这可能导致较高的延迟、成本以及不准确的行为。为了解决这个问题，我们引入了LLMCompiler，它可以并行执行函数，以高效地编排多函数调用。LLMCompiler借鉴了经典编译器的原理，在LLM中使用三个组件来简化并行函数调用：（i）LLM规划器，制定执行策略和依赖关系；（ii）任务获取单元，分派和更新函数调用任务；（iii）执行器，以并行方式执行这些任务。通过LLMCompiler，用户可以指定工具以及可选的上下文示例，LLMCompiler会自动计算函数调用的优化编排。重要的是，LLMCompiler可以与LLaMA-2等开源模型以及OpenAI的GPT模型一起使用。 Figure 2 [20] 代码 [21]
+Planner Task Fetching Unit Joiner 参考 # Plan-and-execute # LangGraph：Plan-Execute Agents 实战 V Plan-and-Execute Agents *** Plan-and-Solve Prompting: Improving Zero-Shot Chain-of-Thought Reasoning by Large Language Models Figure 2 plan-and-execute git ReWOO # ReWOO: Decoupling Reasoning from Observations for Efficient Augmented Language Models Reasoning without Observation git">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Agent/Planning/gptAgentPlanAndExecute/">
+  <meta property="og:site_name" content="AIGC">
+  <meta property="og:title" content="(原理|实战)Plan&Execute,ReWOO">
+  <meta property="og:description" content="Plan-and-execute [0] # 原理
+Figure 2 - 基于prompt [1] 代码
+plan [2] Planning Step Re-Plan Step 问题
+冗余的提示和重复的执行 -&gt; ReWOO ReWOO [0] # 原理
+Abstract [10] 增强语言模型（ALM）将大型语言模型（LLM）的推理能力与允许知识检索和执行操作的工具相结合。现有的ALM系统以交错的方式触发LLM的思考过程，同时从这些工具中获取观察结果。具体而言，LLM推理过程中会调用外部工具，然后在获取工具响应后停止，基于之前的响应令牌来决定下一步的操作。这种范式虽然直观且易于实现，但常常由于冗余的提示和重复的执行而导致计算复杂度极高。本研究首次解决了这些挑战，提出了一种模块化的范式ReWOO（无观察推理），将推理过程与外部观察结果分离，从而显著减少了令牌的消耗。 Figure 1 [10] Planner里有格式化的#E Figure 2 [10] 代码 [11]
+Executor-tool_execution() -&gt; 状态机 问题
+是否可以并行？-&gt; LLMCompiler LLMCompiler # 原理
+Abstract [20] LLM的多函数调用能力催生了基于LLM的软件开发，使其能够解决更复杂的问题。然而，当前的多函数调用方法通常需要针对每个函数进行顺序推理和执行，这可能导致较高的延迟、成本以及不准确的行为。为了解决这个问题，我们引入了LLMCompiler，它可以并行执行函数，以高效地编排多函数调用。LLMCompiler借鉴了经典编译器的原理，在LLM中使用三个组件来简化并行函数调用：（i）LLM规划器，制定执行策略和依赖关系；（ii）任务获取单元，分派和更新函数调用任务；（iii）执行器，以并行方式执行这些任务。通过LLMCompiler，用户可以指定工具以及可选的上下文示例，LLMCompiler会自动计算函数调用的优化编排。重要的是，LLMCompiler可以与LLaMA-2等开源模型以及OpenAI的GPT模型一起使用。 Figure 2 [20] 代码 [21]
+Planner Task Fetching Unit Joiner 参考 # Plan-and-execute # LangGraph：Plan-Execute Agents 实战 V Plan-and-Execute Agents *** Plan-and-Solve Prompting: Improving Zero-Shot Chain-of-Thought Reasoning by Large Language Models Figure 2 plan-and-execute git ReWOO # ReWOO: Decoupling Reasoning from Observations for Efficient Augmented Language Models Reasoning without Observation git">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>(原理|实战)Plan&amp;Execute,ReWOO | AIGC</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Agent/Planning/gptAgentPlanAndExecute/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.0d2c730e33feadc439a98c6f463781e7c25346959e6de45068876903b370f5d6.js" integrity="sha256-DSxzDjP&#43;rcQ5qYxvRjeB58JTRpWebeRQaIdpA7Nw9dY=" crossorigin="anonymous"></script>
+
+  
+
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Agent/Planning/gptAgentPlanAndExecute/index.xml" title="AIGC" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>AIGC</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>(RAG)</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAG/" class="">(综述)RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGModularRAG/" class="">(原理)Modular RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGPerformance/" class="">(原理)Advanced RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实战</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGBestPractice/" class="">RAG 最佳实践</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGOptimize/" class="">RAG 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGchatchat/" class="">(实战)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGQanything/" class="">RAG Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGRAGflow/" class="">RAG RAGflow</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Pattern</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/gptRAGPattern/" class="">(原理) RAG Pattern</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptAgenticRAG/" class="">Agentic RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptRAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptRAGMultimodal/" class="">(原理)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptRAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptDocumentAI/" class="">文档智能</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>phase</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptQueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGIndex/" class="">(原理|实战) Index&amp;Chunk</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>案例</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/gptRAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/gptRAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>(Agent)</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/gptAgent/" class="">(原理)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/gptAgentCategory/" class="">Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/gptAgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/gptAgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Project&amp;Product</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/ProjectProduct/gptAgentList/" class="">(List)Agent 开源 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Reflection</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/gptAgentReflection/" class="">Reflection Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Planning</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/gptAgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/gptAgentPlanAndExecute/" class="active">(原理|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Memory/gptAgentMemory/" class="">Agent  Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multi-agent collaboration</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent-collaboration/gptMultiAgents/" class="">(原理)Multi-Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent-collaboration/gptMultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent-collaboration/gptAgentAutogen/" class="">AutoGen</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Tool use</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptFunctionCall/" class="">(原理|实战) OpenAI Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptAgentTool/" class="">(原理)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptAgentToolGorilla/" class="">(原理)Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptAgentTuning/" class="">Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptAgentToolformer/" class="">(原理)Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>(Langchain)</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/gptLangchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/gptRetrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/gptLangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>(Prompt)</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt/gptPromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt/gptCOT/" class="">COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt/gptPromptCode/" class="">Prompt-Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt/gptPrompt/" class="">Prompt-How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>(Application)</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gptVectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gptNL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>(原理|实战)Plan&amp;Execute,ReWOO</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#plan-and-execute-0">Plan-and-execute [0]</a></li>
+    <li><a href="#rewoo-0">ReWOO [0]</a></li>
+    <li><a href="#llmcompiler">LLMCompiler</a></li>
+    <li><a href="#参考">参考</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#plan-and-execute">Plan-and-execute</a></li>
+            <li><a href="#rewoo">ReWOO</a></li>
+            <li><a href="#llmcompiler-1">LLMCompiler</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><p></p>
+<!-- more -->
+<h1 id="plan-and-execute-0">
+  Plan-and-execute [0]
+  <a class="anchor" href="#plan-and-execute-0">#</a>
+</h1>
+<ul>
+<li>
+<p>原理</p>
+<ul>
+<li>Figure 2 - 基于prompt [1]</li>
+</ul>
+</li>
+<li>
+<p>代码</p>
+<ul>
+<li>plan [2]
+<ul>
+<li>Planning Step</li>
+<li>Re-Plan Step</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>问题</p>
+<ul>
+<li>冗余的提示和重复的执行 -&gt; ReWOO</li>
+</ul>
+</li>
+</ul>
+<h1 id="rewoo-0">
+  ReWOO [0]
+  <a class="anchor" href="#rewoo-0">#</a>
+</h1>
+<ul>
+<li>
+<p>原理</p>
+<ul>
+<li>Abstract [10]
+增强语言模型（ALM）将大型语言模型（LLM）的推理能力与允许知识检索和执行操作的工具相结合。现有的ALM系统以交错的方式触发LLM的思考过程，同时从这些工具中获取观察结果。<strong>具体而言，LLM推理过程中会调用外部工具，然后在获取工具响应后停止，基于之前的响应令牌来决定下一步的操作。这种范式虽然直观且易于实现，但常常由于冗余的提示和重复的执行而导致计算复杂度极高</strong>。本研究首次解决了这些挑战，提出了一种模块化的范式ReWOO（无观察推理），<strong>将推理过程与外部观察结果分离，从而显著减少了令牌的消耗</strong>。</li>
+<li>Figure 1 [10]
+Planner里有格式化的#E</li>
+<li>Figure 2  [10]</li>
+</ul>
+</li>
+<li>
+<p>代码 [11]</p>
+<ul>
+<li>Executor-tool_execution() -&gt; 状态机</li>
+</ul>
+</li>
+<li>
+<p>问题</p>
+<ul>
+<li>是否可以并行？-&gt; LLMCompiler</li>
+</ul>
+</li>
+</ul>
+<h1 id="llmcompiler">
+  LLMCompiler
+  <a class="anchor" href="#llmcompiler">#</a>
+</h1>
+<ul>
+<li>
+<p>原理</p>
+<ul>
+<li>Abstract [20]
+LLM的多函数调用能力催生了基于LLM的软件开发，使其能够解决更复杂的问题。然而，当前的多函数调用方法通常需要<strong>针对每个函数进行顺序推理和执行，这可能导致较高的延迟、成本以及不准确的行为</strong>。为了解决这个问题，我们引入了LLMCompiler，它可以<strong>并行执行函数，以高效地编排多函数调用</strong>。LLMCompiler<strong>借鉴了经典编译器的原理</strong>，在LLM中使用<strong>三个组件</strong>来简化并行函数调用：（i）LLM规划器，制定执行策略和依赖关系；（ii）任务获取单元，分派和更新函数调用任务；（iii）执行器，以并行方式执行这些任务。通过LLMCompiler，用户可以指定工具以及可选的上下文示例，LLMCompiler会自动计算函数调用的优化编排。重要的是，LLMCompiler可以与LLaMA-2等开源模型以及OpenAI的GPT模型一起使用。</li>
+<li>Figure 2  [20]</li>
+</ul>
+</li>
+<li>
+<p>代码 [21]</p>
+<ul>
+<li>Planner</li>
+<li>Task Fetching Unit</li>
+<li>Joiner</li>
+</ul>
+</li>
+</ul>
+<h1 id="参考">
+  参考
+  <a class="anchor" href="#%e5%8f%82%e8%80%83">#</a>
+</h1>
+<h3 id="plan-and-execute">
+  Plan-and-execute
+  <a class="anchor" href="#plan-and-execute">#</a>
+</h3>
+<ol start="0">
+<li><a href="https://www.bilibili.com/video/BV1vJ4m1s7Zn/">LangGraph：Plan-Execute Agents 实战</a> V
+<a href="https://blog.langchain.dev/planning-agents/">Plan-and-Execute Agents</a> ***</li>
+<li><a href="https://arxiv.org/pdf/2305.04091.pdf">Plan-and-Solve Prompting: Improving Zero-Shot Chain-of-Thought
+Reasoning by Large Language Models</a>  Figure 2</li>
+<li><a href="https://github.com/langchain-ai/langgraph/blob/main/examples/plan-and-execute/plan-and-execute.ipynb">plan-and-execute</a>    git</li>
+</ol>
+<h3 id="rewoo">
+  ReWOO
+  <a class="anchor" href="#rewoo">#</a>
+</h3>
+<ol start="10">
+<li><a href="https://arxiv.org/pdf/2305.18323.pdf">ReWOO: Decoupling Reasoning from Observations for Efficient Augmented Language Models</a></li>
+<li><a href="https://github.com/langchain-ai/langgraph/blob/main/examples/rewoo/rewoo.ipynb">Reasoning without Observation</a> git<br>
+<a href="https://www.bilibili.com/video/BV1Au4m1N7ix/">ReWoo Agent框架代码实现</a> V<br>
+1xx.  <a href="https://zhuanlan.zhihu.com/p/671491031">ReWOO: 高效增强语言模型中解偶观测和推理</a></li>
+</ol>
+<h3 id="llmcompiler-1">
+  LLMCompiler
+  <a class="anchor" href="#llmcompiler-1">#</a>
+</h3>
+<ol start="20">
+<li><a href="https://arxiv.org/pdf/2312.04511v1.pdf">An LLM Compiler for Parallel Function Calling</a></li>
+<li><a href="https://github.com/langchain-ai/langgraph/blob/main/examples/llm-compiler/LLMCompiler.ipynb">LLMCompiler</a></li>
+</ol>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#plan-and-execute-0">Plan-and-execute [0]</a></li>
+    <li><a href="#rewoo-0">ReWOO [0]</a></li>
+    <li><a href="#llmcompiler">LLMCompiler</a></li>
+    <li><a href="#参考">参考</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#plan-and-execute">Plan-and-execute</a></li>
+            <li><a href="#rewoo">ReWOO</a></li>
+            <li><a href="#llmcompiler-1">LLMCompiler</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
