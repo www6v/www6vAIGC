@@ -1,0 +1,1916 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Huggingface PEFT中的任务[1] # class TaskType(str, enum.Enum):SEQ_CLS = &#34;SEQ_CLS&#34; # 3. 序列分类任务SEQ_2_SEQ_LM = &#34;SEQ_2_SEQ_LM&#34; # 2. 条件生成任务CAUSAL_LM = &#34;CAUSAL_LM&#34; # 1. 因果语言建模任务TOKEN_CLS = &#34;TOKEN_CLS&#34; # 4. Token 分类任务QUESTION_ANS = &#34;QUESTION_ANS&#34;FEATURE_EXTRACTION = &#34;FEATURE_EXTRACTION&#34; 1. 因果语言建模任务（Causal Language Modeling） # 因果语言建模任务（CLM），在这种建模方法中，模型试图预测给定上下文中的下一个单词，该上下文通常包括在当前单词之前的所有单词。
+2. 条件生成任务（Conditional Generation） # 条件生成任务（Conditional Generation），根据给定的输入（可能是文本、图片等）生成符合条件的输出。 条件生成的应用包括但不限于机器翻译、文本摘要、图像描述等。这些任务通常需要模型在输入和输出之间建立复杂的映射关系。
+因果语言建模任务 vs. 条件生成任务 因果语言建模主要关注于生成连贯、自然的文本，而条件生成关注于生成满足特定条件或任务要求的文本。这两种建模方法在某些场景下可能会互相使用和结合，以实现更复杂的自然语言处理任务。
+3. 序列分类任务（Sequence Classification） # 序列分类（Sequence Classification），对整个句子进行分类。如: 获取评论的情绪，检测电子邮件是否为垃圾邮件，确定句子在语法上是否正确或两个句子在逻辑上是否相关等
+4. Token 分类任务（Token Classification） # Token 分类任务（Token Classification），对句子中的每个词进行分类。如: 识别句子的语法成分（名词、动词、形容词）或命名实体（人、地点、组织）。">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/FineTuning/PEFT/gptFineTuningPEFT/">
+  <meta property="og:site_name" content="AIGC">
+  <meta property="og:title" content="(实战)PEFT 概述">
+  <meta property="og:description" content="Huggingface PEFT中的任务[1] # class TaskType(str, enum.Enum):SEQ_CLS = &#34;SEQ_CLS&#34; # 3. 序列分类任务SEQ_2_SEQ_LM = &#34;SEQ_2_SEQ_LM&#34; # 2. 条件生成任务CAUSAL_LM = &#34;CAUSAL_LM&#34; # 1. 因果语言建模任务TOKEN_CLS = &#34;TOKEN_CLS&#34; # 4. Token 分类任务QUESTION_ANS = &#34;QUESTION_ANS&#34;FEATURE_EXTRACTION = &#34;FEATURE_EXTRACTION&#34; 1. 因果语言建模任务（Causal Language Modeling） # 因果语言建模任务（CLM），在这种建模方法中，模型试图预测给定上下文中的下一个单词，该上下文通常包括在当前单词之前的所有单词。
+2. 条件生成任务（Conditional Generation） # 条件生成任务（Conditional Generation），根据给定的输入（可能是文本、图片等）生成符合条件的输出。 条件生成的应用包括但不限于机器翻译、文本摘要、图像描述等。这些任务通常需要模型在输入和输出之间建立复杂的映射关系。
+因果语言建模任务 vs. 条件生成任务 因果语言建模主要关注于生成连贯、自然的文本，而条件生成关注于生成满足特定条件或任务要求的文本。这两种建模方法在某些场景下可能会互相使用和结合，以实现更复杂的自然语言处理任务。
+3. 序列分类任务（Sequence Classification） # 序列分类（Sequence Classification），对整个句子进行分类。如: 获取评论的情绪，检测电子邮件是否为垃圾邮件，确定句子在语法上是否正确或两个句子在逻辑上是否相关等
+4. Token 分类任务（Token Classification） # Token 分类任务（Token Classification），对句子中的每个词进行分类。如: 识别句子的语法成分（名词、动词、形容词）或命名实体（人、地点、组织）。">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>(实战)PEFT 概述 | AIGC</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/FineTuning/PEFT/gptFineTuningPEFT/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.43f18a0edc62b80f6489a2b5f3685fbb8089607b81e2b5317cd3289f2809a962.js" integrity="sha256-Q/GKDtxiuA9kiaK182hfu4CJYHuB4rUxfNMonygJqWI=" crossorigin="anonymous"></script>
+
+  
+
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/FineTuning/PEFT/gptFineTuningPEFT/index.xml" title="AIGC" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>AIGC</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-340caeccaaf0e49b13a18e9ea6565873" class="toggle"  />
+    <label for="section-340caeccaaf0e49b13a18e9ea6565873" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAG/" class="">(综述)RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGModularRAG/" class="">(原理)Modular RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGPerformance/" class="">(原理)Advanced RAG *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/gptRAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实战</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGBestPractice/" class="">RAG 最佳实践</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/gptRAGOptimize/" class="">RAG 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGchatchat/" class="">(实战)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGQanything/" class="">RAG Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/gptRAGRAGflow/" class="">RAG RAGflow</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Pattern</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/gptRAGPattern/" class="">(原理) RAG Pattern</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptAgenticRAG/" class="">Agentic RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptRAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptRAGMultimodal/" class="">(原理)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptRAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptDocumentAI/" class="">文档智能</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>phase</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptQueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGIndex/" class="">(原理|实战) Index&amp;Chunk</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/gptRAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>案例</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/gptRAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/gptRAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5c8d33e78af86e5d36be0698ebb28119" class="toggle"  />
+    <label for="section-5c8d33e78af86e5d36be0698ebb28119" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/gptAgent/" class="">(原理)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/gptAgentCategory/" class="">Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/gptAgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/gptAgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Project&amp;Product</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/ProjectProduct/gptAgentList/" class="">(List)Agent 开源 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Reflection</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/gptAgentReflection/" class="">Reflection Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Planning</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/gptAgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/gptAgentPlanAndExecute/" class="">(原理|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Memory/gptAgentMemory/" class="">Agent  Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multi-agent collaboration</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent-collaboration/gptMultiAgents/" class="">(原理)Multi-Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent-collaboration/gptMultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent-collaboration/gptAgentAutogen/" class="">AutoGen</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Tool use</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptFunctionCall/" class="">(原理|实战) OpenAI Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptAgentTool/" class="">(原理)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptAgentToolGorilla/" class="">(原理)Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptAgentTuning/" class="">Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Tool-use/gptAgentToolformer/" class="">(原理)Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-aa483191d5270c39de47ae63aeb34f96" class="toggle"  />
+    <label for="section-aa483191d5270c39de47ae63aeb34f96" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/gptLangchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/gptRetrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/gptLangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-2e9c80def717b9ae5cb94288d8fe0006" class="toggle"  />
+    <label for="section-2e9c80def717b9ae5cb94288d8fe0006" class="flex justify-between">
+      <a role="button" class="">Prompt</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt/gptPromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt/gptCOT/" class="">COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt/gptPromptCode/" class="">Prompt-Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt/gptPrompt/" class="">Prompt-How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8ce10e87b9ae92a5654cde06fec99255" class="toggle"  />
+    <label for="section-8ce10e87b9ae92a5654cde06fec99255" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gptVectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gptNL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12884bd448d59da9bfe279b1f7bb104f" class="toggle" checked />
+    <label for="section-12884bd448d59da9bfe279b1f7bb104f" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruct Tuning</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/gptInstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/gptInstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实践</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/gptFineTuningBestPractice/" class="">SFT BestPractice</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/gptFineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/gptFineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>PEFT</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/gptFineTuning/" class="">(原理)PEFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/gptFineTuningPEFT/" class="active">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/gptPromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/gptPEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/gptPEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/gptPromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/gptPEFTQLora/" class="">(原理|实战) QLoRA</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/gptPEFTLora/" class="">(实战) Lora</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>(实战)PEFT 概述</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#huggingface--peft中的任务1">Huggingface  PEFT中的任务[1]</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#1-因果语言建模任务causal-language-modeling">1. 因果语言建模任务（Causal Language Modeling）</a></li>
+            <li><a href="#2-条件生成任务conditional-generation">2. 条件生成任务（Conditional Generation）</a></li>
+            <li><a href="#3-序列分类任务sequence-classification">3. 序列分类任务（Sequence Classification）</a></li>
+            <li><a href="#4-token-分类任务token-classification">4. Token 分类任务（Token Classification）</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+    <li><a href="#参考">参考</a></li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><p></p>
+<!-- more -->
+<h1 id="huggingface--peft中的任务1">
+  Huggingface  PEFT中的任务[1]
+  <a class="anchor" href="#huggingface--peft%e4%b8%ad%e7%9a%84%e4%bb%bb%e5%8a%a11">#</a>
+</h1>
+<pre tabindex="0"><code>class TaskType(str, enum.Enum):
+    SEQ_CLS = &#34;SEQ_CLS&#34;  # 3. 序列分类任务
+    SEQ_2_SEQ_LM = &#34;SEQ_2_SEQ_LM&#34;  # 2. 条件生成任务
+    CAUSAL_LM = &#34;CAUSAL_LM&#34;  #  1. 因果语言建模任务
+    TOKEN_CLS = &#34;TOKEN_CLS&#34;  #  4. Token 分类任务
+    QUESTION_ANS = &#34;QUESTION_ANS&#34;
+    FEATURE_EXTRACTION = &#34;FEATURE_EXTRACTION&#34;
+</code></pre><h3 id="1-因果语言建模任务causal-language-modeling">
+  1. 因果语言建模任务（Causal Language Modeling）
+  <a class="anchor" href="#1-%e5%9b%a0%e6%9e%9c%e8%af%ad%e8%a8%80%e5%bb%ba%e6%a8%a1%e4%bb%bb%e5%8a%a1causal-language-modeling">#</a>
+</h3>
+<p>因果语言建模任务（CLM），在这种建模方法中，模型试图预测给定上下文中的下一个单词，该上下文通常包括在当前单词之前的所有单词。</p>
+<h3 id="2-条件生成任务conditional-generation">
+  2. 条件生成任务（Conditional Generation）
+  <a class="anchor" href="#2-%e6%9d%a1%e4%bb%b6%e7%94%9f%e6%88%90%e4%bb%bb%e5%8a%a1conditional-generation">#</a>
+</h3>
+<p>条件生成任务（Conditional Generation），根据给定的输入（可能是文本、图片等）生成符合条件的输出。
+条件生成的应用包括但不限于机器翻译、文本摘要、图像描述等。这些任务通常需要模型在输入和输出之间建立复杂的映射关系。</p>
+<blockquote>
+<p>因果语言建模任务  vs.  条件生成任务
+因果语言建模主要关注于生成连贯、自然的文本，而条件生成关注于生成满足特定条件或任务要求的文本。这两种建模方法在某些场景下可能会互相使用和结合，以实现更复杂的自然语言处理任务。</p>
+</blockquote>
+<h3 id="3-序列分类任务sequence-classification">
+  3. 序列分类任务（Sequence Classification）
+  <a class="anchor" href="#3-%e5%ba%8f%e5%88%97%e5%88%86%e7%b1%bb%e4%bb%bb%e5%8a%a1sequence-classification">#</a>
+</h3>
+<p>序列分类（Sequence Classification），对整个句子进行分类。如: 获取评论的情绪，检测电子邮件是否为垃圾邮件，确定句子在语法上是否正确或两个句子在逻辑上是否相关等</p>
+<h3 id="4-token-分类任务token-classification">
+  4. Token 分类任务（Token Classification）
+  <a class="anchor" href="#4-token-%e5%88%86%e7%b1%bb%e4%bb%bb%e5%8a%a1token-classification">#</a>
+</h3>
+<p>Token 分类任务（Token Classification），对句子中的每个词进行分类。如: 识别句子的语法成分（名词、动词、形容词）或命名实体（人、地点、组织）。</p>
+<h1 id="参考">
+  参考
+  <a class="anchor" href="#%e5%8f%82%e8%80%83">#</a>
+</h1>
+<ol>
+<li><a href="https://zhuanlan.zhihu.com/p/651744834">大模型参数高效微调技术实战（一）-PEFT概述</a></li>
+<li><a href="https://github.com/www6v/llm-action#llm%E5%BE%AE%E8%B0%83%E5%AE%9E%E6%88%98">LLM微调实战</a> 李国东</li>
+</ol>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#huggingface--peft中的任务1">Huggingface  PEFT中的任务[1]</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#1-因果语言建模任务causal-language-modeling">1. 因果语言建模任务（Causal Language Modeling）</a></li>
+            <li><a href="#2-条件生成任务conditional-generation">2. 条件生成任务（Conditional Generation）</a></li>
+            <li><a href="#3-序列分类任务sequence-classification">3. 序列分类任务（Sequence Classification）</a></li>
+            <li><a href="#4-token-分类任务token-classification">4. Token 分类任务（Token Classification）</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+    <li><a href="#参考">参考</a></li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
