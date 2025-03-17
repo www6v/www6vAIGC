@@ -3,21 +3,21 @@
 <head>
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="Tuning # AgentTuning # 1xx. 基于llama7B的文本嵌入模型ANGLE：兼看Agent微调数据的生成方案 AgentTuning
-1xx. LLM之Agent（五）| AgentTuning：清华大学与智谱AI提出AgentTuning提高大语言模型Agent能力
-1xx. AgentTuning解读
-AgentTuning 实战 # 1xx. 2024年大模型Agent tuning关键技术Fireact, Agent-FLAN, AgentOhana, Agent LUMOS, STE, ETO,MoE, DebateGPT等
-1xx. Agent-FLAN 技术报告——社区翻译版 1xx. LLM 大模型学习必知必会系列(九)：Agent微调最佳实践，用消费级显卡训练属于自己的Agent！">
+<meta name="description" content="基于微调的Agent - Function Call[1][2] # 基座模型
+internLM 微调框架
+xtuner Agent Tuning[3] # 基座模型
+Yi-6B Datasets 微调框架
+LLama-Factory 环境准备 # # source code git clone -b v0.7.1 &lt;https://github.com/hiyouga/LLaMA-Factory.git&gt; git switch -c v0.7.1 cd LLaMA-Factory # package 安装 conda create -n llama_factory python=3.10 conda activate llama_factory pip install llmtuner==0.5.1 # 环境变量 export CUDA_VISIBLE_DEVICES=0 # 使用第一块 GPU export USE_MODELSCOPE_HUB=1 # 使用魔搭社区下载渠道 # 阿里云必须加这句，不然页面会报异常 $ export GRADIO_ROOT_PATH=/${JUPYTER_NAME}/proxy/7860/ # 启动 python -m llmtuner.webui.interface 训练流程 # # flash-attn 安装 pip install flash-attn --no-build-isolation pip install modelscope -U 训练脚本 # 训练轮数 1.">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
 <meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Agent/Tool-use/gptAgentTuning/">
   <meta property="og:site_name" content="AIGC">
   <meta property="og:title" content="Agent Tuning">
-  <meta property="og:description" content="Tuning # AgentTuning # 1xx. 基于llama7B的文本嵌入模型ANGLE：兼看Agent微调数据的生成方案 AgentTuning
-1xx. LLM之Agent（五）| AgentTuning：清华大学与智谱AI提出AgentTuning提高大语言模型Agent能力
-1xx. AgentTuning解读
-AgentTuning 实战 # 1xx. 2024年大模型Agent tuning关键技术Fireact, Agent-FLAN, AgentOhana, Agent LUMOS, STE, ETO,MoE, DebateGPT等
-1xx. Agent-FLAN 技术报告——社区翻译版 1xx. LLM 大模型学习必知必会系列(九)：Agent微调最佳实践，用消费级显卡训练属于自己的Agent！">
+  <meta property="og:description" content="基于微调的Agent - Function Call[1][2] # 基座模型
+internLM 微调框架
+xtuner Agent Tuning[3] # 基座模型
+Yi-6B Datasets 微调框架
+LLama-Factory 环境准备 # # source code git clone -b v0.7.1 &lt;https://github.com/hiyouga/LLaMA-Factory.git&gt; git switch -c v0.7.1 cd LLaMA-Factory # package 安装 conda create -n llama_factory python=3.10 conda activate llama_factory pip install llmtuner==0.5.1 # 环境变量 export CUDA_VISIBLE_DEVICES=0 # 使用第一块 GPU export USE_MODELSCOPE_HUB=1 # 使用魔搭社区下载渠道 # 阿里云必须加这句，不然页面会报异常 $ export GRADIO_ROOT_PATH=/${JUPYTER_NAME}/proxy/7860/ # 启动 python -m llmtuner.webui.interface 训练流程 # # flash-attn 安装 pip install flash-attn --no-build-isolation pip install modelscope -U 训练脚本 # 训练轮数 1.">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="website">
 <title>Agent Tuning | AIGC</title>
@@ -26,7 +26,7 @@ AgentTuning 实战 # 1xx. 2024年大模型Agent tuning关键技术Fireact, Agent
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Agent/Tool-use/gptAgentTuning/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.49e37104e9ea94cc7aa318642ab9c2845a5f6acc75186e6b328929eb1493b31c.js" integrity="sha256-SeNxBOnqlMx6oxhkKrnChFpfasx1GG5rMokp6xSTsxw=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.748fe5f25f8f34ddda6532cca6c82802ef87288d50e8fad971f04b9f33342909.js" integrity="sha256-dI/l8l&#43;PNN3aZTLMpsgoAu&#43;HKI1Q6PrZcfBLnzM0KQk=" crossorigin="anonymous"></script>
 
   
 
@@ -2016,6 +2016,17 @@ https://github.com/alex-shpak/hugo-book
   
 <nav id="TableOfContents">
   <ul>
+    <li><a href="#基于微调的agent---function-call12">基于微调的Agent - Function Call[1][2]</a></li>
+    <li><a href="#agent-tuning3">Agent Tuning[3]</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#环境准备">环境准备</a></li>
+            <li><a href="#训练流程">训练流程</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
     <li><a href="#tuning">Tuning</a>
       <ul>
         <li>
@@ -2040,10 +2051,118 @@ https://github.com/alex-shpak/hugo-book
       
   <article class="markdown book-article"><p></p>
 <!-- more -->
+<h1 id="基于微调的agent---function-call12">
+  基于微调的Agent - Function Call[1][2]
+  <a class="anchor" href="#%e5%9f%ba%e4%ba%8e%e5%be%ae%e8%b0%83%e7%9a%84agent---function-call12">#</a>
+</h1>
+<ul>
+<li>基座模型<br>
+internLM</li>
+<li>微调框架<br>
+xtuner</li>
+</ul>
+<p><img src="./images/dirs.JPG" alt="dirs" /></p>
+<p><img src="./images/xtuner-agent.png" alt="xtuner-agent" /></p>
+<h1 id="agent-tuning3">
+  Agent Tuning[3]
+  <a class="anchor" href="#agent-tuning3">#</a>
+</h1>
+<ul>
+<li>基座模型<br>
+Yi-6B</li>
+<li>Datasets</li>
+<li>微调框架<br>
+LLama-Factory</li>
+</ul>
+<h3 id="环境准备">
+  环境准备
+  <a class="anchor" href="#%e7%8e%af%e5%a2%83%e5%87%86%e5%a4%87">#</a>
+</h3>
+<pre tabindex="0"><code># source code
+git clone -b v0.7.1  &lt;https://github.com/hiyouga/LLaMA-Factory.git&gt;
+git switch -c v0.7.1
+cd LLaMA-Factory
+
+# package 安装
+conda create -n llama_factory python=3.10
+conda activate llama_factory
+pip install llmtuner==0.5.1
+
+# 环境变量
+export CUDA_VISIBLE_DEVICES=0 # 使用第一块 GPU
+export USE_MODELSCOPE_HUB=1 # 使用魔搭社区下载渠道
+
+# 阿里云必须加这句，不然页面会报异常
+$ export GRADIO_ROOT_PATH=/${JUPYTER_NAME}/proxy/7860/
+
+# 启动
+python -m llmtuner.webui.interface
+</code></pre><h3 id="训练流程">
+  训练流程
+  <a class="anchor" href="#%e8%ae%ad%e7%bb%83%e6%b5%81%e7%a8%8b">#</a>
+</h3>
+<pre tabindex="0"><code># flash-attn 安装
+pip install flash-attn --no-build-isolation
+
+pip install modelscope -U
+</code></pre><ul>
+<li>训练脚本</li>
+</ul>
+<pre tabindex="0"><code># 训练轮数 1.0
+
+CUDA_VISIBLE_DEVICES=0 python src/train_bash.py \\
+    --stage sft \\
+    --do_train True \\
+    --model_name_or_path 01ai/Yi-6B \\
+    --finetuning_type lora \\
+    --template default \\
+    --flash_attn True \\
+    --dataset_dir data \\
+    --dataset glaive_toolcall,alpaca_gpt4_en,alpaca_gpt4_zh,oaast_sft_zh \\
+    --cutoff_len 1024 \\
+    --learning_rate 5e-05 \\
+    --num_train_epochs 1.0 \\
+    --max_samples 8000 \\
+    --per_device_train_batch_size 4 \\
+    --gradient_accumulation_steps 4 \\
+    --lr_scheduler_type cosine \\
+    --max_grad_norm 1.0 \\
+    --logging_steps 5 \\
+    --save_steps 100 \\
+    --warmup_steps 0 \\
+    --lora_rank 8 \\
+    --lora_dropout 0.1 \\
+    --lora_target all \\
+    --output_dir saves/Yi-6B/lora/yi-agent-6b \\
+    --fp16 True \\
+    --plot_loss True
+</code></pre><ul>
+<li>
+<p>训练配置
+<img src="./images/agentTuningUI.png" alt="agentTuningUI.png" /></p>
+</li>
+<li>
+<p>训练结果
+<img src="./images/agentTuningUI-result.png" alt="agentTuningUI-result.png" /></p>
+</li>
+<li>
+<p>效果展示<br>
+工具调用 - 查询天气<br>
+【1个epoch好像有点问题】<br>
+<img src="./images/agentTuningUI-chat.png" alt="agentTuningUI-chat.png" /></p>
+</li>
+</ul>
+<hr>
 <h1 id="tuning">
   Tuning
   <a class="anchor" href="#tuning">#</a>
 </h1>
+<ol>
+<li><a href="https://github.com/InternLM/tutorial/blob/main/xtuner/README.md">xtuner 实战</a>
+4【补充】用 MS-Agent 数据集 赋予 LLM 以 Agent 能力</li>
+<li><a href="https://www.bilibili.com/video/BV1yK4y1B75J/">(4)XTuner 大模型单卡低成本微调实战</a> V</li>
+<li><a href="https://zhuanlan.zhihu.com/p/678989191">单卡 3 小时训练专属大模型 Agent：基于 LLaMA Factory 实战</a></li>
+</ol>
 <h3 id="agenttuning">
   AgentTuning
   <a class="anchor" href="#agenttuning">#</a>
@@ -2099,6 +2218,17 @@ https://github.com/alex-shpak/hugo-book
   
 <nav id="TableOfContents">
   <ul>
+    <li><a href="#基于微调的agent---function-call12">基于微调的Agent - Function Call[1][2]</a></li>
+    <li><a href="#agent-tuning3">Agent Tuning[3]</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#环境准备">环境准备</a></li>
+            <li><a href="#训练流程">训练流程</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
     <li><a href="#tuning">Tuning</a>
       <ul>
         <li>
