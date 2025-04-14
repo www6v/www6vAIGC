@@ -3,25 +3,19 @@
 <head>
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="Cognitive Architecture [2] # Cognitive architectures for RAG [1] CRAG # Self-RAG [3] # Self-RAG 则是更加主动和智能的实现方式，主要步骤概括如下：
-判断是否需要额外检索事实性信息（retrieve on demand），仅当有需要时才召回 平行处理每个片段：生产prompt&#43;一个片段的生成结果 使用反思字段(Reflection tokens)，检查输出是否相关，选择最符合需要的片段； 再重复检索 生成结果会引用相关片段，以及输出结果是否符合该片段，便于查证事实。 参考 # Self-Reflective RAG with LangGraph
-OpenAI&rsquo;s Bet on a Cognitive Architecture
-1xx. 写的太通透了！大模型自省式 RAG 与 LangGraph 的实践！
-CRAG # 1xx. Corrective Retrieval Augmented Generation Figure 2 1xx. Corrective RAG (CRAG) git
-1xx. 【社区第十三讲】 老刘说NLP线上交流
-SELF-RAG # NLP（廿一）：从 RAG 到 Self-RAG —— LLM 的知识增强 *** 1xx.">
+<meta name="description" content="Cognitive Architecture [2] # Cognitive architectures for RAG [1] CRAG # 论文 # Corrective Retrieval Augmented Generation Figure 2
+实现[10] # Corrective-RAG (CRAG) is a strategy for RAG that incorporates self-reflection / self-grading on retrieved documents.
+In the paper here, a few steps are taken:
+If at least one document exceeds the threshold for relevance, then it proceeds to generation Before generation, it performs knowledge refinement This partitions the document into &ldquo;knowledge strips&rdquo; It grades each strip, and filters our irrelevant ones If all documents fall below the relevance threshold or if the grader is unsure, then the framework seeks an additional datasource It will use web search to supplement retrieval We will implement some of these ideas from scratch using LangGraph:">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
 <meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptRAGSelfReflective/">
   <meta property="og:site_name" content="AIGC">
   <meta property="og:title" content="(原理|实战)Self-Reflective RAG">
-  <meta property="og:description" content="Cognitive Architecture [2] # Cognitive architectures for RAG [1] CRAG # Self-RAG [3] # Self-RAG 则是更加主动和智能的实现方式，主要步骤概括如下：
-判断是否需要额外检索事实性信息（retrieve on demand），仅当有需要时才召回 平行处理每个片段：生产prompt&#43;一个片段的生成结果 使用反思字段(Reflection tokens)，检查输出是否相关，选择最符合需要的片段； 再重复检索 生成结果会引用相关片段，以及输出结果是否符合该片段，便于查证事实。 参考 # Self-Reflective RAG with LangGraph
-OpenAI’s Bet on a Cognitive Architecture
-1xx. 写的太通透了！大模型自省式 RAG 与 LangGraph 的实践！
-CRAG # 1xx. Corrective Retrieval Augmented Generation Figure 2 1xx. Corrective RAG (CRAG) git
-1xx. 【社区第十三讲】 老刘说NLP线上交流
-SELF-RAG # NLP（廿一）：从 RAG 到 Self-RAG —— LLM 的知识增强 *** 1xx.">
+  <meta property="og:description" content="Cognitive Architecture [2] # Cognitive architectures for RAG [1] CRAG # 论文 # Corrective Retrieval Augmented Generation Figure 2
+实现[10] # Corrective-RAG (CRAG) is a strategy for RAG that incorporates self-reflection / self-grading on retrieved documents.
+In the paper here, a few steps are taken:
+If at least one document exceeds the threshold for relevance, then it proceeds to generation Before generation, it performs knowledge refinement This partitions the document into “knowledge strips” It grades each strip, and filters our irrelevant ones If all documents fall below the relevance threshold or if the grader is unsure, then the framework seeks an additional datasource It will use web search to supplement retrieval We will implement some of these ideas from scratch using LangGraph:">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="website">
 <title>(原理|实战)Self-Reflective RAG | AIGC</title>
@@ -30,7 +24,7 @@ SELF-RAG # NLP（廿一）：从 RAG 到 Self-RAG —— LLM 的知识增强 ***
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptRAGSelfReflective/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.3892ccf6979f1104fff855290dc7d14651dff5395d6705e113058aa2de037eab.js" integrity="sha256-OJLM9pefEQT/&#43;FUpDcfRRlHf9TldZwXhEwWKot4Dfqs=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.83b5c4dd34dff1832a5f8c35202f656a9309d563e31ecc14dfeea20546d61b94.js" integrity="sha256-g7XE3TTf8YMqX4w1IC9lapMJ1WPjHswU3&#43;6iBUbWG5Q=" crossorigin="anonymous"></script>
 
   
 
@@ -416,7 +410,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptAgenticRAG/" class="">Agentic RAG</a>
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptAgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
   
 
           
@@ -2093,14 +2087,32 @@ https://github.com/alex-shpak/hugo-book
 <nav id="TableOfContents">
   <ul>
     <li><a href="#cognitive-architecture-2">Cognitive Architecture [2]</a></li>
-    <li><a href="#crag">CRAG</a></li>
-    <li><a href="#self-rag-3">Self-RAG [3]</a></li>
+    <li><a href="#crag">CRAG</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#论文">论文</a></li>
+            <li><a href="#实现10">实现[10]</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+    <li><a href="#self-rag">Self-RAG</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#论文-1">论文</a></li>
+            <li><a href="#原理-20">原理 [20]</a></li>
+            <li><a href="#实现21">实现[21]</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
     <li><a href="#参考">参考</a>
       <ul>
         <li>
           <ul>
             <li><a href="#crag-1">CRAG</a></li>
-            <li><a href="#self-rag">SELF-RAG</a></li>
             <li><a href="#self-rag-1">Self-RAG</a></li>
           </ul>
         </li>
@@ -2131,10 +2143,47 @@ https://github.com/alex-shpak/hugo-book
   CRAG
   <a class="anchor" href="#crag">#</a>
 </h1>
-<h1 id="self-rag-3">
-  Self-RAG [3]
-  <a class="anchor" href="#self-rag-3">#</a>
+<h3 id="论文">
+  论文
+  <a class="anchor" href="#%e8%ae%ba%e6%96%87">#</a>
+</h3>
+<p><a href="https://arxiv.org/pdf/2401.15884.pdf">Corrective Retrieval Augmented Generation</a> Figure 2</p>
+<h3 id="实现10">
+  实现[10]
+  <a class="anchor" href="#%e5%ae%9e%e7%8e%b010">#</a>
+</h3>
+<p>Corrective-RAG (CRAG) is a strategy for RAG that incorporates <strong>self-reflection / self-grading</strong> on retrieved documents.</p>
+<p>In the paper here, a few steps are taken:</p>
+<ul>
+<li>If at least one document exceeds the threshold for relevance, then it proceeds to generation</li>
+<li>Before generation, it performs knowledge refinement</li>
+<li>This partitions the document into &ldquo;knowledge strips&rdquo;</li>
+<li>It grades each strip, and filters our irrelevant ones</li>
+<li>If all documents fall below the relevance threshold or if the grader is unsure, then the framework seeks an additional datasource</li>
+<li>It will use web search to supplement retrieval</li>
+</ul>
+<p>We will implement some of these ideas from scratch using LangGraph:</p>
+<ul>
+<li>Let&rsquo;s skip the knowledge refinement phase as a first pass. This can be added back as a node, if desired.</li>
+<li>If any documents are irrelevant, let&rsquo;s opt to supplement retrieval with web search.</li>
+<li>We&rsquo;ll use Tavily Search for web search.</li>
+<li>Let&rsquo;s use query re-writing to optimize the query for web search.</li>
+</ul>
+<p><img src="./images/crag.png" alt="crag.png" /></p>
+<h1 id="self-rag">
+  Self-RAG
+  <a class="anchor" href="#self-rag">#</a>
 </h1>
+<h3 id="论文-1">
+  论文
+  <a class="anchor" href="#%e8%ae%ba%e6%96%87-1">#</a>
+</h3>
+<p><a href="https://arxiv.org/pdf/2310.11511.pdf">SELF-RAG: LEARNING TO RETRIEVE, GENERATE, AND
+CRITIQUE THROUGH SELF-REFLECTION</a> Figure 1</p>
+<h3 id="原理-20">
+  原理 [20]
+  <a class="anchor" href="#%e5%8e%9f%e7%90%86-20">#</a>
+</h3>
 <p>Self-RAG 则是更加主动和智能的实现方式，主要步骤概括如下：</p>
 <ol>
 <li>判断是否需要额外检索事实性信息（retrieve on demand），仅当有需要时才召回</li>
@@ -2143,13 +2192,53 @@ https://github.com/alex-shpak/hugo-book
 <li>再重复检索</li>
 <li>生成结果会引用相关片段，以及输出结果是否符合该片段，便于查证事实。</li>
 </ol>
+<h3 id="实现21">
+  实现[21]
+  <a class="anchor" href="#%e5%ae%9e%e7%8e%b021">#</a>
+</h3>
+<p>Self-RAG is a strategy for RAG that incorporates <strong>self-reflection / self-grading</strong> on retrieved documents and generations.</p>
+<p>In the <a href="https://arxiv.org/abs/2310.11511">paper</a>, a few decisions are made:</p>
+<ol>
+<li>Should I retrieve from retriever, <code>R</code> -</li>
+</ol>
+<ul>
+<li>Input: <code>x (question)</code> OR <code>x (question)</code>, <code>y (generation)</code></li>
+<li>Decides when to retrieve <code>D</code> chunks with <code>R</code></li>
+<li>Output: <code>yes, no, continue</code></li>
+</ul>
+<ol start="2">
+<li>Are the retrieved passages <code>D</code> relevant to the question <code>x</code> -</li>
+</ol>
+<ul>
+<li>Input: (<code>x (question)</code>, <code>d (chunk)</code>) for <code>d</code> in <code>D</code></li>
+<li><code>d</code> provides useful information to solve <code>x</code></li>
+<li>Output: <code>relevant, irrelevant</code></li>
+</ul>
+<ol start="3">
+<li>Are the LLM generation from each chunk in <code>D</code> is relevant to the chunk (hallucinations, etc) -</li>
+</ol>
+<ul>
+<li>Input: <code>x (question)</code>, <code>d (chunk)</code>, <code>y (generation)</code> for <code>d</code> in <code>D</code></li>
+<li>All of the verification-worthy statements in <code>y (generation)</code> are supported by <code>d</code></li>
+<li>Output: <code>{fully supported, partially supported, no support</code></li>
+</ul>
+<ol start="4">
+<li>The LLM generation from each chunk in <code>D</code> is a useful response to <code>x (question)</code> -</li>
+</ol>
+<ul>
+<li>Input: <code>x (question)</code>, <code>y (generation)</code> for <code>d</code> in <code>D</code></li>
+<li><code>y (generation)</code> is a useful response to <code>x (question)</code>.</li>
+<li>Output: <code>{5, 4, 3, 2, 1}</code></li>
+</ul>
+<p>We will implement some of these ideas from scratch using <a href="https://langchain-ai.github.io/langgraph/">LangGraph</a>.</p>
+<p><img src="./images/self-rag.png" alt="self-rag.png" /></p>
 <h1 id="参考">
   参考
   <a class="anchor" href="#%e5%8f%82%e8%80%83">#</a>
 </h1>
 <ol>
 <li>
-<p><a href="https://blog.langchain.dev/agentic-rag-with-langgraph/">Self-Reflective RAG with LangGraph</a></p>
+<p><a href="https://blog.langchain.dev/agentic-rag-with-langgraph/">Self-Reflective RAG with LangGraph</a>  ***</p>
 </li>
 <li>
 <p><a href="https://blog.langchain.dev/openais-bet-on-a-cognitive-architecture/">OpenAI&rsquo;s Bet on a Cognitive Architecture</a></p>
@@ -2160,24 +2249,23 @@ https://github.com/alex-shpak/hugo-book
   CRAG
   <a class="anchor" href="#crag-1">#</a>
 </h3>
-<p>1xx. <a href="https://arxiv.org/pdf/2401.15884.pdf">Corrective Retrieval Augmented Generation</a> Figure 2
-1xx. <a href="https://github.com/langchain-ai/langgraph/blob/main/examples/rag/langgraph_crag.ipynb">Corrective RAG (CRAG)</a> git</p>
-<p>1xx. 【社区第十三讲】 老刘说NLP线上交流</p>
-<h3 id="self-rag">
-  SELF-RAG
-  <a class="anchor" href="#self-rag">#</a>
-</h3>
-<ol start="3">
-<li><a href="https://zhuanlan.zhihu.com/p/661465330?utm_id=0">NLP（廿一）：从 RAG 到 Self-RAG —— LLM 的知识增强</a> ***</li>
+<ol start="10">
+<li><a href="https://github.com/langchain-ai/langgraph/blob/main/examples/rag/langgraph_crag.ipynb">Corrective RAG (CRAG)</a> langgraph  git</li>
 </ol>
-<p>1xx. <a href="https://arxiv.org/pdf/2310.11511.pdf">SELF-RAG: LEARNING TO RETRIEVE, GENERATE, AND
-CRITIQUE THROUGH SELF-REFLECTION</a> Figure 1
-1xx. <a href="https://github.com/langchain-ai/langgraph/blob/main/examples/rag/langgraph_self_rag.ipynb">Self-RAG</a> git</p>
+<p>1xx. 【社区第十三讲】 老刘说NLP线上交流</p>
 <h3 id="self-rag-1">
   Self-RAG
   <a class="anchor" href="#self-rag-1">#</a>
 </h3>
-<p>1xx. <a href="https://github.com/www6v/self-rag">original implementation of SELF-RAG</a></p>
+<ol start="20">
+<li>
+<p><a href="https://zhuanlan.zhihu.com/p/661465330?utm_id=0">NLP（廿一）：从 RAG 到 Self-RAG —— LLM 的知识增强</a> ***</p>
+</li>
+<li>
+<p><a href="https://github.com/langchain-ai/langgraph/blob/main/examples/rag/langgraph_self_rag.ipynb">Self-RAG</a> langGraph git</p>
+</li>
+</ol>
+<p>1xx. <a href="https://github.com/AkariAsai/self-rag">original implementation of Self-RAG</a></p>
 </article>
  
       
@@ -2220,14 +2308,32 @@ CRITIQUE THROUGH SELF-REFLECTION</a> Figure 1
 <nav id="TableOfContents">
   <ul>
     <li><a href="#cognitive-architecture-2">Cognitive Architecture [2]</a></li>
-    <li><a href="#crag">CRAG</a></li>
-    <li><a href="#self-rag-3">Self-RAG [3]</a></li>
+    <li><a href="#crag">CRAG</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#论文">论文</a></li>
+            <li><a href="#实现10">实现[10]</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+    <li><a href="#self-rag">Self-RAG</a>
+      <ul>
+        <li>
+          <ul>
+            <li><a href="#论文-1">论文</a></li>
+            <li><a href="#原理-20">原理 [20]</a></li>
+            <li><a href="#实现21">实现[21]</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
     <li><a href="#参考">参考</a>
       <ul>
         <li>
           <ul>
             <li><a href="#crag-1">CRAG</a></li>
-            <li><a href="#self-rag">SELF-RAG</a></li>
             <li><a href="#self-rag-1">Self-RAG</a></li>
           </ul>
         </li>
