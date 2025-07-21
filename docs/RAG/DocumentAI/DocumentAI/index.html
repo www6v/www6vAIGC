@@ -3,32 +3,46 @@
 <head>
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="Cognitive Architecture [2] # Cognitive architectures for RAG [1] CRAG # 论文 # Corrective Retrieval Augmented Generation Figure 2
-实现[10] # Corrective-RAG (CRAG) is a strategy for RAG that incorporates self-reflection / self-grading on retrieved documents.
-In the paper here, a few steps are taken:
-If at least one document exceeds the threshold for relevance, then it proceeds to generation Before generation, it performs knowledge refinement This partitions the document into &ldquo;knowledge strips&rdquo; It grades each strip, and filters our irrelevant ones If all documents fall below the relevance threshold or if the grader is unsure, then the framework seeks an additional datasource It will use web search to supplement retrieval We will implement some of these ideas from scratch using LangGraph:">
+<meta name="description" content="
+文档理解 两种范式[1, 10] # pipeline(OCR) # ERNIElayout [1] LayoutLM系列 [1] 端到端(OCR-free) # 基于小模型的OCR-free微调方案
+Donut 基于大模型的OCR-FREE微调方案
+LLaVAR [12] TextMonkey [11] mPLUG-DocOwl1.5 [20]
+DocOwl1.5由mPLUG-Owl2初始化，使用ViT/L-14作为视觉编码器，并使用带有模态自适应模块的7B大模型作为解码器。 每个子图像由ViT/L-14编码为1,024个特征，然后由H-Reducer缩减为256个特征。 TextMonkey [20]
+为了减少图像特征的冗余，继承了Qwen-VL中的图像重采样器，在每个窗口中都会使用。 文档版式分析数据集[10] # 参考 # 老刘-分享 值得一看的文档理解前沿方案及版式分析开源数据：三种模式、九大数据集 Monkey
+Monkey Demo LLaVAR：增强的视觉指令微调
+LLaVAR: Enhanced Visual Instruction Tuning for Text-rich Image Understanding 1xx. 加速 Document AI (文档智能) 发展
+加速 Document AI (文档智能) 发展
+1xx. 阿里面向企业数字化的文档智能技术与应用
+其他 # 也看跨模态大模型遇见文档理解：mPLUG-DocOwl1.5及TextMonkey方案中的数据工程 ">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
-<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptRAGSelfReflective/">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/RAG/DocumentAI/DocumentAI/">
   <meta property="og:site_name" content="基于LLM的系统设计与实现">
-  <meta property="og:title" content="(原理|实战)Self-Reflective RAG">
-  <meta property="og:description" content="Cognitive Architecture [2] # Cognitive architectures for RAG [1] CRAG # 论文 # Corrective Retrieval Augmented Generation Figure 2
-实现[10] # Corrective-RAG (CRAG) is a strategy for RAG that incorporates self-reflection / self-grading on retrieved documents.
-In the paper here, a few steps are taken:
-If at least one document exceeds the threshold for relevance, then it proceeds to generation Before generation, it performs knowledge refinement This partitions the document into “knowledge strips” It grades each strip, and filters our irrelevant ones If all documents fall below the relevance threshold or if the grader is unsure, then the framework seeks an additional datasource It will use web search to supplement retrieval We will implement some of these ideas from scratch using LangGraph:">
+  <meta property="og:title" content="文档智能">
+  <meta property="og:description" content="
+文档理解 两种范式[1, 10] # pipeline(OCR) # ERNIElayout [1] LayoutLM系列 [1] 端到端(OCR-free) # 基于小模型的OCR-free微调方案
+Donut 基于大模型的OCR-FREE微调方案
+LLaVAR [12] TextMonkey [11] mPLUG-DocOwl1.5 [20]
+DocOwl1.5由mPLUG-Owl2初始化，使用ViT/L-14作为视觉编码器，并使用带有模态自适应模块的7B大模型作为解码器。 每个子图像由ViT/L-14编码为1,024个特征，然后由H-Reducer缩减为256个特征。 TextMonkey [20]
+为了减少图像特征的冗余，继承了Qwen-VL中的图像重采样器，在每个窗口中都会使用。 文档版式分析数据集[10] # 参考 # 老刘-分享 值得一看的文档理解前沿方案及版式分析开源数据：三种模式、九大数据集 Monkey
+Monkey Demo LLaVAR：增强的视觉指令微调
+LLaVAR: Enhanced Visual Instruction Tuning for Text-rich Image Understanding 1xx. 加速 Document AI (文档智能) 发展
+加速 Document AI (文档智能) 发展
+1xx. 阿里面向企业数字化的文档智能技术与应用
+其他 # 也看跨模态大模型遇见文档理解：mPLUG-DocOwl1.5及TextMonkey方案中的数据工程 ">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="website">
-<title>(原理|实战)Self-Reflective RAG | 基于LLM的系统设计与实现</title>
+<title>文档智能 | 基于LLM的系统设计与实现</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
-<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptRAGSelfReflective/">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/RAG/DocumentAI/DocumentAI/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.f06c58eb71231fb5082785104f54a1326daee2714c76034121042078b4ea4c31.js" integrity="sha256-8GxY63EjH7UIJ4UQT1ShMm2u4nFMdgNBIQQgeLTqTDE=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.dc53f06686bad2430ab5713f68dce8a6cd2cb614040ed672c4ffd22a17ce4faf.js" integrity="sha256-3FPwZoa60kMKtXE/aNzops0sthQEDtZyxP/SKhfOT68=" crossorigin="anonymous"></script>
 
   
 
-<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptRAGSelfReflective/index.xml" title="基于LLM的系统设计与实现" />
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/RAG/DocumentAI/DocumentAI/index.xml" title="基于LLM的系统设计与实现" />
 <!--
 Made with Book Theme
 https://github.com/alex-shpak/hugo-book
@@ -428,7 +442,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptAgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
   
 
           
@@ -446,7 +460,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/gptRAGSelfReflective/" class="active">(原理|实战)Self-Reflective RAG</a>
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
   
 
           
@@ -500,7 +514,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/gptRAGKG/" class="">RAG KG</a>
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
   
 
           
@@ -536,7 +550,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptRAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
   
 
           
@@ -554,7 +568,48 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptRAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>文档智能</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/DocumentAI/MinerU/" class="">MinerU</a>
   
 
           
@@ -572,16 +627,11 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/gptDocumentAI/" class="">文档智能</a>
+    <a href="/www6vAIGC/docs/RAG/DocumentAI/DocumentAI/" class="active">文档智能</a>
   
 
           
   <ul>
-    
-  </ul>
-
-        </li>
-      
     
   </ul>
 
@@ -2484,7 +2534,7 @@ https://github.com/alex-shpak/hugo-book
     <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
   </label>
 
-  <h3>(原理|实战)Self-Reflective RAG</h3>
+  <h3>文档智能</h3>
 
   <label for="toc-control">
     
@@ -2500,34 +2550,22 @@ https://github.com/alex-shpak/hugo-book
   
 <nav id="TableOfContents">
   <ul>
-    <li><a href="#cognitive-architecture-2">Cognitive Architecture [2]</a></li>
-    <li><a href="#crag">CRAG</a>
+    <li><a href="#文档理解-两种范式1-10">文档理解 两种范式[1, 10]</a>
       <ul>
         <li>
           <ul>
-            <li><a href="#论文">论文</a></li>
-            <li><a href="#实现10">实现[10]</a></li>
+            <li><a href="#pipelineocr">pipeline(OCR)</a></li>
+            <li><a href="#端到端ocr-free">端到端(OCR-free)</a></li>
           </ul>
         </li>
       </ul>
     </li>
-    <li><a href="#self-rag">Self-RAG</a>
-      <ul>
-        <li>
-          <ul>
-            <li><a href="#论文-1">论文</a></li>
-            <li><a href="#原理-20">原理 [20]</a></li>
-            <li><a href="#实现21">实现[21]</a></li>
-          </ul>
-        </li>
-      </ul>
-    </li>
+    <li><a href="#文档版式分析数据集10">文档版式分析数据集[10]</a></li>
     <li><a href="#参考">参考</a>
       <ul>
         <li>
           <ul>
-            <li><a href="#crag-1">CRAG</a></li>
-            <li><a href="#self-rag-1">Self-RAG</a></li>
+            <li><a href="#其他">其他</a></li>
           </ul>
         </li>
       </ul>
@@ -2546,140 +2584,68 @@ https://github.com/alex-shpak/hugo-book
       
   <article class="markdown book-article"><p></p>
 <!-- more -->
-<h1 id="cognitive-architecture-2">
-  Cognitive Architecture [2]
-  <a class="anchor" href="#cognitive-architecture-2">#</a>
+<h1 id="文档理解-两种范式1-10">
+  文档理解 两种范式[1, 10]
+  <a class="anchor" href="#%e6%96%87%e6%a1%a3%e7%90%86%e8%a7%a3-%e4%b8%a4%e7%a7%8d%e8%8c%83%e5%bc%8f1-10">#</a>
 </h1>
+<h3 id="pipelineocr">
+  pipeline(OCR)
+  <a class="anchor" href="#pipelineocr">#</a>
+</h3>
 <ul>
-<li>Cognitive architectures for RAG [1]</li>
+<li>ERNIElayout [1]</li>
+<li>LayoutLM系列 [1]</li>
 </ul>
-<h1 id="crag">
-  CRAG
-  <a class="anchor" href="#crag">#</a>
+<h3 id="端到端ocr-free">
+  端到端(OCR-free)
+  <a class="anchor" href="#%e7%ab%af%e5%88%b0%e7%ab%afocr-free">#</a>
+</h3>
+<ul>
+<li>
+<p>基于小模型的OCR-free微调方案</p>
+<ul>
+<li>Donut</li>
+</ul>
+</li>
+<li>
+<p>基于大模型的OCR-FREE微调方案</p>
+<ul>
+<li>LLaVAR [12]</li>
+<li>TextMonkey [11]</li>
+<li>mPLUG-DocOwl1.5  [20]<br>
+DocOwl1.5由mPLUG-Owl2初始化，使用<strong>ViT/L-14作为视觉编码器</strong>，并使用带有模态自适应模块的7B大模型作为<strong>解码器</strong>。
+每个子图像由ViT/L-14编码为1,024个特征，然后由<strong>H-Reducer缩减为256个特征</strong>。</li>
+<li>TextMonkey [20]<br>
+为了减少图像特征的冗余，继承了<strong>Qwen-VL</strong>中的图像<strong>重采样器</strong>，在每个窗口中都会使用。</li>
+</ul>
+</li>
+</ul>
+<h1 id="文档版式分析数据集10">
+  文档版式分析数据集[10]
+  <a class="anchor" href="#%e6%96%87%e6%a1%a3%e7%89%88%e5%bc%8f%e5%88%86%e6%9e%90%e6%95%b0%e6%8d%ae%e9%9b%8610">#</a>
 </h1>
-<h3 id="论文">
-  论文
-  <a class="anchor" href="#%e8%ae%ba%e6%96%87">#</a>
-</h3>
-<p><a href="https://arxiv.org/pdf/2401.15884.pdf">Corrective Retrieval Augmented Generation</a> Figure 2</p>
-<h3 id="实现10">
-  实现[10]
-  <a class="anchor" href="#%e5%ae%9e%e7%8e%b010">#</a>
-</h3>
-<p>Corrective-RAG (CRAG) is a strategy for RAG that incorporates <strong>self-reflection / self-grading</strong> on retrieved documents.</p>
-<p>In the paper here, a few steps are taken:</p>
-<ul>
-<li>If at least one document exceeds the threshold for relevance, then it proceeds to generation</li>
-<li>Before generation, it performs knowledge refinement</li>
-<li>This partitions the document into &ldquo;knowledge strips&rdquo;</li>
-<li>It grades each strip, and filters our irrelevant ones</li>
-<li>If all documents fall below the relevance threshold or if the grader is unsure, then the framework seeks an additional datasource</li>
-<li>It will use web search to supplement retrieval</li>
-</ul>
-<p>We will implement some of these ideas from scratch using LangGraph:</p>
-<ul>
-<li>Let&rsquo;s skip the knowledge refinement phase as a first pass. This can be added back as a node, if desired.</li>
-<li>If any documents are irrelevant, let&rsquo;s opt to supplement retrieval with web search.</li>
-<li>We&rsquo;ll use Tavily Search for web search.</li>
-<li>Let&rsquo;s use query re-writing to optimize the query for web search.</li>
-</ul>
-<p><img src="./images/crag.png" alt="crag.png" /></p>
-<h1 id="self-rag">
-  Self-RAG
-  <a class="anchor" href="#self-rag">#</a>
-</h1>
-<h3 id="论文-1">
-  论文
-  <a class="anchor" href="#%e8%ae%ba%e6%96%87-1">#</a>
-</h3>
-<p><a href="https://arxiv.org/pdf/2310.11511.pdf">SELF-RAG: LEARNING TO RETRIEVE, GENERATE, AND
-CRITIQUE THROUGH SELF-REFLECTION</a> Figure 1</p>
-<h3 id="原理-20">
-  原理 [20]
-  <a class="anchor" href="#%e5%8e%9f%e7%90%86-20">#</a>
-</h3>
-<p>Self-RAG 则是更加主动和智能的实现方式，主要步骤概括如下：</p>
-<ol>
-<li>判断是否需要额外检索事实性信息（retrieve on demand），仅当有需要时才召回</li>
-<li>平行处理每个片段：生产prompt+一个片段的生成结果</li>
-<li>使用<strong>反思字段(Reflection tokens)</strong>，检查输出是否相关，选择最符合需要的片段；</li>
-<li>再重复检索</li>
-<li>生成结果会引用相关片段，以及输出结果是否符合该片段，便于查证事实。</li>
-</ol>
-<h3 id="实现21">
-  实现[21]
-  <a class="anchor" href="#%e5%ae%9e%e7%8e%b021">#</a>
-</h3>
-<p>Self-RAG is a strategy for RAG that incorporates <strong>self-reflection / self-grading</strong> on retrieved documents and generations.</p>
-<p>In the <a href="https://arxiv.org/abs/2310.11511">paper</a>, a few decisions are made:</p>
-<ol>
-<li>Should I retrieve from retriever, <code>R</code> -</li>
-</ol>
-<ul>
-<li>Input: <code>x (question)</code> OR <code>x (question)</code>, <code>y (generation)</code></li>
-<li>Decides when to retrieve <code>D</code> chunks with <code>R</code></li>
-<li>Output: <code>yes, no, continue</code></li>
-</ul>
-<ol start="2">
-<li>Are the retrieved passages <code>D</code> relevant to the question <code>x</code> -</li>
-</ol>
-<ul>
-<li>Input: (<code>x (question)</code>, <code>d (chunk)</code>) for <code>d</code> in <code>D</code></li>
-<li><code>d</code> provides useful information to solve <code>x</code></li>
-<li>Output: <code>relevant, irrelevant</code></li>
-</ul>
-<ol start="3">
-<li>Are the LLM generation from each chunk in <code>D</code> is relevant to the chunk (hallucinations, etc) -</li>
-</ol>
-<ul>
-<li>Input: <code>x (question)</code>, <code>d (chunk)</code>, <code>y (generation)</code> for <code>d</code> in <code>D</code></li>
-<li>All of the verification-worthy statements in <code>y (generation)</code> are supported by <code>d</code></li>
-<li>Output: <code>{fully supported, partially supported, no support</code></li>
-</ul>
-<ol start="4">
-<li>The LLM generation from each chunk in <code>D</code> is a useful response to <code>x (question)</code> -</li>
-</ol>
-<ul>
-<li>Input: <code>x (question)</code>, <code>y (generation)</code> for <code>d</code> in <code>D</code></li>
-<li><code>y (generation)</code> is a useful response to <code>x (question)</code>.</li>
-<li>Output: <code>{5, 4, 3, 2, 1}</code></li>
-</ul>
-<p>We will implement some of these ideas from scratch using <a href="https://langchain-ai.github.io/langgraph/">LangGraph</a>.</p>
-<p><img src="./images/self-rag.png" alt="self-rag.png" /></p>
 <h1 id="参考">
   参考
   <a class="anchor" href="#%e5%8f%82%e8%80%83">#</a>
 </h1>
 <ol>
-<li>
-<p><a href="https://blog.langchain.dev/agentic-rag-with-langgraph/">Self-Reflective RAG with LangGraph</a>  ***</p>
-</li>
-<li>
-<p><a href="https://blog.langchain.dev/openais-bet-on-a-cognitive-architecture/">OpenAI&rsquo;s Bet on a Cognitive Architecture</a></p>
-</li>
+<li>老刘-分享</li>
+<li><a href="https://mp.weixin.qq.com/s/FsjoUUFssMv2UkbxM-IJ3A">值得一看的文档理解前沿方案及版式分析开源数据：三种模式、九大数据集 </a></li>
+<li><a href="https://github.com/Yuliang-Liu/Monkey">Monkey</a><br>
+<a href="http://vlrlab-monkey.xyz:7684/">Monkey Demo</a></li>
+<li><a href="https://zhuanlan.zhihu.com/p/670175648">LLaVAR：增强的视觉指令微调</a><br>
+<a href="https://llavar.github.io/">LLaVAR: Enhanced Visual Instruction Tuning for Text-rich Image Understanding</a></li>
 </ol>
-<p>1xx. <a href="https://blog.csdn.net/2301_78285120/article/details/136103211">写的太通透了！大模型自省式 RAG 与 LangGraph 的实践！</a></p>
-<h3 id="crag-1">
-  CRAG
-  <a class="anchor" href="#crag-1">#</a>
-</h3>
-<ol start="10">
-<li><a href="https://github.com/langchain-ai/langgraph/blob/main/examples/rag/langgraph_crag.ipynb">Corrective RAG (CRAG)</a> langgraph  git</li>
-</ol>
-<p>1xx. 【社区第十三讲】 老刘说NLP线上交流</p>
-<h3 id="self-rag-1">
-  Self-RAG
-  <a class="anchor" href="#self-rag-1">#</a>
+<p>1xx. <a href="https://huggingface.co/blog/zh/document-ai">加速 Document AI (文档智能) 发展</a><br>
+<a href="https://baijiahao.baidu.com/s?id=1755096032832674219&amp;wfr=spider&amp;for=pc">加速 Document AI (文档智能) 发展</a></p>
+<p>1xx. <a href="https://mp.weixin.qq.com/s/d2Nns1qashMbcXPMG-4McQ">阿里面向企业数字化的文档智能技术与应用</a></p>
+<h3 id="其他">
+  其他
+  <a class="anchor" href="#%e5%85%b6%e4%bb%96">#</a>
 </h3>
 <ol start="20">
-<li>
-<p><a href="https://zhuanlan.zhihu.com/p/661465330?utm_id=0">NLP（廿一）：从 RAG 到 Self-RAG —— LLM 的知识增强</a> ***</p>
-</li>
-<li>
-<p><a href="https://github.com/langchain-ai/langgraph/blob/main/examples/rag/langgraph_self_rag.ipynb">Self-RAG</a> langGraph git</p>
-</li>
+<li><a href="https://mp.weixin.qq.com/s/1MSOZfbKcPW1BTT4f9XvQg">也看跨模态大模型遇见文档理解：mPLUG-DocOwl1.5及TextMonkey方案中的数据工程 </a></li>
 </ol>
-<p>1xx. <a href="https://github.com/AkariAsai/self-rag">original implementation of Self-RAG</a></p>
 </article>
  
       
@@ -2721,34 +2687,22 @@ CRITIQUE THROUGH SELF-REFLECTION</a> Figure 1</p>
   
 <nav id="TableOfContents">
   <ul>
-    <li><a href="#cognitive-architecture-2">Cognitive Architecture [2]</a></li>
-    <li><a href="#crag">CRAG</a>
+    <li><a href="#文档理解-两种范式1-10">文档理解 两种范式[1, 10]</a>
       <ul>
         <li>
           <ul>
-            <li><a href="#论文">论文</a></li>
-            <li><a href="#实现10">实现[10]</a></li>
+            <li><a href="#pipelineocr">pipeline(OCR)</a></li>
+            <li><a href="#端到端ocr-free">端到端(OCR-free)</a></li>
           </ul>
         </li>
       </ul>
     </li>
-    <li><a href="#self-rag">Self-RAG</a>
-      <ul>
-        <li>
-          <ul>
-            <li><a href="#论文-1">论文</a></li>
-            <li><a href="#原理-20">原理 [20]</a></li>
-            <li><a href="#实现21">实现[21]</a></li>
-          </ul>
-        </li>
-      </ul>
-    </li>
+    <li><a href="#文档版式分析数据集10">文档版式分析数据集[10]</a></li>
     <li><a href="#参考">参考</a>
       <ul>
         <li>
           <ul>
-            <li><a href="#crag-1">CRAG</a></li>
-            <li><a href="#self-rag-1">Self-RAG</a></li>
+            <li><a href="#其他">其他</a></li>
           </ul>
         </li>
       </ul>
