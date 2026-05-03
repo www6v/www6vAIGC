@@ -1,0 +1,4338 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  OpenClaw 如何保证长程任务的稳定性：从架构到源码实现
+  #
+
+
+OpenClaw v2026.4.21，源码版本分析。所有结论来自官方文档与 openclaw npm 包源码（TypeScript → ESM bundle），源码路径标注格式为 src/&lt;path&gt;。
+
+
+  概览
+  #
+
+OpenClaw 不是简单地把一个 LLM API 调用丢出去就完了。它在 Gateway 层构建了一整套 任务生命周期管理 &#43; 可靠性机制，涵盖任务账本、超时保护、队列串行化、文件级写锁、上下文压缩、进程守护等多层防护。
+
+
+  1. Background Tasks — 任务生命周期账本
+  #
+
+
+  1.1 状态机
+  #
+
+所有脱离主会话的工作（ACP runs、subagent spawns、cron 执行、CLI agent 命令）都会创建一条 Task 记录，经历完整状态机：
+queued → running → succeeded / failed / timed_out / cancelled / lost
+
+  1.2 源码实现
+  #
+
+任务执行器（src/tasks/task-executor.ts）定义了 6 个核心操作：
+// src/tasks/task-executor.ts
+function createQueuedTaskRun(params) { /* → status: &#34;queued&#34; */ }
+function createRunningTaskRun(params) { /* → status: &#34;running&#34; */ }
+function startTaskRunByRunId(params)  { /* markTaskRunningByRunId */ }
+function recordTaskRunProgressByRunId(params) { /* 进度更新 */ }
+function completeTaskRunByRunId(params) { /* → status: &#34;succeeded&#34; */ }
+function failTaskRunByRunId(params)     { /* → status: &#34;failed&#34; */ }
+分离任务运行时（src/tasks/detached-task-runtime.ts）封装了这些操作，并提供 可插拔的生命周期钩子：">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/stability/openclaw-long-task-stability/">
+  <meta property="og:site_name" content="基于LLM的系统设计与实现">
+  <meta property="og:title" content="基于LLM的系统设计与实现">
+  <meta property="og:description" content="OpenClaw 如何保证长程任务的稳定性：从架构到源码实现 # OpenClaw v2026.4.21，源码版本分析。所有结论来自官方文档与 openclaw npm 包源码（TypeScript → ESM bundle），源码路径标注格式为 src/&lt;path&gt;。
+概览 # OpenClaw 不是简单地把一个 LLM API 调用丢出去就完了。它在 Gateway 层构建了一整套 任务生命周期管理 &#43; 可靠性机制，涵盖任务账本、超时保护、队列串行化、文件级写锁、上下文压缩、进程守护等多层防护。
+1. Background Tasks — 任务生命周期账本 # 1.1 状态机 # 所有脱离主会话的工作（ACP runs、subagent spawns、cron 执行、CLI agent 命令）都会创建一条 Task 记录，经历完整状态机：
+queued → running → succeeded / failed / timed_out / cancelled / lost 1.2 源码实现 # 任务执行器（src/tasks/task-executor.ts）定义了 6 个核心操作：
+// src/tasks/task-executor.ts function createQueuedTaskRun(params) { /* → status: &#34;queued&#34; */ } function createRunningTaskRun(params) { /* → status: &#34;running&#34; */ } function startTaskRunByRunId(params) { /* markTaskRunningByRunId */ } function recordTaskRunProgressByRunId(params) { /* 进度更新 */ } function completeTaskRunByRunId(params) { /* → status: &#34;succeeded&#34; */ } function failTaskRunByRunId(params) { /* → status: &#34;failed&#34; */ } 分离任务运行时（src/tasks/detached-task-runtime.ts）封装了这些操作，并提供 可插拔的生命周期钩子：">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="docs">
+<title>Openclaw Long Task Stability | 基于LLM的系统设计与实现</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/stability/openclaw-long-task-stability/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.82a42bc12a9d075dec61907a12e3c606fe4237d56e127db2ccb4e2e2b58df6ec.js" integrity="sha256-gqQrwSqdB13sYZB6EuPGBv5CN9VuEn2yzLTi4rWN9uw=" crossorigin="anonymous"></script>
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>基于LLM的系统设计与实现</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b757002e9620728c23883bffd127cb72" class="toggle"  />
+    <label for="section-b757002e9620728c23883bffd127cb72" class="flex justify-between">
+      <a role="button" class="">Platform *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0b800a1752a4e836473ce3e89db51e41" class="toggle"  />
+    <label for="section-0b800a1752a4e836473ce3e89db51e41" class="flex justify-between">
+      <a role="button" class="">Multi-agent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="toggle"  />
+    <label for="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="flex justify-between">
+      <a role="button" class="">Communication *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Agent Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Reflection</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Planning</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Sandbox</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Tool use</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle" checked />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code/" class="">Cloud Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle" checked />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/openclaw-sandbox-security/" class="">Openclaw Sandbox Security</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/stability/openclaw-long-task-stability/" class="active">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/" class="">Openclaw Conversation State Management</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/" class="">Openclaw Tool Invocation Flow</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle"  />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">(Manus)context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Openclaw Long Task Stability</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openclaw-如何保证长程任务的稳定性从架构到源码实现">OpenClaw 如何保证长程任务的稳定性：从架构到源码实现</a>
+      <ul>
+        <li><a href="#概览">概览</a></li>
+        <li><a href="#1-background-tasks--任务生命周期账本">1. Background Tasks — 任务生命周期账本</a>
+          <ul>
+            <li><a href="#11-状态机">1.1 状态机</a></li>
+            <li><a href="#12-源码实现">1.2 源码实现</a></li>
+            <li><a href="#13-终端状态判定">1.3 终端状态判定</a></li>
+          </ul>
+        </li>
+        <li><a href="#2-push-based-完成通知">2. Push-based 完成通知</a>
+          <ul>
+            <li><a href="#21-两种投递路径">2.1 两种投递路径</a></li>
+            <li><a href="#22-heartbeat-wake-机制srcinfraheartbeat-wakets">2.2 Heartbeat Wake 机制（<code>src/infra/heartbeat-wake.ts</code>）</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-多层超时保护">3. 多层超时保护</a>
+          <ul>
+            <li><a href="#31-超时层级">3.1 超时层级</a></li>
+            <li><a href="#32-源码实现">3.2 源码实现</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-命令队列--session-write-lock--防并发冲突">4. 命令队列 + Session Write Lock — 防并发冲突</a>
+          <ul>
+            <li><a href="#41-command-queuesrcprocesscommand-queuets">4.1 Command Queue（<a href="https://github.com/openclaw/openclaw/blob/main/src/process/command-queue.ts">src/process/command-queue.ts</a>）</a></li>
+            <li><a href="#42-session-write-locksrcagentssession-write-lockts">4.2 Session Write Lock（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-write-lock.ts">src/agents/session-write-lock.ts</a>）</a></li>
+            <li><a href="#43-keyedasyncqueuesrcplugin-sdkkeyed-async-queuets">4.3 KeyedAsyncQueue（<a href="https://github.com/openclaw/openclaw/blob/main/src/plugin-sdk/keyed-async-queue.ts">src/plugin-sdk/keyed-async-queue.ts</a>）</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-compaction--上下文窗口管理">5. Compaction — 上下文窗口管理</a>
+          <ul>
+            <li><a href="#51-源码模块分布">5.1 源码模块分布</a></li>
+            <li><a href="#52-预压缩preemptive-compaction">5.2 预压缩（Preemptive Compaction）</a></li>
+            <li><a href="#53-compaction-retry--aggregate-timeoutruncompaction-retry-aggregate-timeoutts">5.3 Compaction Retry + Aggregate Timeout（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/compaction-retry-aggregate-timeout.ts">run/compaction-retry-aggregate-timeout.ts</a>）</a></li>
+            <li><a href="#54-session-truncationsession-truncationts">5.4 Session Truncation（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/session-truncation.ts">session-truncation.ts</a>）</a></li>
+            <li><a href="#55-compaction-失败分类compact-reasonsts">5.5 Compaction 失败分类（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/compact-reasons.ts">compact-reasons.ts</a>）</a></li>
+            <li><a href="#56-compaction-生命周期钩子">5.6 Compaction 生命周期钩子</a></li>
+          </ul>
+        </li>
+        <li><a href="#6-session-生命周期管理">6. Session 生命周期管理</a>
+          <ul>
+            <li><a href="#61-存储结构">6.1 存储结构</a></li>
+            <li><a href="#62-session-write-lock-的集成">6.2 Session Write Lock 的集成</a></li>
+            <li><a href="#63-session-maintenance">6.3 Session Maintenance</a></li>
+          </ul>
+        </li>
+        <li><a href="#7-gateway-daemon--进程守护">7. Gateway Daemon + 进程守护</a>
+          <ul>
+            <li><a href="#71-子进程桥接">7.1 子进程桥接</a></li>
+            <li><a href="#72-gateway-locksrcgatewaygateway-lockts">7.2 Gateway Lock（<a href="https://github.com/openclaw/openclaw/blob/main/src/gateway/gateway-lock.ts">src/gateway/gateway-lock.ts</a>）</a></li>
+            <li><a href="#73-重启安全">7.3 重启安全</a></li>
+          </ul>
+        </li>
+        <li><a href="#8-清理机制">8. 清理机制</a>
+          <ul>
+            <li><a href="#81-isolated-cron-run-清理">8.1 Isolated Cron Run 清理</a></li>
+            <li><a href="#82-exec-background-session-ttl">8.2 Exec Background Session TTL</a></li>
+          </ul>
+        </li>
+        <li><a href="#架构全图">架构全图</a></li>
+        <li><a href="#总结">总结</a></li>
+        <li><a href="#参考资料">参考资料</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="openclaw-如何保证长程任务的稳定性从架构到源码实现">
+  OpenClaw 如何保证长程任务的稳定性：从架构到源码实现
+  <a class="anchor" href="#openclaw-%e5%a6%82%e4%bd%95%e4%bf%9d%e8%af%81%e9%95%bf%e7%a8%8b%e4%bb%bb%e5%8a%a1%e7%9a%84%e7%a8%b3%e5%ae%9a%e6%80%a7%e4%bb%8e%e6%9e%b6%e6%9e%84%e5%88%b0%e6%ba%90%e7%a0%81%e5%ae%9e%e7%8e%b0">#</a>
+</h1>
+<blockquote>
+<p>OpenClaw v2026.4.21，源码版本分析。所有结论来自官方文档与 <code>openclaw</code> npm 包源码（TypeScript → ESM bundle），源码路径标注格式为 <code>src/&lt;path&gt;</code>。</p></blockquote>
+<hr>
+<h2 id="概览">
+  概览
+  <a class="anchor" href="#%e6%a6%82%e8%a7%88">#</a>
+</h2>
+<p>OpenClaw 不是简单地把一个 LLM API 调用丢出去就完了。它在 Gateway 层构建了一整套 <strong>任务生命周期管理 + 可靠性机制</strong>，涵盖任务账本、超时保护、队列串行化、文件级写锁、上下文压缩、进程守护等多层防护。</p>
+<hr>
+<h2 id="1-background-tasks--任务生命周期账本">
+  1. Background Tasks — 任务生命周期账本
+  <a class="anchor" href="#1-background-tasks--%e4%bb%bb%e5%8a%a1%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f%e8%b4%a6%e6%9c%ac">#</a>
+</h2>
+<h3 id="11-状态机">
+  1.1 状态机
+  <a class="anchor" href="#11-%e7%8a%b6%e6%80%81%e6%9c%ba">#</a>
+</h3>
+<p>所有脱离主会话的工作（ACP runs、subagent spawns、cron 执行、CLI agent 命令）都会创建一条 <strong>Task 记录</strong>，经历完整状态机：</p>
+<pre tabindex="0"><code>queued → running → succeeded / failed / timed_out / cancelled / lost
+</code></pre><h3 id="12-源码实现">
+  1.2 源码实现
+  <a class="anchor" href="#12-%e6%ba%90%e7%a0%81%e5%ae%9e%e7%8e%b0">#</a>
+</h3>
+<p><strong>任务执行器</strong>（<code>src/tasks/task-executor.ts</code>）定义了 6 个核心操作：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/tasks/task-executor.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">createQueuedTaskRun</span>(<span style="color:#a6e22e">params</span>) { <span style="color:#75715e">/* → status: &#34;queued&#34; */</span> }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">createRunningTaskRun</span>(<span style="color:#a6e22e">params</span>) { <span style="color:#75715e">/* → status: &#34;running&#34; */</span> }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">startTaskRunByRunId</span>(<span style="color:#a6e22e">params</span>)  { <span style="color:#75715e">/* markTaskRunningByRunId */</span> }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">recordTaskRunProgressByRunId</span>(<span style="color:#a6e22e">params</span>) { <span style="color:#75715e">/* 进度更新 */</span> }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">completeTaskRunByRunId</span>(<span style="color:#a6e22e">params</span>) { <span style="color:#75715e">/* → status: &#34;succeeded&#34; */</span> }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">failTaskRunByRunId</span>(<span style="color:#a6e22e">params</span>)     { <span style="color:#75715e">/* → status: &#34;failed&#34; */</span> }
+</span></span></code></pre></div><p><strong>分离任务运行时</strong>（<code>src/tasks/detached-task-runtime.ts</code>）封装了这些操作，并提供 <strong>可插拔的生命周期钩子</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/tasks/detached-task-runtime.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DETACHED_TASK_RECOVERY_WARN_MS</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">5</span><span style="color:#a6e22e">_000</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_DETACHED_TASK_LIFECYCLE_RUNTIME</span> <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">createQueuedTaskRun</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">createRunningTaskRun</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">startTaskRunByRunId</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">recordTaskRunProgressByRunId</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">completeTaskRunByRunId</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">failTaskRunByRunId</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">setDetachedTaskDeliveryStatusByRunId</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">cancelDetachedTaskRunById</span>
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">tryRecoverTaskBeforeMarkLost</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 5 秒超时保护：恢复钩子不能阻塞太久
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">startedAt</span> <span style="color:#f92672">=</span> Date.<span style="color:#a6e22e">now</span>();
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">result</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">hook</span>(<span style="color:#a6e22e">params</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">elapsedMs</span> <span style="color:#f92672">=</span> Date.<span style="color:#a6e22e">now</span>() <span style="color:#f92672">-</span> <span style="color:#a6e22e">startedAt</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">elapsedMs</span> <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">5</span><span style="color:#a6e22e">_000</span>) <span style="color:#a6e22e">log</span>.<span style="color:#a6e22e">warn</span>(<span style="color:#e6db74">&#34;Detached task recovery hook was slow&#34;</span>);
+</span></span><span style="display:flex;"><span>  ...
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><code>tryRecoverTaskBeforeMarkLost</code> 是关键函数 —— 当 backing session 消失时，先尝试通过 durable cron run history 等恢复任务状态，只有确认无法恢复才标记为 <code>lost</code>。</p>
+<p><strong>任务注册表持久化</strong>（<code>src/tasks/task-registry.paths.ts</code>）使用 <strong>SQLite</strong> 而非 JSON 文件：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/tasks/task-registry.paths.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveTaskRegistrySqlitePath() {</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">path</span>.<span style="color:#a6e22e">join</span>(<span style="color:#a6e22e">resolveTaskRegistryDir</span>(), <span style="color:#e6db74">&#34;runs.sqlite&#34;</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>SQLite 保证了任务状态的 <strong>原子写入</strong> 和 <strong>并发安全</strong>，比 JSON 文件更适合高并发场景。</p>
+<h3 id="13-终端状态判定">
+  1.3 终端状态判定
+  <a class="anchor" href="#13-%e7%bb%88%e7%ab%af%e7%8a%b6%e6%80%81%e5%88%a4%e5%ae%9a">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/tasks/task-executor-policy.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">isTerminalTaskStatus</span>(<span style="color:#a6e22e">status</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">status</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;succeeded&#34;</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">status</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;failed&#34;</span> <span style="color:#f92672">||</span>
+</span></span><span style="display:flex;"><span>         <span style="color:#a6e22e">status</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;timed_out&#34;</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">status</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;cancelled&#34;</span> <span style="color:#f92672">||</span>
+</span></span><span style="display:flex;"><span>         <span style="color:#a6e22e">status</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;lost&#34;</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><hr>
+<h2 id="2-push-based-完成通知">
+  2. Push-based 完成通知
+  <a class="anchor" href="#2-push-based-%e5%ae%8c%e6%88%90%e9%80%9a%e7%9f%a5">#</a>
+</h2>
+<h3 id="21-两种投递路径">
+  2.1 两种投递路径
+  <a class="anchor" href="#21-%e4%b8%a4%e7%a7%8d%e6%8a%95%e9%80%92%e8%b7%af%e5%be%84">#</a>
+</h3>
+<ul>
+<li><strong>Direct delivery</strong>：直接发到原 channel，保留 thread/topic 路由</li>
+<li><strong>Session-queued delivery</strong>：投递失败时，作为系统事件入队</li>
+</ul>
+<h3 id="22-heartbeat-wake-机制srcinfraheartbeat-wakets">
+  2.2 Heartbeat Wake 机制（<code>src/infra/heartbeat-wake.ts</code>）
+  <a class="anchor" href="#22-heartbeat-wake-%e6%9c%ba%e5%88%b6srcinfraheartbeat-wakets">#</a>
+</h3>
+<p>这是整个推送体系的核心。任务完成会 <strong>立即触发 heartbeat wake</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/infra/heartbeat-wake.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_COALESCE_MS</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">250</span>;   <span style="color:#75715e">// 合并窗口 250ms
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_RETRY_MS</span>    <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span><span style="color:#a6e22e">_000</span>;  <span style="color:#75715e">// 失败重试 1s
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 优先级体系：retry &gt; interval &gt; action(wake/exec-event/hook) &gt; default
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">REASON_PRIORITY</span> <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">RETRY</span>:   <span style="color:#66d9ef">0</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">INTERVAL</span>: <span style="color:#66d9ef">1</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">DEFAULT</span>:  <span style="color:#66d9ef">2</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">ACTION</span>:   <span style="color:#66d9ef">3</span>
+</span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p><strong>关键设计：</strong></p>
+<ol>
+<li><strong>合并（coalesce）</strong>：多个 wake 请求在 250ms 窗口内合并为一次 heartbeat，防止抖动</li>
+<li><strong>优先级</strong>：retry 优先级最高，action wake 次之，interval 最低</li>
+<li><strong>重试机制</strong>：如果 heartbeat 执行时发现有 <code>requests-in-flight</code>，自动以 1s 间隔重试</li>
+<li><strong>生成号保护</strong>（<code>handlerGeneration</code>）：防止旧 runner 的清理逻辑误杀新 handler</li>
+</ol>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">requestHeartbeatNow</span>(<span style="color:#a6e22e">opts</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">queuePendingWakeReason</span>(<span style="color:#a6e22e">opts</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">schedule</span>(<span style="color:#a6e22e">opts</span><span style="color:#f92672">?</span>.<span style="color:#a6e22e">coalesceMs</span> <span style="color:#f92672">??</span> <span style="color:#ae81ff">250</span>, <span style="color:#e6db74">&#34;normal&#34;</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><hr>
+<h2 id="3-多层超时保护">
+  3. 多层超时保护
+  <a class="anchor" href="#3-%e5%a4%9a%e5%b1%82%e8%b6%85%e6%97%b6%e4%bf%9d%e6%8a%a4">#</a>
+</h2>
+<h3 id="31-超时层级">
+  3.1 超时层级
+  <a class="anchor" href="#31-%e8%b6%85%e6%97%b6%e5%b1%82%e7%ba%a7">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>超时层</th>
+          <th>默认值</th>
+          <th>源码位置</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Agent runtime timeout</td>
+          <td>48h (172800s)</td>
+          <td><code>agents.defaults.timeoutSeconds</code></td>
+      </tr>
+      <tr>
+          <td>Model idle timeout</td>
+          <td>120s</td>
+          <td>provider 级 idle watchdog</td>
+      </tr>
+      <tr>
+          <td>Cron outer timeout</td>
+          <td>cron 自配</td>
+          <td>cron scheduler 外环</td>
+      </tr>
+      <tr>
+          <td>Exec process timeout</td>
+          <td>30m (1800s)</td>
+          <td><code>tools.exec.timeoutSec</code></td>
+      </tr>
+      <tr>
+          <td>Stuck session watchdog</td>
+          <td>可配</td>
+          <td><code>diagnostics.stuckSessionWarnMs</code></td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="32-源码实现">
+  3.2 源码实现
+  <a class="anchor" href="#32-%e6%ba%90%e7%a0%81%e5%ae%9e%e7%8e%b0">#</a>
+</h3>
+<p><strong>Agent Loop 中的超时处理</strong>（<a href="https://github.com/openclaw/openclaw/tree/main/src/agents/pi-embedded-runner/">src/agents/pi-embedded-runner/</a>）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/ （bundle 中可见的关键逻辑）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 空闲超时：模型长时间不输出 chunk
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">idleTimedOut</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">timeoutText</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;The model did not produce a response before the LLM idle timeout.&#34;</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 触发 abort
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 总超时：整个 agent run 超时
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">timedOut</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#f92672">!</span><span style="color:#a6e22e">timedOutDuringCompaction</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 在 compaction 期间的超时不计入失败，支持自动重试
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><p><strong>关键设计</strong>：compaction 期间的超时被单独标记（<code>timedOutDuringCompaction</code>），不会导致整个 run 失败，而是触发自动 retry。这保证了在长对话压缩时不会因为额外延迟而误判超时。</p>
+<hr>
+<h2 id="4-命令队列--session-write-lock--防并发冲突">
+  4. 命令队列 + Session Write Lock — 防并发冲突
+  <a class="anchor" href="#4-%e5%91%bd%e4%bb%a4%e9%98%9f%e5%88%97--session-write-lock--%e9%98%b2%e5%b9%b6%e5%8f%91%e5%86%b2%e7%aa%81">#</a>
+</h2>
+<h3 id="41-command-queuesrcprocesscommand-queuets">
+  4.1 Command Queue（<a href="https://github.com/openclaw/openclaw/blob/main/src/process/command-queue.ts">src/process/command-queue.ts</a>）
+  <a class="anchor" href="#41-command-queuesrcprocesscommand-queuets">#</a>
+</h3>
+<p><strong>Lane 模型</strong>：每个 session 有独立的 lane，不同 lane 可并发：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/process/command-queue.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 全局单例状态（通过 Symbol.for 跨 chunk 共享）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">COMMAND_QUEUE_STATE_KEY</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">Symbol</span>.<span style="color:#66d9ef">for</span>(<span style="color:#e6db74">&#34;openclaw.commandQueueState&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">getLaneState</span>(<span style="color:#a6e22e">lane</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">lane</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">queue</span><span style="color:#f92672">:</span> [],             <span style="color:#75715e">// 等待队列
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#a6e22e">activeTaskIds</span>: <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Set</span>(),  <span style="color:#75715e">// 活跃任务 ID 集合
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#a6e22e">maxConcurrent</span>: <span style="color:#66d9ef">1</span>,      <span style="color:#75715e">// 默认串行
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#a6e22e">draining</span>: <span style="color:#66d9ef">false</span>,       <span style="color:#75715e">// 排空中
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#a6e22e">generation</span>: <span style="color:#66d9ef">0</span>          <span style="color:#75715e">// 代际号，防旧任务干扰
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>核心入队逻辑</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">enqueueCommandInLane</span>(<span style="color:#a6e22e">lane</span>, <span style="color:#a6e22e">task</span>, <span style="color:#a6e22e">opts</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">getQueueState</span>().<span style="color:#a6e22e">gatewayDraining</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">Promise</span>.<span style="color:#a6e22e">reject</span>(<span style="color:#66d9ef">new</span> <span style="color:#a6e22e">GatewayDrainingError</span>());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Promise</span>((<span style="color:#a6e22e">resolve</span>, <span style="color:#a6e22e">reject</span>) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">queue</span>.<span style="color:#a6e22e">push</span>({
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">task</span><span style="color:#f92672">:</span> () <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">task</span>(),
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">resolve</span>, <span style="color:#a6e22e">reject</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">enqueuedAt</span>: <span style="color:#66d9ef">Date.now</span>(),
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">warnAfterMs</span>: <span style="color:#66d9ef">opts?.warnAfterMs</span> <span style="color:#f92672">??</span> <span style="color:#ae81ff">2</span><span style="color:#a6e22e">_000</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">onWait</span>: <span style="color:#66d9ef">opts?.onWait</span>  <span style="color:#75715e">// 排队过久时触发 warn 日志
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    });
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">drainLane</span>(<span style="color:#a6e22e">cleaned</span>);
+</span></span><span style="display:flex;"><span>  });
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>排空（pump）机制</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">drainLane</span>(<span style="color:#a6e22e">lane</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">pump</span> <span style="color:#f92672">=</span> () <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> (<span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">activeTaskIds</span>.<span style="color:#a6e22e">size</span> <span style="color:#f92672">&lt;</span> <span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">maxConcurrent</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">queue</span>.<span style="color:#a6e22e">length</span> <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">entry</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">queue</span>.<span style="color:#a6e22e">shift</span>();
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">taskId</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">getQueueState</span>().<span style="color:#a6e22e">nextTaskId</span><span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">activeTaskIds</span>.<span style="color:#a6e22e">add</span>(<span style="color:#a6e22e">taskId</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>      (<span style="color:#66d9ef">async</span> () <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">result</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">entry</span>.<span style="color:#a6e22e">task</span>();
+</span></span><span style="display:flex;"><span>          <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">completeTask</span>(<span style="color:#a6e22e">state</span>, <span style="color:#a6e22e">taskId</span>, <span style="color:#a6e22e">taskGeneration</span>)) {
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">notifyActiveTaskWaiters</span>();
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">pump</span>();  <span style="color:#75715e">// 递归排空下一个
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>          }
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">entry</span>.<span style="color:#a6e22e">resolve</span>(<span style="color:#a6e22e">result</span>);
+</span></span><span style="display:flex;"><span>        } <span style="color:#66d9ef">catch</span> (<span style="color:#a6e22e">err</span>) {
+</span></span><span style="display:flex;"><span>          <span style="color:#75715e">// 非预期的 lane 失败才会记录 error
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>          <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">isExpectedNonErrorLaneFailure</span>(<span style="color:#a6e22e">err</span>))
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">diagnosticLogger</span>.<span style="color:#a6e22e">error</span>(<span style="color:#e6db74">`lane task error: lane=</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">lane</span><span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>);
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">entry</span>.<span style="color:#a6e22e">reject</span>(<span style="color:#a6e22e">err</span>);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>      })();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">pump</span>();
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>关键设计：</strong></p>
+<ul>
+<li><strong>Generation 机制</strong>：<code>resetAllLanes()</code> 时 bump <code>generation</code>，旧任务的完成回调因 generation 不匹配被忽略，防止 SIGUSR1 热重启后 stale task ID 阻塞新任务</li>
+<li><strong>GatewayDrainingError</strong>：重启时标记 draining，新任务直接拒绝而非静默杀死</li>
+<li><strong>waitForActiveTasks</strong>：支持等待所有活跃任务完成（用于优雅关闭）</li>
+</ul>
+<h3 id="42-session-write-locksrcagentssession-write-lockts">
+  4.2 Session Write Lock（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-write-lock.ts">src/agents/session-write-lock.ts</a>）
+  <a class="anchor" href="#42-session-write-locksrcagentssession-write-lockts">#</a>
+</h3>
+<p>文件级写锁，保护 session transcript 的一致性：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/session-write-lock.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_STALE_MS</span>          <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span><span style="color:#a6e22e">_800_000</span>;  <span style="color:#75715e">// 30 分钟
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_MAX_HOLD_MS</span>       <span style="color:#f92672">=</span>   <span style="color:#ae81ff">300</span><span style="color:#a6e22e">_000</span>;  <span style="color:#75715e">// 5 分钟
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_WATCHDOG_INTERVAL</span> <span style="color:#f92672">=</span>    <span style="color:#ae81ff">60</span><span style="color:#a6e22e">_000</span>;  <span style="color:#75715e">// 1 分钟
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_TIMEOUT_GRACE_MS</span>  <span style="color:#f92672">=</span>   <span style="color:#ae81ff">120</span><span style="color:#a6e22e">_000</span>;  <span style="color:#75715e">// 2 分钟
+</span></span></span></code></pre></div><p><strong>锁获取逻辑</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">acquireSessionWriteLock</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">lockPath</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">`</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">normalizedSessionFile</span><span style="color:#e6db74">}</span><span style="color:#e6db74">.lock`</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 1. 可重入检查（默认允许）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">held</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">HELD_LOCKS</span>.<span style="color:#66d9ef">get</span>(<span style="color:#a6e22e">normalizedSessionFile</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">allowReentrant</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">held</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">held</span>.<span style="color:#a6e22e">count</span> <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">release</span><span style="color:#f92672">:</span> () <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">releaseHeldLock</span>(...) };
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 2. 重试循环（直到 timeout）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">startedAt</span> <span style="color:#f92672">=</span> Date.<span style="color:#a6e22e">now</span>();
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">while</span> (Date.<span style="color:#a6e22e">now</span>() <span style="color:#f92672">-</span> <span style="color:#a6e22e">startedAt</span> <span style="color:#f92672">&lt;</span> <span style="color:#a6e22e">timeoutMs</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// wx 标志：文件存在则失败，实现互斥
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">handle</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">fs</span>.<span style="color:#a6e22e">open</span>(<span style="color:#a6e22e">lockPath</span>, <span style="color:#e6db74">&#34;wx&#34;</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">handle</span>.<span style="color:#a6e22e">writeFile</span>(<span style="color:#a6e22e">JSON</span>.<span style="color:#a6e22e">stringify</span>({
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">pid</span>: <span style="color:#66d9ef">process.pid</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">createdAt</span>: <span style="color:#66d9ef">new</span> Date().<span style="color:#a6e22e">toISOString</span>(),
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">starttime</span>: <span style="color:#66d9ef">getProcessStartTime</span>(<span style="color:#a6e22e">process</span>.<span style="color:#a6e22e">pid</span>)
+</span></span><span style="display:flex;"><span>      }), <span style="color:#e6db74">&#34;utf8&#34;</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">HELD_LOCKS</span>.<span style="color:#66d9ef">set</span>(<span style="color:#a6e22e">normalizedSessionFile</span>, { <span style="color:#a6e22e">count</span>: <span style="color:#66d9ef">1</span>, <span style="color:#a6e22e">handle</span>, ... });
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">release</span><span style="color:#f92672">:</span> () <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">releaseHeldLock</span>(...) };
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">catch</span> (<span style="color:#a6e22e">err</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">err</span>.<span style="color:#a6e22e">code</span> <span style="color:#f92672">!==</span> <span style="color:#e6db74">&#34;EEXIST&#34;</span>) <span style="color:#66d9ef">throw</span> <span style="color:#a6e22e">err</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 3. 检查是否为 stale lock（进程已死 or 超时）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#66d9ef">if</span> (<span style="color:#66d9ef">await</span> <span style="color:#a6e22e">shouldReclaimContendedLockFile</span>(<span style="color:#a6e22e">lockPath</span>, <span style="color:#a6e22e">inspected</span>)) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">fs</span>.<span style="color:#a6e22e">rm</span>(<span style="color:#a6e22e">lockPath</span>, { <span style="color:#a6e22e">force</span>: <span style="color:#66d9ef">true</span> });
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">continue</span>;
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 4. 指数退避
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">delay</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">min</span>(<span style="color:#ae81ff">1</span><span style="color:#a6e22e">_000</span>, <span style="color:#ae81ff">50</span> <span style="color:#f92672">*</span> <span style="color:#a6e22e">attempt</span>, <span style="color:#a6e22e">remainingMs</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">await</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Promise</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">setTimeout</span>(<span style="color:#a6e22e">r</span>, <span style="color:#a6e22e">delay</span>));
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">throw</span> <span style="color:#66d9ef">new</span> Error(<span style="color:#e6db74">`session file locked (timeout </span><span style="color:#e6db74">${</span><span style="color:#a6e22e">timeoutMs</span><span style="color:#e6db74">}</span><span style="color:#e6db74">ms)`</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>Watchdog 定时器</strong>（后台周期性扫描）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">ensureWatchdogStarted</span>(<span style="color:#a6e22e">intervalMs</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">watchdogState</span>.<span style="color:#a6e22e">timer</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">setInterval</span>(() <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">runLockWatchdogCheck</span>();  <span style="color:#75715e">// 释放超时锁
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  }, <span style="color:#a6e22e">intervalMs</span>);  <span style="color:#75715e">// 默认 60s
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">runLockWatchdogCheck() {</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">const</span> [<span style="color:#a6e22e">sessionFile</span>, <span style="color:#a6e22e">held</span>] <span style="color:#66d9ef">of</span> <span style="color:#a6e22e">HELD_LOCKS</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">heldForMs</span> <span style="color:#f92672">=</span> Date.<span style="color:#a6e22e">now</span>() <span style="color:#f92672">-</span> <span style="color:#a6e22e">held</span>.<span style="color:#a6e22e">acquiredAt</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">heldForMs</span> <span style="color:#f92672">&gt;</span> <span style="color:#a6e22e">held</span>.<span style="color:#a6e22e">maxHoldMs</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 强制释放超时锁
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">releaseHeldLock</span>(<span style="color:#a6e22e">sessionFile</span>, <span style="color:#a6e22e">held</span>, { <span style="color:#a6e22e">force</span>: <span style="color:#66d9ef">true</span> });
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>进程终止时自动释放</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">registerCleanupHandlers() {</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">process</span>.<span style="color:#a6e22e">on</span>(<span style="color:#e6db74">&#34;exit&#34;</span>, <span style="color:#a6e22e">releaseAllLocksSync</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">const</span> <span style="color:#a6e22e">signal</span> <span style="color:#66d9ef">of</span> [<span style="color:#e6db74">&#34;SIGINT&#34;</span>, <span style="color:#e6db74">&#34;SIGTERM&#34;</span>, <span style="color:#e6db74">&#34;SIGQUIT&#34;</span>, <span style="color:#e6db74">&#34;SIGABRT&#34;</span>])
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">process</span>.<span style="color:#a6e22e">on</span>(<span style="color:#a6e22e">signal</span>, () <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">handleTerminationSignal</span>(<span style="color:#a6e22e">signal</span>));
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>Stale lock 检测</strong>（防 PID 回收）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">inspectLockPayload</span>(<span style="color:#a6e22e">payload</span>, <span style="color:#a6e22e">staleMs</span>, <span style="color:#a6e22e">nowMs</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">pidAlive</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">pid</span> <span style="color:#f92672">!==</span> <span style="color:#66d9ef">null</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">isPidAlive</span>(<span style="color:#a6e22e">pid</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">pidRecycled</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">pidAlive</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">storedStarttime</span> <span style="color:#f92672">!==</span> <span style="color:#a6e22e">getProcessStartTime</span>(<span style="color:#a6e22e">pid</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">staleReasons</span> <span style="color:#f92672">=</span> [];
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">pidAlive</span>) <span style="color:#a6e22e">staleReasons</span>.<span style="color:#a6e22e">push</span>(<span style="color:#e6db74">&#34;dead-pid&#34;</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">pidRecycled</span>) <span style="color:#a6e22e">staleReasons</span>.<span style="color:#a6e22e">push</span>(<span style="color:#e6db74">&#34;recycled-pid&#34;</span>);  <span style="color:#75715e">// 关键！
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">ageMs</span> <span style="color:#f92672">&gt;</span> <span style="color:#a6e22e">staleMs</span>) <span style="color:#a6e22e">staleReasons</span>.<span style="color:#a6e22e">push</span>(<span style="color:#e6db74">&#34;too-old&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">stale</span>: <span style="color:#66d9ef">staleReasons.length</span> <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>, <span style="color:#a6e22e">staleReasons</span> };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>通过记录进程启动时间（<code>starttime</code>），即使 PID 被新进程复用，也能准确识别 stale lock。</p>
+<h3 id="43-keyedasyncqueuesrcplugin-sdkkeyed-async-queuets">
+  4.3 KeyedAsyncQueue（<a href="https://github.com/openclaw/openclaw/blob/main/src/plugin-sdk/keyed-async-queue.ts">src/plugin-sdk/keyed-async-queue.ts</a>）
+  <a class="anchor" href="#43-keyedasyncqueuesrcplugin-sdkkeyed-async-queuets">#</a>
+</h3>
+<p>更轻量级的 per-key 串行化原语：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/plugin-sdk/keyed-async-queue.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">enqueueKeyedTask</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">current</span> <span style="color:#f92672">=</span> (<span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">tails</span>.<span style="color:#66d9ef">get</span>(<span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">key</span>) <span style="color:#f92672">??</span> <span style="color:#a6e22e">Promise</span>.<span style="color:#a6e22e">resolve</span>())
+</span></span><span style="display:flex;"><span>    .<span style="color:#66d9ef">catch</span>(() <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">void</span> <span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>    .<span style="color:#a6e22e">then</span>(<span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">task</span>)
+</span></span><span style="display:flex;"><span>    .<span style="color:#66d9ef">finally</span>(() <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">hooks</span><span style="color:#f92672">?</span>.<span style="color:#a6e22e">onSettle</span><span style="color:#f92672">?</span>.());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">tail</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">current</span>.<span style="color:#a6e22e">then</span>(() <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">void</span> <span style="color:#ae81ff">0</span>, () <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">void</span> <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">tails</span>.<span style="color:#66d9ef">set</span>(<span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">key</span>, <span style="color:#a6e22e">tail</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 自动清理
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">cleanup</span> <span style="color:#f92672">=</span> () <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">tails</span>.<span style="color:#66d9ef">get</span>(<span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">key</span>) <span style="color:#f92672">===</span> <span style="color:#a6e22e">tail</span>) <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">tails</span>.<span style="color:#66d9ef">delete</span>(<span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">key</span>);
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">tail</span>.<span style="color:#a6e22e">then</span>(<span style="color:#a6e22e">cleanup</span>, <span style="color:#a6e22e">cleanup</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">current</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>通过链式 <code>.then()</code> 实现同一 key 的任务自动排队，不同 key 并发执行。</p>
+<hr>
+<h2 id="5-compaction--上下文窗口管理">
+  5. Compaction — 上下文窗口管理
+  <a class="anchor" href="#5-compaction--%e4%b8%8a%e4%b8%8b%e6%96%87%e7%aa%97%e5%8f%a3%e7%ae%a1%e7%90%86">#</a>
+</h2>
+<h3 id="51-源码模块分布">
+  5.1 源码模块分布
+  <a class="anchor" href="#51-%e6%ba%90%e7%a0%81%e6%a8%a1%e5%9d%97%e5%88%86%e5%b8%83">#</a>
+</h3>
+<p>Compaction 在 <a href="https://github.com/openclaw/openclaw/tree/main/src/agents/pi-embedded-runner/">src/agents/pi-embedded-runner/</a> 下有多个模块协作：</p>
+<table>
+  <thead>
+      <tr>
+          <th>模块</th>
+          <th>功能</th>
+          <th>GitHub 链接</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>compact.ts</code></td>
+          <td>主 compaction 入口</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/compact.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>compact.runtime.ts</code></td>
+          <td>运行时封装</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/compact.runtime.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>compact.queued.ts</code></td>
+          <td>带 lane 队列的 compaction</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/compact.queued.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>compaction-runtime-context.ts</code></td>
+          <td>上下文构建</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/compaction-runtime-context.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>compaction-hooks.ts</code></td>
+          <td>生命周期钩子</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/compaction-hooks.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>compaction-safety-timeout.ts</code></td>
+          <td>安全超时</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/compaction-safety-timeout.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>run/preemptive-compaction.ts</code></td>
+          <td>预压缩</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/preemptive-compaction.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>session-truncation.ts</code></td>
+          <td>compact 后截断 transcript</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/session-truncation.ts">查看</a></td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="52-预压缩preemptive-compaction">
+  5.2 预压缩（Preemptive Compaction）
+  <a class="anchor" href="#52-%e9%a2%84%e5%8e%8b%e7%bc%a9preemptive-compaction">#</a>
+</h3>
+<p>在 agent run 开始前检查 transcript 文件大小（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/preemptive-compaction.ts">run/preemptive-compaction.ts</a>）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/run/preemptive-compaction.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 当 active JSONL 文件达到 maxActiveTranscriptBytes 阈值时，
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 在实际 LLM 调用前先触发 compaction
+</span></span></span></code></pre></div><h3 id="53-compaction-retry--aggregate-timeoutruncompaction-retry-aggregate-timeoutts">
+  5.3 Compaction Retry + Aggregate Timeout（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/compaction-retry-aggregate-timeout.ts">run/compaction-retry-aggregate-timeout.ts</a>）
+  <a class="anchor" href="#53-compaction-retry--aggregate-timeoutruncompaction-retry-aggregate-timeoutts">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/run/compaction-retry-aggregate-timeout.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// compaction 失败时自动 retry，并聚合超时计算
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 防止多次 retry 导致总耗时超过 agent timeout
+</span></span></span></code></pre></div><h3 id="54-session-truncationsession-truncationts">
+  5.4 Session Truncation（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/session-truncation.ts">session-truncation.ts</a>）
+  <a class="anchor" href="#54-session-truncationsession-truncationts">#</a>
+</h3>
+<p>Compact 后 transcript 文件仍然包含所有历史条目。<code>session-truncation.ts</code> 实现了物理截断：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/session-truncation.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 截断规则：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 1. 保留 session header
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 2. 保留非 message 条目（custom, model_change, thinking_level_change, compaction 等）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 3. 保留未压缩分支的条目
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 4. 保留从 firstKeptEntryId 开始的&#34;未压缩尾部&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 5. 被移除条目的子条目重新绑定到最近的保留祖先
+</span></span></span></code></pre></div><h3 id="55-compaction-失败分类compact-reasonsts">
+  5.5 Compaction 失败分类（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/compact-reasons.ts">compact-reasons.ts</a>）
+  <a class="anchor" href="#55-compaction-%e5%a4%b1%e8%b4%a5%e5%88%86%e7%b1%bbcompact-reasonsts">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/compact-reasons.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">classifyCompactionReason</span>(<span style="color:#a6e22e">reason</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">text</span>.<span style="color:#a6e22e">includes</span>(<span style="color:#e6db74">&#34;nothing to compact&#34;</span>)) <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;no_compactable_entries&#34;</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">text</span>.<span style="color:#a6e22e">includes</span>(<span style="color:#e6db74">&#34;below threshold&#34;</span>))     <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;below_threshold&#34;</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">text</span>.<span style="color:#a6e22e">includes</span>(<span style="color:#e6db74">&#34;timed out&#34;</span>))           <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;timeout&#34;</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">text</span>.<span style="color:#a6e22e">includes</span>(<span style="color:#e6db74">&#34;400&#34;</span>) <span style="color:#f92672">||</span> <span style="color:#a6e22e">text</span>.<span style="color:#a6e22e">includes</span>(<span style="color:#e6db74">&#34;401&#34;</span>)) <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;provider_error_4xx&#34;</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">text</span>.<span style="color:#a6e22e">includes</span>(<span style="color:#e6db74">&#34;500&#34;</span>) <span style="color:#f92672">||</span> <span style="color:#a6e22e">text</span>.<span style="color:#a6e22e">includes</span>(<span style="color:#e6db74">&#34;502&#34;</span>)) <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;provider_error_5xx&#34;</span>;
+</span></span><span style="display:flex;"><span>  ...
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="56-compaction-生命周期钩子">
+  5.6 Compaction 生命周期钩子
+  <a class="anchor" href="#56-compaction-%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f%e9%92%a9%e5%ad%90">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// before_compaction / after_compaction 钩子
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">runBeforeCompactionHooks</span>(...);   <span style="color:#75715e">// 压缩前
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">runAfterCompactionHooks</span>(...);    <span style="color:#75715e">// 压缩后
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">runPostCompactionSideEffects</span>(...); <span style="color:#75715e">// 后置副作用
+</span></span></span></code></pre></div><p>Hook 可用于在压缩前触发 memory flush，或在压缩后发送通知。</p>
+<hr>
+<h2 id="6-session-生命周期管理">
+  6. Session 生命周期管理
+  <a class="anchor" href="#6-session-%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f%e7%ae%a1%e7%90%86">#</a>
+</h2>
+<h3 id="61-存储结构">
+  6.1 存储结构
+  <a class="anchor" href="#61-%e5%ad%98%e5%82%a8%e7%bb%93%e6%9e%84">#</a>
+</h3>
+<ul>
+<li><strong>Store</strong>：<code>~/.openclaw/agents/&lt;agentId&gt;/sessions/sessions.json</code></li>
+<li><strong>Transcripts</strong>：<code>~/.openclaw/agents/&lt;agentId&gt;/sessions/&lt;sessionId&gt;.jsonl</code></li>
+</ul>
+<p><code>sessions.json</code> 分离了三种时间戳：</p>
+<pre tabindex="0"><code>sessionStartedAt   → daily reset 基准
+lastInteractionAt  → idle reset 基准
+updatedAt          → 列表/修剪用，不影响 freshness
+</code></pre><p>这意味着 heartbeat、cron、exec 等系统事件写入的元数据 <strong>不会延长 session 的活跃寿命</strong>。</p>
+<h3 id="62-session-write-lock-的集成">
+  6.2 Session Write Lock 的集成
+  <a class="anchor" href="#62-session-write-lock-%e7%9a%84%e9%9b%86%e6%88%90">#</a>
+</h3>
+<p>每次 agent run 开始前：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 1. 获取 session write lock
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">lock</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">acquireSessionWriteLock</span>({
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">sessionFile</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">timeoutMs</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">maxHoldMs</span>: <span style="color:#66d9ef">resolveSessionLockMaxHoldFromTimeout</span>({ <span style="color:#a6e22e">timeoutMs</span> })
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 2. 打开 SessionManager
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">sessionManager</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">SessionManager</span>.<span style="color:#a6e22e">open</span>(<span style="color:#a6e22e">sessionFile</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 3. run 结束后释放锁
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">await</span> <span style="color:#a6e22e">lock</span>.<span style="color:#a6e22e">release</span>();
+</span></span></code></pre></div><h3 id="63-session-maintenance">
+  6.3 Session Maintenance
+  <a class="anchor" href="#63-session-maintenance">#</a>
+</h3>
+<pre tabindex="0"><code class="language-json5" data-lang="json5">{
+  &#34;session&#34;: {
+    &#34;maintenance&#34;: {
+      &#34;mode&#34;: &#34;enforce&#34;,      // warn | enforce
+      &#34;pruneAfter&#34;: &#34;30d&#34;,
+      &#34;maxEntries&#34;: 500
+    }
+  }
+}
+</code></pre><p>生产环境下，Gateway 使用 <strong>high-water buffer</strong> 策略：写入超过 cap 时批量清理，而非每次 isolated cron session 都触发完整清理。</p>
+<hr>
+<h2 id="7-gateway-daemon--进程守护">
+  7. Gateway Daemon + 进程守护
+  <a class="anchor" href="#7-gateway-daemon--%e8%bf%9b%e7%a8%8b%e5%ae%88%e6%8a%a4">#</a>
+</h2>
+<h3 id="71-子进程桥接">
+  7.1 子进程桥接
+  <a class="anchor" href="#71-%e5%ad%90%e8%bf%9b%e7%a8%8b%e6%a1%a5%e6%8e%a5">#</a>
+</h3>
+<p>启动长驻子进程时，必须附加 <strong>child-process bridge</strong>：</p>
+<ul>
+<li>转发终止信号到子进程</li>
+<li>子进程 exit/error 时自动 detach listeners</li>
+<li>防止 systemd restart 时产生 orphan 进程</li>
+</ul>
+<h3 id="72-gateway-locksrcgatewaygateway-lockts">
+  7.2 Gateway Lock（<a href="https://github.com/openclaw/openclaw/blob/main/src/gateway/gateway-lock.ts">src/gateway/gateway-lock.ts</a>）
+  <a class="anchor" href="#72-gateway-locksrcgatewaygateway-lockts">#</a>
+</h3>
+<p>保证 <strong>一台主机只有一个 Gateway 实例</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 使用文件锁防止多个 Gateway 同时运行
+</span></span></span></code></pre></div><h3 id="73-重启安全">
+  7.3 重启安全
+  <a class="anchor" href="#73-%e9%87%8d%e5%90%af%e5%ae%89%e5%85%a8">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// SIGUSR1 热重启时的关键步骤：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 1. markGatewayDraining() → 新任务直接拒绝
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 2. waitForActiveTasks(timeout) → 等待活跃任务完成
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 3. resetAllLanes() → bump generation，清 stale task IDs
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 4. 新进程接管
+</span></span></span></code></pre></div><hr>
+<h2 id="8-清理机制">
+  8. 清理机制
+  <a class="anchor" href="#8-%e6%b8%85%e7%90%86%e6%9c%ba%e5%88%b6">#</a>
+</h2>
+<h3 id="81-isolated-cron-run-清理">
+  8.1 Isolated Cron Run 清理
+  <a class="anchor" href="#81-isolated-cron-run-%e6%b8%85%e7%90%86">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 清理路径：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 1. 关闭 tracked browser tabs
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 2. 处置 MCP stdio 子进程 (disposeSessionMcpRuntime)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 3. 清理 cron session 所有权
+</span></span></span></code></pre></div><h3 id="82-exec-background-session-ttl">
+  8.2 Exec Background Session TTL
+  <a class="anchor" href="#82-exec-background-session-ttl">#</a>
+</h3>
+<pre tabindex="0"><code class="language-json5" data-lang="json5">{
+  &#34;tools&#34;: {
+    &#34;exec&#34;: {
+      &#34;cleanupMs&#34;: 1_800_000,    // 30 分钟
+      &#34;notifyOnExit&#34;: true,       // 退出时通知
+      &#34;notifyOnExitEmptySuccess&#34;: false
+    }
+  }
+}
+</code></pre><hr>
+<h2 id="架构全图">
+  架构全图
+  <a class="anchor" href="#%e6%9e%b6%e6%9e%84%e5%85%a8%e5%9b%be">#</a>
+</h2>
+<pre tabindex="0"><code>┌─────────────────────────────────────────────────────────────────┐
+│                        Gateway Daemon                            │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                  Command Queue (lanes)                    │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐               │   │
+│  │  │ Session A│  │ Session B│  │ Global   │   串行化 +     │   │
+│  │  │ Lane     │  │ Lane     │  │ Lane     │   并发控制     │   │
+│  │  └────┬─────┘  └────┬─────┘  └────┬─────┘               │   │
+│  └───────┼─────────────┼─────────────┼──────────────────────┘   │
+│          │             │             │                           │
+│  ┌───────▼─────────────▼─────────────▼──────────────────────┐   │
+│  │              Session Write Lock (file-level .lock)       │   │
+│  │  - .lock sidecar file + PID + starttime                  │   │
+│  │  - Watchdog timer (60s) → 强制释放超时锁                  │   │
+│  │  - Exit/signal handlers → 同步释放所有锁                   │   │
+│  └──────────────────────────┬───────────────────────────────┘   │
+│                             │                                    │
+│  ┌──────────────────────────▼───────────────────────────────┐   │
+│  │                    Agent Loop (PI)                        │   │
+│  │  Prompt → Model → Tool → Stream → Reply                   │   │
+│  │  - Idle timeout watchdog (120s)                           │   │
+│  │  - Total timeout (48h)                                    │   │
+│  │  - Auto-compaction on context overflow                    │   │
+│  │  - Model failover (provider fallback chain)               │   │
+│  └──────────────────────────┬───────────────────────────────┘   │
+│                             │                                    │
+│  ┌──────────────────────────▼───────────────────────────────┐   │
+│  │              Task Registry (SQLite)                       │   │
+│  │  queued → running → terminal                              │   │
+│  │  - 5min grace before &#34;lost&#34;                               │   │
+│  │  - tryRecoverTaskBeforeMarkLost hook                      │   │
+│  └──────────────────────────┬───────────────────────────────┘   │
+│                             │                                    │
+│  ┌──────────────────────────▼───────────────────────────────┐   │
+│  │              Heartbeat Wake System                        │   │
+│  │  - Coalesce window: 250ms                                 │   │
+│  │  - Priority: retry &gt; action &gt; interval &gt; default          │   │
+│  │  - Generation-based handler protection                    │   │
+│  │  - Push → channel delivery or session-queued              │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+</code></pre><hr>
+<h2 id="总结">
+  总结
+  <a class="anchor" href="#%e6%80%bb%e7%bb%93">#</a>
+</h2>
+<p>OpenClaw 的长程任务稳定性不是靠某一个银弹，而是多层防御体系的组合：</p>
+<table>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>机制</th>
+          <th>解决什么问题</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>任务层</strong></td>
+          <td>SQLite 持久化 + 状态机 + recovery hook</td>
+          <td>任务丢失、状态不一致</td>
+      </tr>
+      <tr>
+          <td><strong>通知层</strong></td>
+          <td>Push-based heartbeat wake + coalesce</td>
+          <td>轮询延迟、通知抖动</td>
+      </tr>
+      <tr>
+          <td><strong>超时层</strong></td>
+          <td>4 层超时（total/idle/cron/exec）+ compaction 超时豁免</td>
+          <td>卡死、无响应</td>
+      </tr>
+      <tr>
+          <td><strong>并发层</strong></td>
+          <td>Per-session lane + global lane + generation</td>
+          <td>竞态、热重启后阻塞</td>
+      </tr>
+      <tr>
+          <td><strong>写入层</strong></td>
+          <td>文件级写锁 + watchdog + PID/starttime 检测</td>
+          <td>Transcript 损坏、stale lock</td>
+      </tr>
+      <tr>
+          <td><strong>上下文层</strong></td>
+          <td>Auto-compaction + preemptive + successor transcripts + truncation</td>
+          <td>Context overflow、文件膨胀</td>
+      </tr>
+      <tr>
+          <td><strong>进程层</strong></td>
+          <td>Child-process bridge + gateway lock + draining</td>
+          <td>Orphan 进程、双实例</td>
+      </tr>
+      <tr>
+          <td><strong>清理层</strong></td>
+          <td>TTL + best-effort browser/MCP cleanup</td>
+          <td>资源泄漏</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>核心设计哲学</strong>：push-based（不轮询）、防丢（SQLite + recovery）、防卡（多层超时 + watchdog）、防泄漏（TTL + cleanup）、防竞态（lane + write lock + generation）。</p>
+<hr>
+<h2 id="参考资料">
+  参考资料
+  <a class="anchor" href="#%e5%8f%82%e8%80%83%e8%b5%84%e6%96%99">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>文档</th>
+          <th>链接</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Gateway 架构</td>
+          <td><a href="https://docs.openclaw.ai/concepts/architecture.md">https://docs.openclaw.ai/concepts/architecture.md</a></td>
+      </tr>
+      <tr>
+          <td>Agent Loop（执行循环）</td>
+          <td><a href="https://docs.openclaw.ai/concepts/agent-loop.md">https://docs.openclaw.ai/concepts/agent-loop.md</a></td>
+      </tr>
+      <tr>
+          <td>Agent Runtimes（运行时）</td>
+          <td><a href="https://docs.openclaw.ai/concepts/agent-runtimes.md">https://docs.openclaw.ai/concepts/agent-runtimes.md</a></td>
+      </tr>
+      <tr>
+          <td>Background Tasks（任务账本）</td>
+          <td><a href="https://docs.openclaw.ai/automation/tasks.md">https://docs.openclaw.ai/automation/tasks.md</a></td>
+      </tr>
+      <tr>
+          <td>Cron Jobs（定时任务）</td>
+          <td><a href="https://docs.openclaw.ai/automation/cron-jobs.md">https://docs.openclaw.ai/automation/cron-jobs.md</a></td>
+      </tr>
+      <tr>
+          <td>Session Management（会话管理）</td>
+          <td><a href="https://docs.openclaw.ai/concepts/session.md">https://docs.openclaw.ai/concepts/session.md</a></td>
+      </tr>
+      <tr>
+          <td>Compaction（上下文压缩）</td>
+          <td><a href="https://docs.openclaw.ai/concepts/compaction.md">https://docs.openclaw.ai/concepts/compaction.md</a></td>
+      </tr>
+      <tr>
+          <td>Background Exec + Process</td>
+          <td><a href="https://docs.openclaw.ai/gateway/background-process.md">https://docs.openclaw.ai/gateway/background-process.md</a></td>
+      </tr>
+      <tr>
+          <td>Gateway 源码仓库</td>
+          <td><a href="https://github.com/openclaw/openclaw">https://github.com/openclaw/openclaw</a></td>
+      </tr>
+      <tr>
+          <td>DeepWiki（AI 源码导读）</td>
+          <td><a href="https://deepwiki.com/openclaw/openclaw">https://deepwiki.com/openclaw/openclaw</a></td>
+      </tr>
+  </tbody>
+</table>
+<table>
+  <thead>
+      <tr>
+          <th>源码模块</th>
+          <th>功能</th>
+          <th>GitHub 链接</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>src/tasks/task-executor.ts</code></td>
+          <td>任务生命周期操作</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/tasks/task-executor.ts">查看源码</a></td>
+      </tr>
+      <tr>
+          <td><code>src/tasks/detached-task-runtime.ts</code></td>
+          <td>分离任务运行时 + recovery hook</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/tasks/detached-task-runtime.ts">查看源码</a></td>
+      </tr>
+      <tr>
+          <td><code>src/tasks/task-registry.paths.ts</code></td>
+          <td>SQLite 持久化路径</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/tasks/task-registry.paths.ts">查看源码</a></td>
+      </tr>
+      <tr>
+          <td><code>src/tasks/task-executor-policy.ts</code></td>
+          <td>状态判定 + 通知策略</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/tasks/task-executor-policy.ts">查看源码</a></td>
+      </tr>
+      <tr>
+          <td><code>src/infra/heartbeat-wake.ts</code></td>
+          <td>Heartbeat 唤醒 + 合并 + 优先级</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/heartbeat-wake.ts">查看源码</a></td>
+      </tr>
+      <tr>
+          <td><code>src/process/command-queue.ts</code></td>
+          <td>Lane 队列 + generation + draining</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/process/command-queue.ts">查看源码</a></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/session-write-lock.ts</code></td>
+          <td>文件级写锁 + watchdog + PID 检测</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-write-lock.ts">查看源码</a></td>
+      </tr>
+      <tr>
+          <td><code>src/plugin-sdk/keyed-async-queue.ts</code></td>
+          <td>Per-key 串行化原语</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/plugin-sdk/keyed-async-queue.ts">查看源码</a></td>
+      </tr>
+      <tr>
+          <td><code>src/plugin-sdk/file-lock.ts</code></td>
+          <td>通用文件锁</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/plugin-sdk/file-lock.ts">查看源码</a></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/pi-embedded-runner/compact.queued.ts</code></td>
+          <td>带队列的 compaction</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/compact.queued.ts">查看源码</a></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/pi-embedded-runner/compact-reasons.ts</code></td>
+          <td>Compaction 失败分类</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/compact-reasons.ts">查看源码</a></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/pi-embedded-runner/session-truncation.ts</code></td>
+          <td>Compact 后 transcript 截断</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/session-truncation.ts">查看源码</a></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/pi-embedded-runner/run/preemptive-compaction.ts</code></td>
+          <td>预压缩</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/preemptive-compaction.ts">查看源码</a></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/pi-embedded-runner/run/compaction-retry-aggregate-timeout.ts</code></td>
+          <td>Compaction 重试超时</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/compaction-retry-aggregate-timeout.ts">查看源码</a></td>
+      </tr>
+  </tbody>
+</table>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openclaw-如何保证长程任务的稳定性从架构到源码实现">OpenClaw 如何保证长程任务的稳定性：从架构到源码实现</a>
+      <ul>
+        <li><a href="#概览">概览</a></li>
+        <li><a href="#1-background-tasks--任务生命周期账本">1. Background Tasks — 任务生命周期账本</a>
+          <ul>
+            <li><a href="#11-状态机">1.1 状态机</a></li>
+            <li><a href="#12-源码实现">1.2 源码实现</a></li>
+            <li><a href="#13-终端状态判定">1.3 终端状态判定</a></li>
+          </ul>
+        </li>
+        <li><a href="#2-push-based-完成通知">2. Push-based 完成通知</a>
+          <ul>
+            <li><a href="#21-两种投递路径">2.1 两种投递路径</a></li>
+            <li><a href="#22-heartbeat-wake-机制srcinfraheartbeat-wakets">2.2 Heartbeat Wake 机制（<code>src/infra/heartbeat-wake.ts</code>）</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-多层超时保护">3. 多层超时保护</a>
+          <ul>
+            <li><a href="#31-超时层级">3.1 超时层级</a></li>
+            <li><a href="#32-源码实现">3.2 源码实现</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-命令队列--session-write-lock--防并发冲突">4. 命令队列 + Session Write Lock — 防并发冲突</a>
+          <ul>
+            <li><a href="#41-command-queuesrcprocesscommand-queuets">4.1 Command Queue（<a href="https://github.com/openclaw/openclaw/blob/main/src/process/command-queue.ts">src/process/command-queue.ts</a>）</a></li>
+            <li><a href="#42-session-write-locksrcagentssession-write-lockts">4.2 Session Write Lock（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-write-lock.ts">src/agents/session-write-lock.ts</a>）</a></li>
+            <li><a href="#43-keyedasyncqueuesrcplugin-sdkkeyed-async-queuets">4.3 KeyedAsyncQueue（<a href="https://github.com/openclaw/openclaw/blob/main/src/plugin-sdk/keyed-async-queue.ts">src/plugin-sdk/keyed-async-queue.ts</a>）</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-compaction--上下文窗口管理">5. Compaction — 上下文窗口管理</a>
+          <ul>
+            <li><a href="#51-源码模块分布">5.1 源码模块分布</a></li>
+            <li><a href="#52-预压缩preemptive-compaction">5.2 预压缩（Preemptive Compaction）</a></li>
+            <li><a href="#53-compaction-retry--aggregate-timeoutruncompaction-retry-aggregate-timeoutts">5.3 Compaction Retry + Aggregate Timeout（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/compaction-retry-aggregate-timeout.ts">run/compaction-retry-aggregate-timeout.ts</a>）</a></li>
+            <li><a href="#54-session-truncationsession-truncationts">5.4 Session Truncation（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/session-truncation.ts">session-truncation.ts</a>）</a></li>
+            <li><a href="#55-compaction-失败分类compact-reasonsts">5.5 Compaction 失败分类（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/compact-reasons.ts">compact-reasons.ts</a>）</a></li>
+            <li><a href="#56-compaction-生命周期钩子">5.6 Compaction 生命周期钩子</a></li>
+          </ul>
+        </li>
+        <li><a href="#6-session-生命周期管理">6. Session 生命周期管理</a>
+          <ul>
+            <li><a href="#61-存储结构">6.1 存储结构</a></li>
+            <li><a href="#62-session-write-lock-的集成">6.2 Session Write Lock 的集成</a></li>
+            <li><a href="#63-session-maintenance">6.3 Session Maintenance</a></li>
+          </ul>
+        </li>
+        <li><a href="#7-gateway-daemon--进程守护">7. Gateway Daemon + 进程守护</a>
+          <ul>
+            <li><a href="#71-子进程桥接">7.1 子进程桥接</a></li>
+            <li><a href="#72-gateway-locksrcgatewaygateway-lockts">7.2 Gateway Lock（<a href="https://github.com/openclaw/openclaw/blob/main/src/gateway/gateway-lock.ts">src/gateway/gateway-lock.ts</a>）</a></li>
+            <li><a href="#73-重启安全">7.3 重启安全</a></li>
+          </ul>
+        </li>
+        <li><a href="#8-清理机制">8. 清理机制</a>
+          <ul>
+            <li><a href="#81-isolated-cron-run-清理">8.1 Isolated Cron Run 清理</a></li>
+            <li><a href="#82-exec-background-session-ttl">8.2 Exec Background Session TTL</a></li>
+          </ul>
+        </li>
+        <li><a href="#架构全图">架构全图</a></li>
+        <li><a href="#总结">总结</a></li>
+        <li><a href="#参考资料">参考资料</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+

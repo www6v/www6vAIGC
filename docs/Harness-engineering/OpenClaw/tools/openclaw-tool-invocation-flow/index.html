@@ -1,0 +1,4235 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  OpenClaw 工具调用全流程：从模型输出到结果回传的源码级拆解
+  #
+
+
+基于 OpenClaw v2026.4.21 源码深度分析
+作者：小伟 | 2026-04-30
+
+
+  导读
+  #
+
+OpenClaw 的工具调用系统是其 Agent 能力的核心。模型输出 tool_calls 后，OpenClaw 并不是简单地&quot;找到函数然后调用&quot;，而是经历了一整套严密的流程：工具发现 → 策略过滤 → 参数归一化 → before_tool_call 钩子 → 分类分发执行 → 结果截断与媒体提取 → after_tool_call 钩子 → 写回 transcript → 下一轮 LLM 调用。
+本文将从源码级别完整拆解这一流程。
+
+
+  1. 总览：工具调用架构图
+  #
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                        OpenClaw Gateway                             │
+│                                                                     │
+│  ┌─────────┐    ┌──────────────┐    ┌──────────────────────────┐   │
+│  │  Model   │───▶│ Tool Policy  │───▶│  Tool Definition         │   │
+│  │  Stream  │    │  Pipeline    │    │  Builder                 │   │
+│  └─────────┘    └──────────────┘    └──────────────────────────┘   │
+│                                    │                                │
+│                                    ▼                                │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │              Agent Loop (selection-DmkxuIQC.js)              │   │
+│  │                                                              │   │
+│  │  1. 接收 assistant tool_calls                                │   │
+│  │  2. buildEmbeddedAttemptToolRunContext() 构建执行上下文      │   │
+│  │  3. before_tool_call 钩子（loop 检测、诊断）                 │   │
+│  │  4. dispatchToolExecution() 分类分发执行                     │   │
+│  │  5. sanitizeToolResult() 结果清洗 &#43; truncation               │   │
+│  │  6. after_tool_call 钩子                                     │   │
+│  │  7. 写入 session transcript (JSONL)                          │   │
+│  │  8. 触发下一轮 LLM 调用                                      │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                    │                                │
+│                                    ▼                                │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │
+│  │  exec    │  │  read    │  │ message  │  │  channel tools   │   │
+│  │  process │  │  write   │  │  send    │  │  MCP / plugin    │   │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+
+  2. 工具发现与注册
+  #
+
+
+  2.1 工具来源分类
+  #
+
+OpenClaw 的工具来自 4 个渠道：">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/">
+  <meta property="og:site_name" content="基于LLM的系统设计与实现">
+  <meta property="og:title" content="基于LLM的系统设计与实现">
+  <meta property="og:description" content="OpenClaw 工具调用全流程：从模型输出到结果回传的源码级拆解 # 基于 OpenClaw v2026.4.21 源码深度分析 作者：小伟 | 2026-04-30
+导读 # OpenClaw 的工具调用系统是其 Agent 能力的核心。模型输出 tool_calls 后，OpenClaw 并不是简单地&#34;找到函数然后调用&#34;，而是经历了一整套严密的流程：工具发现 → 策略过滤 → 参数归一化 → before_tool_call 钩子 → 分类分发执行 → 结果截断与媒体提取 → after_tool_call 钩子 → 写回 transcript → 下一轮 LLM 调用。
+本文将从源码级别完整拆解这一流程。
+1. 总览：工具调用架构图 # ┌─────────────────────────────────────────────────────────────────────┐ │ OpenClaw Gateway │ │ │ │ ┌─────────┐ ┌──────────────┐ ┌──────────────────────────┐ │ │ │ Model │───▶│ Tool Policy │───▶│ Tool Definition │ │ │ │ Stream │ │ Pipeline │ │ Builder │ │ │ └─────────┘ └──────────────┘ └──────────────────────────┘ │ │ │ │ │ ▼ │ │ ┌─────────────────────────────────────────────────────────────┐ │ │ │ Agent Loop (selection-DmkxuIQC.js) │ │ │ │ │ │ │ │ 1. 接收 assistant tool_calls │ │ │ │ 2. buildEmbeddedAttemptToolRunContext() 构建执行上下文 │ │ │ │ 3. before_tool_call 钩子（loop 检测、诊断） │ │ │ │ 4. dispatchToolExecution() 分类分发执行 │ │ │ │ 5. sanitizeToolResult() 结果清洗 &#43; truncation │ │ │ │ 6. after_tool_call 钩子 │ │ │ │ 7. 写入 session transcript (JSONL) │ │ │ │ 8. 触发下一轮 LLM 调用 │ │ │ └─────────────────────────────────────────────────────────────┘ │ │ │ │ │ ▼ │ │ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │ │ │ exec │ │ read │ │ message │ │ channel tools │ │ │ │ process │ │ write │ │ send │ │ MCP / plugin │ │ │ └──────────┘ └──────────┘ └──────────┘ └──────────────────┘ │ │ │ └─────────────────────────────────────────────────────────────────────┘ 2. 工具发现与注册 # 2.1 工具来源分类 # OpenClaw 的工具来自 4 个渠道：">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="docs">
+<title>Openclaw Tool Invocation Flow | 基于LLM的系统设计与实现</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.82a42bc12a9d075dec61907a12e3c606fe4237d56e127db2ccb4e2e2b58df6ec.js" integrity="sha256-gqQrwSqdB13sYZB6EuPGBv5CN9VuEn2yzLTi4rWN9uw=" crossorigin="anonymous"></script>
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>基于LLM的系统设计与实现</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b757002e9620728c23883bffd127cb72" class="toggle"  />
+    <label for="section-b757002e9620728c23883bffd127cb72" class="flex justify-between">
+      <a role="button" class="">Platform *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0b800a1752a4e836473ce3e89db51e41" class="toggle"  />
+    <label for="section-0b800a1752a4e836473ce3e89db51e41" class="flex justify-between">
+      <a role="button" class="">Multi-agent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="toggle"  />
+    <label for="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="flex justify-between">
+      <a role="button" class="">Communication *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Agent Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Reflection</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Planning</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Sandbox</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Tool use</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle" checked />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code/" class="">Cloud Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle" checked />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/openclaw-sandbox-security/" class="">Openclaw Sandbox Security</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/stability/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/" class="">Openclaw Conversation State Management</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/" class="active">Openclaw Tool Invocation Flow</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle"  />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">(Manus)context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Openclaw Tool Invocation Flow</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openclaw-工具调用全流程从模型输出到结果回传的源码级拆解">OpenClaw 工具调用全流程：从模型输出到结果回传的源码级拆解</a>
+      <ul>
+        <li><a href="#导读">导读</a></li>
+        <li><a href="#1-总览工具调用架构图">1. 总览：工具调用架构图</a></li>
+        <li><a href="#2-工具发现与注册">2. 工具发现与注册</a>
+          <ul>
+            <li><a href="#21-工具来源分类">2.1 工具来源分类</a></li>
+            <li><a href="#22-工具策略过滤tool-policy-pipeline">2.2 工具策略过滤（Tool Policy Pipeline）</a></li>
+            <li><a href="#23-工具定义构建--发给模型">2.3 工具定义构建 → 发给模型</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-agent-loop-中的工具调用入口">3. Agent Loop 中的工具调用入口</a>
+          <ul>
+            <li><a href="#31-llm-返回-tool_calls">3.1 LLM 返回 tool_calls</a></li>
+            <li><a href="#32-构建工具执行上下文">3.2 构建工具执行上下文</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-before_tool_call-钩子">4. before_tool_call 钩子</a>
+          <ul>
+            <li><a href="#41-tool-loop-检测">4.1 Tool Loop 检测</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-工具参数归一化与校验">5. 工具参数归一化与校验</a>
+          <ul>
+            <li><a href="#51-参数归一化">5.1 参数归一化</a></li>
+            <li><a href="#52-参数-schema-校验">5.2 参数 Schema 校验</a></li>
+          </ul>
+        </li>
+        <li><a href="#6-工具分类分发执行">6. 工具分类分发执行</a>
+          <ul>
+            <li><a href="#61-bash-工具exec--process">6.1 Bash 工具（exec + process）</a></li>
+            <li><a href="#62-文件系统工具">6.2 文件系统工具</a></li>
+            <li><a href="#63-消息工具">6.3 消息工具</a></li>
+            <li><a href="#64-channel-插件工具">6.4 Channel 插件工具</a></li>
+            <li><a href="#65-mcp-工具">6.5 MCP 工具</a></li>
+          </ul>
+        </li>
+        <li><a href="#7-工具执行结果处理">7. 工具执行结果处理</a>
+          <ul>
+            <li><a href="#71-结果清洗与截断">7.1 结果清洗与截断</a></li>
+            <li><a href="#72-媒体提取">7.2 媒体提取</a></li>
+            <li><a href="#73-结果格式转换">7.3 结果格式转换</a></li>
+            <li><a href="#74-session-结果结果保护">7.4 Session 结果结果保护</a></li>
+          </ul>
+        </li>
+        <li><a href="#8-after_tool_call-钩子">8. after_tool_call 钩子</a></li>
+        <li><a href="#9-写回-transcript--下一轮-llm">9. 写回 Transcript → 下一轮 LLM</a>
+          <ul>
+            <li><a href="#91-jsonl-transcript-写入">9.1 JSONL Transcript 写入</a></li>
+            <li><a href="#92-结果回传给模型">9.2 结果回传给模型</a></li>
+          </ul>
+        </li>
+        <li><a href="#10-完整调用序列图">10. 完整调用序列图</a></li>
+        <li><a href="#11-关键设计模式">11. 关键设计模式</a>
+          <ul>
+            <li><a href="#111-tool-call-id-追踪">11.1 Tool Call ID 追踪</a></li>
+            <li><a href="#112-工具结果媒体处理">11.2 工具结果媒体处理</a></li>
+            <li><a href="#113-消息工具的异步投递">11.3 消息工具的异步投递</a></li>
+            <li><a href="#114-工具结果上下文保护">11.4 工具结果上下文保护</a></li>
+          </ul>
+        </li>
+        <li><a href="#12-源码模块索引">12. 源码模块索引</a></li>
+        <li><a href="#13-参考资料">13. 参考资料</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="openclaw-工具调用全流程从模型输出到结果回传的源码级拆解">
+  OpenClaw 工具调用全流程：从模型输出到结果回传的源码级拆解
+  <a class="anchor" href="#openclaw-%e5%b7%a5%e5%85%b7%e8%b0%83%e7%94%a8%e5%85%a8%e6%b5%81%e7%a8%8b%e4%bb%8e%e6%a8%a1%e5%9e%8b%e8%be%93%e5%87%ba%e5%88%b0%e7%bb%93%e6%9e%9c%e5%9b%9e%e4%bc%a0%e7%9a%84%e6%ba%90%e7%a0%81%e7%ba%a7%e6%8b%86%e8%a7%a3">#</a>
+</h1>
+<blockquote>
+<p><strong>基于 OpenClaw v2026.4.21 源码深度分析</strong>
+作者：小伟 | 2026-04-30</p></blockquote>
+<hr>
+<h2 id="导读">
+  导读
+  <a class="anchor" href="#%e5%af%bc%e8%af%bb">#</a>
+</h2>
+<p>OpenClaw 的工具调用系统是其 Agent 能力的核心。模型输出 <code>tool_calls</code> 后，OpenClaw 并不是简单地&quot;找到函数然后调用&quot;，而是经历了一整套严密的流程：工具发现 → 策略过滤 → 参数归一化 → <code>before_tool_call</code> 钩子 → 分类分发执行 → 结果截断与媒体提取 → <code>after_tool_call</code> 钩子 → 写回 transcript → 下一轮 LLM 调用。</p>
+<p>本文将从源码级别完整拆解这一流程。</p>
+<hr>
+<h2 id="1-总览工具调用架构图">
+  1. 总览：工具调用架构图
+  <a class="anchor" href="#1-%e6%80%bb%e8%a7%88%e5%b7%a5%e5%85%b7%e8%b0%83%e7%94%a8%e6%9e%b6%e6%9e%84%e5%9b%be">#</a>
+</h2>
+<pre tabindex="0"><code>┌─────────────────────────────────────────────────────────────────────┐
+│                        OpenClaw Gateway                             │
+│                                                                     │
+│  ┌─────────┐    ┌──────────────┐    ┌──────────────────────────┐   │
+│  │  Model   │───▶│ Tool Policy  │───▶│  Tool Definition         │   │
+│  │  Stream  │    │  Pipeline    │    │  Builder                 │   │
+│  └─────────┘    └──────────────┘    └──────────────────────────┘   │
+│                                    │                                │
+│                                    ▼                                │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │              Agent Loop (selection-DmkxuIQC.js)              │   │
+│  │                                                              │   │
+│  │  1. 接收 assistant tool_calls                                │   │
+│  │  2. buildEmbeddedAttemptToolRunContext() 构建执行上下文      │   │
+│  │  3. before_tool_call 钩子（loop 检测、诊断）                 │   │
+│  │  4. dispatchToolExecution() 分类分发执行                     │   │
+│  │  5. sanitizeToolResult() 结果清洗 + truncation               │   │
+│  │  6. after_tool_call 钩子                                     │   │
+│  │  7. 写入 session transcript (JSONL)                          │   │
+│  │  8. 触发下一轮 LLM 调用                                      │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                    │                                │
+│                                    ▼                                │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │
+│  │  exec    │  │  read    │  │ message  │  │  channel tools   │   │
+│  │  process │  │  write   │  │  send    │  │  MCP / plugin    │   │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+</code></pre><hr>
+<h2 id="2-工具发现与注册">
+  2. 工具发现与注册
+  <a class="anchor" href="#2-%e5%b7%a5%e5%85%b7%e5%8f%91%e7%8e%b0%e4%b8%8e%e6%b3%a8%e5%86%8c">#</a>
+</h2>
+<h3 id="21-工具来源分类">
+  2.1 工具来源分类
+  <a class="anchor" href="#21-%e5%b7%a5%e5%85%b7%e6%9d%a5%e6%ba%90%e5%88%86%e7%b1%bb">#</a>
+</h3>
+<p>OpenClaw 的工具来自 4 个渠道：</p>
+<table>
+  <thead>
+      <tr>
+          <th>来源</th>
+          <th>源码模块</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>内置 Bash 工具</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/bash-tools.exec.ts">bash-tools.exec.ts</a> / <a href="https://github.com/openclaw/openclaw/blob/main/src/agents/bash-tools.process.ts">bash-tools.process.ts</a></td>
+          <td><code>exec</code> 和 <code>process</code>，核心执行能力</td>
+      </tr>
+      <tr>
+          <td>OpenClaw 内置工具</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/openclaw-tools.registration.ts">openclaw-tools.registration.ts</a></td>
+          <td><code>read</code>/<code>write</code>/<code>message</code>/<code>web_search</code>/<code>web_fetch</code>/<code>sessions_*</code>/<code>cron</code>/<code>tts</code> 等</td>
+      </tr>
+      <tr>
+          <td>Channel 插件工具</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/channel-tools.ts">channel-tools.ts</a></td>
+          <td>由 Channel 插件注册（如钉钉的 <code>send_message</code>、Discord 的 <code>reaction</code>）</td>
+      </tr>
+      <tr>
+          <td>MCP / Plugin 工具</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/openclaw-plugin-tools.ts">openclaw-plugin-tools.ts</a></td>
+          <td>由外部插件或 MCP Server 提供</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="22-工具策略过滤tool-policy-pipeline">
+  2.2 工具策略过滤（Tool Policy Pipeline）
+  <a class="anchor" href="#22-%e5%b7%a5%e5%85%b7%e7%ad%96%e7%95%a5%e8%bf%87%e6%bb%a4tool-policy-pipeline">#</a>
+</h3>
+<p>工具在暴露给模型之前，必须通过策略管道：</p>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/tool-policy-pipeline.ts">tool-policy-pipeline.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/tool-policy-pipeline.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 默认管道步骤：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_PIPELINE_STEPS</span> <span style="color:#f92672">=</span> [
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#39;tool-name-allowlist&#39;</span>,     <span style="color:#75715e">// 名称白名单过滤
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#e6db74">&#39;owner-only-policy&#39;</span>,        <span style="color:#75715e">// 仅 owner 可用工具
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#e6db74">&#39;tool-profile-policy&#39;</span>,      <span style="color:#75715e">// 工具 profile（safe-bin 等）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#e6db74">&#39;tool-fs-policy&#39;</span>,           <span style="color:#75715e">// 文件系统路径限制
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#e6db74">&#39;sandbox-policy&#39;</span>,           <span style="color:#75715e">// 沙箱策略
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">applyToolPolicyPipeline</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">const</span> <span style="color:#a6e22e">step</span> <span style="color:#66d9ef">of</span> <span style="color:#a6e22e">pipelineSteps</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">result</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">step</span>.<span style="color:#a6e22e">evaluate</span>(<span style="color:#a6e22e">toolName</span>, <span style="color:#a6e22e">args</span>, <span style="color:#a6e22e">context</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">result</span>.<span style="color:#a6e22e">deny</span>) <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">allowed</span>: <span style="color:#66d9ef">false</span>, <span style="color:#a6e22e">reason</span>: <span style="color:#66d9ef">result.deny</span> };
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">allowed</span>: <span style="color:#66d9ef">true</span> };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>策略匹配</strong>（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/tool-policy-match.ts">tool-policy-match.ts</a>）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/tool-policy-match.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">isToolAllowedByPolicies</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 1. 检查 allow / deny / alsoAllow 列表
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 2. 检查 owner-only 策略
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 3. 检查 tool profile（safeBin / fullAccess 等）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 4. 检查 fs workspace 限制
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 5. 检查 subagent tool policy
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><h3 id="23-工具定义构建--发给模型">
+  2.3 工具定义构建 → 发给模型
+  <a class="anchor" href="#23-%e5%b7%a5%e5%85%b7%e5%ae%9a%e4%b9%89%e6%9e%84%e5%bb%ba--%e5%8f%91%e7%bb%99%e6%a8%a1%e5%9e%8b">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-tool-definition-adapter.ts">pi-tool-definition-adapter.ts</a></p>
+<p>通过 <code>toClientToolDefinitions()</code> 将内部工具定义转换为模型 API 需要的 JSON Schema 格式（OpenAI function calling / Anthropic tool_use 等），同时检测工具名冲突。</p>
+<hr>
+<h2 id="3-agent-loop-中的工具调用入口">
+  3. Agent Loop 中的工具调用入口
+  <a class="anchor" href="#3-agent-loop-%e4%b8%ad%e7%9a%84%e5%b7%a5%e5%85%b7%e8%b0%83%e7%94%a8%e5%85%a5%e5%8f%a3">#</a>
+</h2>
+<h3 id="31-llm-返回-tool_calls">
+  3.1 LLM 返回 tool_calls
+  <a class="anchor" href="#31-llm-%e8%bf%94%e5%9b%9e-tool_calls">#</a>
+</h3>
+<p>模型流式输出结束后，Agent Loop 判断是否存在 <code>tool_calls</code>：</p>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/selection.ts">selection-DmkxuIQC.js</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/selection.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 模型输出完成后判断是否有 tool_calls
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">stopReason</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">attempt</span>.<span style="color:#a6e22e">clientToolCall</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">?</span> <span style="color:#e6db74">&#34;tool_calls&#34;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">:</span> <span style="color:#a6e22e">attempt</span>.<span style="color:#a6e22e">yieldDetected</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">?</span> <span style="color:#e6db74">&#34;end_turn&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">:</span> <span style="color:#a6e22e">sessionLastAssistant</span><span style="color:#f92672">?</span>.<span style="color:#a6e22e">stopReason</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">stopReason</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;tool_calls&#34;</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 进入工具执行流程
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">executeToolCalls</span>(<span style="color:#a6e22e">ctx</span>, <span style="color:#a6e22e">toolCalls</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="32-构建工具执行上下文">
+  3.2 构建工具执行上下文
+  <a class="anchor" href="#32-%e6%9e%84%e5%bb%ba%e5%b7%a5%e5%85%b7%e6%89%a7%e8%a1%8c%e4%b8%8a%e4%b8%8b%e6%96%87">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/attempt.tool-run-context.ts">attempt.tool-run-context.ts</a></p>
+<p>每个 tool call 都会通过 <code>buildEmbeddedAttemptToolRunContext()</code> 构建执行上下文：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/run/attempt.tool-run-context.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">buildEmbeddedAttemptToolRunContext</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">toolName</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">toolCallId</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">args</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">toolResultFormat</span>: <span style="color:#66d9ef">params.toolResultFormat</span> <span style="color:#f92672">??</span> <span style="color:#e6db74">&#34;markdown&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 图片理解模型配置
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// 媒体处理配置
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// session 可见性策略
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// sandbox 配置
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><hr>
+<h2 id="4-before_tool_call-钩子">
+  4. before_tool_call 钩子
+  <a class="anchor" href="#4-before_tool_call-%e9%92%a9%e5%ad%90">#</a>
+</h2>
+<p>在工具实际执行前，有一个钩子层：</p>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-tools.before-tool-call.runtime.ts">pi-tools.before-tool-call.runtime.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-tools.before-tool-call.runtime.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">beforeToolCallRuntime</span> <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">getDiagnosticSessionState</span>,   <span style="color:#75715e">// 获取诊断状态
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">logToolLoopAction</span>,           <span style="color:#75715e">// 记录 tool loop 动作
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">detectToolCallLoop</span>,          <span style="color:#75715e">// 检测工具调用循环
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">recordToolCall</span>,              <span style="color:#75715e">// 记录 tool call
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">recordToolCallOutcome</span>        <span style="color:#75715e">// 记录 tool call 结果
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>};
+</span></span></code></pre></div><h3 id="41-tool-loop-检测">
+  4.1 Tool Loop 检测
+  <a class="anchor" href="#41-tool-loop-%e6%a3%80%e6%b5%8b">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/tool-loop-detection.ts">tool-loop-detection.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/tool-loop-detection.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_LOOP_DETECTION_CONFIG</span> <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">enabled</span>: <span style="color:#66d9ef">false</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">historySize</span>: <span style="color:#66d9ef">30</span>,              <span style="color:#75715e">// 保留最近 30 次调用
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">warningThreshold</span>: <span style="color:#66d9ef">10</span>,         <span style="color:#75715e">// 警告阈值
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">criticalThreshold</span>: <span style="color:#66d9ef">20</span>,        <span style="color:#75715e">// 严重阈值
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">globalCircuitBreakerThreshold</span>: <span style="color:#66d9ef">30</span>,  <span style="color:#75715e">// 全局熔断阈值
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">detectors</span><span style="color:#f92672">:</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">genericRepeat</span>: <span style="color:#66d9ef">true</span>,         <span style="color:#75715e">// 通用重复检测
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#a6e22e">knownPollNoProgress</span>: <span style="color:#66d9ef">true</span>,   <span style="color:#75715e">// 已知轮询无进展
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#a6e22e">pingPong</span>: <span style="color:#66d9ef">true</span>              <span style="color:#75715e">// ping-pong 模式检测
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  }
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 工具调用哈希：toolName + 参数的稳定 JSON 序列化摘要
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">hashToolCall</span>(<span style="color:#a6e22e">toolName</span>, <span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#e6db74">`</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">toolName</span><span style="color:#e6db74">}</span><span style="color:#e6db74">:</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">digestStable</span>(<span style="color:#a6e22e">params</span>)<span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 提取未知工具名
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">extractUnknownToolName</span>(<span style="color:#a6e22e">error</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">raw</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">formatErrorForHash</span>(<span style="color:#a6e22e">error</span>).<span style="color:#a6e22e">trim</span>();
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">toolName</span> <span style="color:#f92672">=</span> (<span style="color:#a6e22e">raw</span>.<span style="color:#a6e22e">match</span>(<span style="color:#e6db74">/unknown tool[:\s]+[&#34;&#39;]?([a-z0-9_.-]+)[&#34;&#39;]?/i</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">??</span> <span style="color:#a6e22e">raw</span>.<span style="color:#a6e22e">match</span>(<span style="color:#e6db74">/tool\s+[&#34;&#39;]?([a-z0-9_.-]+)[&#34;&#39;]?\s+(?:not found|is not available)/i</span>))<span style="color:#f92672">?</span>.[<span style="color:#ae81ff">1</span>]<span style="color:#f92672">?</span>.<span style="color:#a6e22e">trim</span>();
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">toolName</span> <span style="color:#f92672">?</span> <span style="color:#a6e22e">toolName</span>.<span style="color:#a6e22e">toLowerCase</span>() <span style="color:#f92672">:</span> <span style="color:#66d9ef">void</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>三种检测器</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>检测器</th>
+          <th>原理</th>
+          <th>阈值</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>genericRepeat</code></td>
+          <td>相同 toolName + 相同参数哈希重复出现</td>
+          <td><code>warningThreshold</code> (10)</td>
+      </tr>
+      <tr>
+          <td><code>knownPollNoProgress</code></td>
+          <td><code>command_status</code>/<code>process poll</code> 连续无新进展</td>
+          <td><code>unknownToolThreshold</code> (10)</td>
+      </tr>
+      <tr>
+          <td><code>pingPong</code></td>
+          <td>两个工具交替调用无实质进展</td>
+          <td><code>criticalThreshold</code> (20)</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="5-工具参数归一化与校验">
+  5. 工具参数归一化与校验
+  <a class="anchor" href="#5-%e5%b7%a5%e5%85%b7%e5%8f%82%e6%95%b0%e5%bd%92%e4%b8%80%e5%8c%96%e4%b8%8e%e6%a0%a1%e9%aa%8c">#</a>
+</h2>
+<h3 id="51-参数归一化">
+  5.1 参数归一化
+  <a class="anchor" href="#51-%e5%8f%82%e6%95%b0%e5%bd%92%e4%b8%80%e5%8c%96">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/attempt.tool-call-normalization.ts">attempt.tool-call-normalization.ts</a></p>
+<p>在分发执行前，对工具参数进行标准化处理：</p>
+<ul>
+<li>大小写归一化（工具名统一小写）</li>
+<li>字符串值校验</li>
+<li>可选参数默认值填充</li>
+<li>类型转换</li>
+</ul>
+<h3 id="52-参数-schema-校验">
+  5.2 参数 Schema 校验
+  <a class="anchor" href="#52-%e5%8f%82%e6%95%b0-schema-%e6%a0%a1%e9%aa%8c">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-tools.params.ts">pi-tools.params.ts</a></p>
+<p>每个工具都有基于 TypeBox 定义的 JSON Schema，入参在执行前会被校验。</p>
+<hr>
+<h2 id="6-工具分类分发执行">
+  6. 工具分类分发执行
+  <a class="anchor" href="#6-%e5%b7%a5%e5%85%b7%e5%88%86%e7%b1%bb%e5%88%86%e5%8f%91%e6%89%a7%e8%a1%8c">#</a>
+</h2>
+<p>工具根据名称被分类到不同的执行器。以下是核心分类：</p>
+<h3 id="61-bash-工具exec--process">
+  6.1 Bash 工具（exec + process）
+  <a class="anchor" href="#61-bash-%e5%b7%a5%e5%85%b7exec--process">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/bash-tools.exec.ts">bash-tools.exec.ts</a> / <a href="https://github.com/openclaw/openclaw/blob/main/src/agents/bash-tools.process.ts">bash-tools.process.ts</a></p>
+<table>
+  <thead>
+      <tr>
+          <th>工具</th>
+          <th>功能</th>
+          <th>关键参数</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>exec</code></td>
+          <td>执行 shell 命令（一次性）</td>
+          <td><code>command</code>, <code>timeoutSec</code>, <code>background</code></td>
+      </tr>
+      <tr>
+          <td><code>process</code></td>
+          <td>管理长驻进程</td>
+          <td><code>action</code> (start/poll/log/write/send-keys/submit/kill)</td>
+      </tr>
+  </tbody>
+</table>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/bash-tools.exec.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// exec 工具的 JSON Schema
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">execSchema</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">Type</span>.Object({
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">command</span>: <span style="color:#66d9ef">Type.String</span>({ <span style="color:#a6e22e">description</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Shell command to execute&#34;</span> }),
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">timeout</span>: <span style="color:#66d9ef">Type.Optional</span>(<span style="color:#a6e22e">Type</span>.Number()),
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">background</span>: <span style="color:#66d9ef">Type.Optional</span>(<span style="color:#a6e22e">Type</span>.Boolean()),
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// ... 更多参数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>});
+</span></span></code></pre></div><h3 id="62-文件系统工具">
+  6.2 文件系统工具
+  <a class="anchor" href="#62-%e6%96%87%e4%bb%b6%e7%b3%bb%e7%bb%9f%e5%b7%a5%e5%85%b7">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/openclaw-tools.registration.ts">openclaw-tools.registration.ts</a></p>
+<table>
+  <thead>
+      <tr>
+          <th>工具</th>
+          <th>功能</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>read</code></td>
+          <td>安全读取工作区文件</td>
+      </tr>
+      <tr>
+          <td><code>write</code></td>
+          <td>安全写入工作区文件</td>
+      </tr>
+  </tbody>
+</table>
+<p>所有文件操作都经过 <code>readFileWithinRoot()</code> / <code>writeFileWithinRoot()</code>，限制在工作区范围内。</p>
+<h3 id="63-消息工具">
+  6.3 消息工具
+  <a class="anchor" href="#63-%e6%b6%88%e6%81%af%e5%b7%a5%e5%85%b7">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/tools/message-tool.ts">message-tool.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/tools/message-tool.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// message 工具支持多种操作：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - send: 发送消息
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - thread-reply: 回复线程
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - reaction: 添加表情
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - poll: 发起投票
+</span></span></span></code></pre></div><h3 id="64-channel-插件工具">
+  6.4 Channel 插件工具
+  <a class="anchor" href="#64-channel-%e6%8f%92%e4%bb%b6%e5%b7%a5%e5%85%b7">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/channel-tools.ts">channel-tools.ts</a></p>
+<p>每个 Channel 插件（钉钉、Discord、Telegram 等）可以注册自己的工具：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/channel-tools.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolvePluginTools</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 列出 Channel 插件注册的所有工具
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 合并到 Agent 的工具列表中
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><h3 id="65-mcp-工具">
+  6.5 MCP 工具
+  <a class="anchor" href="#65-mcp-%e5%b7%a5%e5%85%b7">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/cli-runner/pi-bundle-mcp-tools.ts">pi-bundle-mcp-tools.ts</a></p>
+<p>通过 <code>materializeBundleMcpToolsForRun()</code> 将 MCP Server 的工具发现并注册为 OpenClaw 工具。</p>
+<hr>
+<h2 id="7-工具执行结果处理">
+  7. 工具执行结果处理
+  <a class="anchor" href="#7-%e5%b7%a5%e5%85%b7%e6%89%a7%e8%a1%8c%e7%bb%93%e6%9e%9c%e5%a4%84%e7%90%86">#</a>
+</h2>
+<p>工具执行完成后，结果需要经过一系列处理才能写回 transcript。</p>
+<h3 id="71-结果清洗与截断">
+  7.1 结果清洗与截断
+  <a class="anchor" href="#71-%e7%bb%93%e6%9e%9c%e6%b8%85%e6%b4%97%e4%b8%8e%e6%88%aa%e6%96%ad">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/attempt.tool-run-context.ts">attempt.tool-run-context.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/run/attempt.tool-run-context.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// sanitizeToolResult() - 清洗工具结果
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">sanitizeToolResult</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 1. 去除敏感信息（API keys 等）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 2. 限制结果大小
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 3. 编码规范化
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><p><strong>结果截断</strong>（<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/tool-result-truncation.ts">tool-result-truncation.ts</a>）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/tool-result-truncation.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// resolveLiveToolResultMaxChars() - 动态计算最大字符数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveLiveToolResultMaxChars</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 根据当前上下文窗口剩余空间动态调整
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 避免单个工具结果吃掉太多 token
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><h3 id="72-媒体提取">
+  7.2 媒体提取
+  <a class="anchor" href="#72-%e5%aa%92%e4%bd%93%e6%8f%90%e5%8f%96">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/tool-media-payloads.ts">tool-media-payloads.ts</a></p>
+<p>工具结果中可能包含图片/音频/视频 URL，需要提取并转为 payload：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/run/tool-media-payloads.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">extractToolResultMediaArtifact</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 从工具结果中提取媒体 URL
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 下载并转 Base64
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 限制大小（maxImageBytes）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 返回 media block 供下一轮 LLM 使用
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><h3 id="73-结果格式转换">
+  7.3 结果格式转换
+  <a class="anchor" href="#73-%e7%bb%93%e6%9e%9c%e6%a0%bc%e5%bc%8f%e8%bd%ac%e6%8d%a2">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/selection.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">resolvedToolResultFormat</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">toolResultFormat</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">??</span> (<span style="color:#a6e22e">channelHint</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">?</span> <span style="color:#a6e22e">isMarkdownCapableMessageChannel</span>(<span style="color:#a6e22e">channelHint</span>) <span style="color:#f92672">?</span> <span style="color:#e6db74">&#34;markdown&#34;</span> <span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;plain&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;markdown&#34;</span>);
+</span></span></code></pre></div><p>根据 Channel 能力决定 tool result 格式：支持 Markdown 的 Channel 用 <code>markdown</code>，否则用 <code>plain</code>。</p>
+<h3 id="74-session-结果结果保护">
+  7.4 Session 结果结果保护
+  <a class="anchor" href="#74-session-%e7%bb%93%e6%9e%9c%e7%bb%93%e6%9e%9c%e4%bf%9d%e6%8a%a4">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-tool-result-guard.ts">session-tool-result-guard.ts</a> / <a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-tool-result-guard-wrapper.ts">session-tool-result-guard-wrapper.ts</a></p>
+<p>确保 session 管理工具（<code>sessions_send</code> 等）的结果不会泄露敏感信息：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/session-tool-result-guard.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 隐藏目标 session 的私密消息内容
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 仅暴露摘要信息
+</span></span></span></code></pre></div><hr>
+<h2 id="8-after_tool_call-钩子">
+  8. after_tool_call 钩子
+  <a class="anchor" href="#8-after_tool_call-%e9%92%a9%e5%ad%90">#</a>
+</h2>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/selection.ts">selection-DmkxuIQC.js</a></p>
+<p>工具执行完成后：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 跟踪工具执行开始数据
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">toolStartData</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Map</span>();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 工具执行完成后：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">buildToolStartKey</span>(<span style="color:#a6e22e">runId</span>, <span style="color:#a6e22e">toolCallId</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#e6db74">`</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">runId</span><span style="color:#e6db74">}</span><span style="color:#e6db74">:</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">toolCallId</span><span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// after_tool_call 钩子记录：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 工具名称
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 参数摘要
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 执行结果
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 耗时
+</span></span></span></code></pre></div><hr>
+<h2 id="9-写回-transcript--下一轮-llm">
+  9. 写回 Transcript → 下一轮 LLM
+  <a class="anchor" href="#9-%e5%86%99%e5%9b%9e-transcript--%e4%b8%8b%e4%b8%80%e8%bd%ae-llm">#</a>
+</h2>
+<h3 id="91-jsonl-transcript-写入">
+  9.1 JSONL Transcript 写入
+  <a class="anchor" href="#91-jsonl-transcript-%e5%86%99%e5%85%a5">#</a>
+</h3>
+<p>工具结果最终以 <code>tool_result</code> 消息格式写入 session 的 JSONL transcript 文件：</p>
+<pre tabindex="0"><code class="language-jsonl" data-lang="jsonl">// ~/.openclaw/agents/&lt;agentId&gt;/sessions/&lt;sessionId&gt;.jsonl
+{&#34;type&#34;:&#34;tool_result&#34;,&#34;tool_call_id&#34;:&#34;toolu_xxx&#34;,&#34;content&#34;:&#34;命令输出结果...&#34;,&#34;timestamp&#34;:&#34;2026-04-30T03:15:00Z&#34;}
+</code></pre><h3 id="92-结果回传给模型">
+  9.2 结果回传给模型
+  <a class="anchor" href="#92-%e7%bb%93%e6%9e%9c%e5%9b%9e%e4%bc%a0%e7%bb%99%e6%a8%a1%e5%9e%8b">#</a>
+</h3>
+<p>写回后，Agent Loop 自动触发下一轮 LLM 调用，将 tool_result 作为 <code>user</code> 角色消息传入：</p>
+<pre tabindex="0"><code>assistant: 我来执行 ls 命令 [tool_calls: exec]
+  └→ tool_result: &#34;file1.txt  file2.txt  README.md&#34;
+       └→ 下一轮 LLM 调用，看到工具结果
+</code></pre><hr>
+<h2 id="10-完整调用序列图">
+  10. 完整调用序列图
+  <a class="anchor" href="#10-%e5%ae%8c%e6%95%b4%e8%b0%83%e7%94%a8%e5%ba%8f%e5%88%97%e5%9b%be">#</a>
+</h2>
+<pre tabindex="0"><code>┌────────┐  ┌──────────────┐  ┌──────────────┐  ┌────────────┐  ┌────────────┐
+│ LLM    │  │ Agent Loop   │  │ Policy+Hook  │  │ Tool       │  │ Transcript │
+│        │  │ (selection)  │  │              │  │ Executor   │  │ (JSONL)    │
+└───┬────┘  └──────┬───────┘  └──────┬───────┘  └─────┬──────┘  └─────┬──────┘
+    │              │                  │                 │               │
+    │ tool_calls   │                  │                 │               │
+    │─────────────▶│                  │                 │               │
+    │              │                  │                 │               │
+    │              │ buildToolRunCtx  │                 │               │
+    │              │─────────────────▶│                 │               │
+    │              │                  │                 │               │
+    │              │ before_tool_call │                 │               │
+    │              │ (loop detection) │                 │               │
+    │              │─────────────────▶│                 │               │
+    │              │                  │                 │               │
+    │              │ 参数归一化+校验   │                 │               │
+    │              │─────────────────▶│                 │               │
+    │              │                  │                 │               │
+    │              │ dispatchExecute  │                 │               │
+    │              │───────────────────────────────────▶│               │
+    │              │                  │                 │               │
+    │              │                  │                 │ exec/read/    │
+    │              │                  │                 │ message/...   │
+    │              │                  │                 │               │
+    │              │                  │◀────────────────│               │
+    │              │                  │   原始结果       │               │
+    │              │                  │                 │               │
+    │              │ sanitizeResult   │                 │               │
+    │              │ truncation       │                 │               │
+    │              │ media extract    │                 │               │
+    │              │◀─────────────────│                 │               │
+    │              │                  │                 │               │
+    │              │ after_tool_call  │                 │               │
+    │              │─────────────────▶│                 │               │
+    │              │                  │                 │               │
+    │              │ write tool_result│                 │               │
+    │              │────────────────────────────────────────────────────▶│
+    │              │                  │                 │               │
+    │              │ next LLM call    │                 │               │
+    │◀─────────────│                  │                 │               │
+    │  (含 tool_result)               │                 │               │
+</code></pre><hr>
+<h2 id="11-关键设计模式">
+  11. 关键设计模式
+  <a class="anchor" href="#11-%e5%85%b3%e9%94%ae%e8%ae%be%e8%ae%a1%e6%a8%a1%e5%bc%8f">#</a>
+</h2>
+<h3 id="111-tool-call-id-追踪">
+  11.1 Tool Call ID 追踪
+  <a class="anchor" href="#111-tool-call-id-%e8%bf%bd%e8%b8%aa">#</a>
+</h3>
+<p>每个 tool call 都有唯一的 <code>toolCallId</code>，贯穿整个生命周期：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">buildToolItemId</span>(<span style="color:#a6e22e">toolCallId</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#e6db74">`tool:</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">toolCallId</span><span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">buildCommandItemId</span>(<span style="color:#a6e22e">toolCallId</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#e6db74">`command:</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">toolCallId</span><span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">buildPatchItemId</span>(<span style="color:#a6e22e">toolCallId</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#e6db74">`patch:</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">toolCallId</span><span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>根据工具类型生成不同前缀的 item ID，用于 transcript 中的追踪。</p>
+<h3 id="112-工具结果媒体处理">
+  11.2 工具结果媒体处理
+  <a class="anchor" href="#112-%e5%b7%a5%e5%85%b7%e7%bb%93%e6%9e%9c%e5%aa%92%e4%bd%93%e5%a4%84%e7%90%86">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 工具结果中的媒体 URL 提取流程：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 1. extractToolResultMediaArtifact() - 提取媒体
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 2. filterToolResultMediaUrls() - 按工具名过滤
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 3. sanitizeToolResultImages() - 图片大小/格式限制
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 4. 转为 base64 或 URL payload 传给模型
+</span></span></span></code></pre></div><h3 id="113-消息工具的异步投递">
+  11.3 消息工具的异步投递
+  <a class="anchor" href="#113-%e6%b6%88%e6%81%af%e5%b7%a5%e5%85%b7%e7%9a%84%e5%bc%82%e6%ad%a5%e6%8a%95%e9%80%92">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/tools/message-tool.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 消息工具支持异步投递：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 立即返回 &#34;消息已发送&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 实际发送在后台完成
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 支持 target/thread/reply 等参数
+</span></span></span></code></pre></div><h3 id="114-工具结果上下文保护">
+  11.4 工具结果上下文保护
+  <a class="anchor" href="#114-%e5%b7%a5%e5%85%b7%e7%bb%93%e6%9e%9c%e4%b8%8a%e4%b8%8b%e6%96%87%e4%bf%9d%e6%8a%a4">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/tool-result-context-guard.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 安装 tool result context guard：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 防止 session 管理工具泄露其他 session 内容
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 确保 agent-to-agent 通信的隐私隔离
+</span></span></span></code></pre></div><hr>
+<h2 id="12-源码模块索引">
+  12. 源码模块索引
+  <a class="anchor" href="#12-%e6%ba%90%e7%a0%81%e6%a8%a1%e5%9d%97%e7%b4%a2%e5%bc%95">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>模块</th>
+          <th>功能</th>
+          <th>GitHub 链接</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>selection.ts</code></td>
+          <td>Agent Loop 主循环，工具调用入口</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/selection.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>attempt.tool-run-context.ts</code></td>
+          <td>工具执行上下文构建</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/attempt.tool-run-context.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>attempt.tool-call-normalization.ts</code></td>
+          <td>工具参数归一化</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/attempt.tool-call-normalization.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>pi-tools.before-tool-call.runtime.ts</code></td>
+          <td>before_tool_call 钩子</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-tools.before-tool-call.runtime.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>tool-loop-detection.ts</code></td>
+          <td>工具循环检测</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/tool-loop-detection.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>tool-policy-pipeline.ts</code></td>
+          <td>工具策略管道</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/tool-policy-pipeline.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>tool-policy-match.ts</code></td>
+          <td>工具策略匹配</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/tool-policy-match.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>openclaw-tools.registration.ts</code></td>
+          <td>内置工具注册</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/openclaw-tools.registration.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>bash-tools.exec.ts</code></td>
+          <td>exec 工具实现</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/bash-tools.exec.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>bash-tools.process.ts</code></td>
+          <td>process 工具实现</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/bash-tools.process.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>channel-tools.ts</code></td>
+          <td>Channel 插件工具发现</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/channel-tools.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>openclaw-plugin-tools.ts</code></td>
+          <td>插件工具注册</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/openclaw-plugin-tools.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>tool-result-truncation.ts</code></td>
+          <td>工具结果截断</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/tool-result-truncation.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>tool-media-payloads.ts</code></td>
+          <td>工具结果媒体提取</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/tool-media-payloads.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>pi-tool-definition-adapter.ts</code></td>
+          <td>工具定义转换</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-tool-definition-adapter.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>session-tool-result-guard.ts</code></td>
+          <td>工具结果隐私保护</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-tool-result-guard.ts">查看</a></td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="13-参考资料">
+  13. 参考资料
+  <a class="anchor" href="#13-%e5%8f%82%e8%80%83%e8%b5%84%e6%96%99">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>资源</th>
+          <th>链接</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>OpenClaw 文档</td>
+          <td><a href="https://docs.openclaw.ai">https://docs.openclaw.ai</a></td>
+      </tr>
+      <tr>
+          <td>GitHub 仓库</td>
+          <td><a href="https://github.com/openclaw/openclaw">https://github.com/openclaw/openclaw</a></td>
+      </tr>
+      <tr>
+          <td>DeepWiki（AI 源码导读）</td>
+          <td><a href="https://deepwiki.com/openclaw/openclaw">https://deepwiki.com/openclaw/openclaw</a></td>
+      </tr>
+      <tr>
+          <td>Agent Loop 概念</td>
+          <td><a href="https://docs.openclaw.ai/concepts/agent-loop.md">https://docs.openclaw.ai/concepts/agent-loop.md</a></td>
+      </tr>
+      <tr>
+          <td>Tool 配置指南</td>
+          <td><a href="https://docs.openclaw.ai/config/tools.md">https://docs.openclaw.ai/config/tools.md</a></td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<p><em>本文基于 OpenClaw v2026.4.21 源码分析，所有代码引用均来自官方 GitHub 仓库。</em></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openclaw-工具调用全流程从模型输出到结果回传的源码级拆解">OpenClaw 工具调用全流程：从模型输出到结果回传的源码级拆解</a>
+      <ul>
+        <li><a href="#导读">导读</a></li>
+        <li><a href="#1-总览工具调用架构图">1. 总览：工具调用架构图</a></li>
+        <li><a href="#2-工具发现与注册">2. 工具发现与注册</a>
+          <ul>
+            <li><a href="#21-工具来源分类">2.1 工具来源分类</a></li>
+            <li><a href="#22-工具策略过滤tool-policy-pipeline">2.2 工具策略过滤（Tool Policy Pipeline）</a></li>
+            <li><a href="#23-工具定义构建--发给模型">2.3 工具定义构建 → 发给模型</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-agent-loop-中的工具调用入口">3. Agent Loop 中的工具调用入口</a>
+          <ul>
+            <li><a href="#31-llm-返回-tool_calls">3.1 LLM 返回 tool_calls</a></li>
+            <li><a href="#32-构建工具执行上下文">3.2 构建工具执行上下文</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-before_tool_call-钩子">4. before_tool_call 钩子</a>
+          <ul>
+            <li><a href="#41-tool-loop-检测">4.1 Tool Loop 检测</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-工具参数归一化与校验">5. 工具参数归一化与校验</a>
+          <ul>
+            <li><a href="#51-参数归一化">5.1 参数归一化</a></li>
+            <li><a href="#52-参数-schema-校验">5.2 参数 Schema 校验</a></li>
+          </ul>
+        </li>
+        <li><a href="#6-工具分类分发执行">6. 工具分类分发执行</a>
+          <ul>
+            <li><a href="#61-bash-工具exec--process">6.1 Bash 工具（exec + process）</a></li>
+            <li><a href="#62-文件系统工具">6.2 文件系统工具</a></li>
+            <li><a href="#63-消息工具">6.3 消息工具</a></li>
+            <li><a href="#64-channel-插件工具">6.4 Channel 插件工具</a></li>
+            <li><a href="#65-mcp-工具">6.5 MCP 工具</a></li>
+          </ul>
+        </li>
+        <li><a href="#7-工具执行结果处理">7. 工具执行结果处理</a>
+          <ul>
+            <li><a href="#71-结果清洗与截断">7.1 结果清洗与截断</a></li>
+            <li><a href="#72-媒体提取">7.2 媒体提取</a></li>
+            <li><a href="#73-结果格式转换">7.3 结果格式转换</a></li>
+            <li><a href="#74-session-结果结果保护">7.4 Session 结果结果保护</a></li>
+          </ul>
+        </li>
+        <li><a href="#8-after_tool_call-钩子">8. after_tool_call 钩子</a></li>
+        <li><a href="#9-写回-transcript--下一轮-llm">9. 写回 Transcript → 下一轮 LLM</a>
+          <ul>
+            <li><a href="#91-jsonl-transcript-写入">9.1 JSONL Transcript 写入</a></li>
+            <li><a href="#92-结果回传给模型">9.2 结果回传给模型</a></li>
+          </ul>
+        </li>
+        <li><a href="#10-完整调用序列图">10. 完整调用序列图</a></li>
+        <li><a href="#11-关键设计模式">11. 关键设计模式</a>
+          <ul>
+            <li><a href="#111-tool-call-id-追踪">11.1 Tool Call ID 追踪</a></li>
+            <li><a href="#112-工具结果媒体处理">11.2 工具结果媒体处理</a></li>
+            <li><a href="#113-消息工具的异步投递">11.3 消息工具的异步投递</a></li>
+            <li><a href="#114-工具结果上下文保护">11.4 工具结果上下文保护</a></li>
+          </ul>
+        </li>
+        <li><a href="#12-源码模块索引">12. 源码模块索引</a></li>
+        <li><a href="#13-参考资料">13. 参考资料</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+

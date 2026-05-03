@@ -1,0 +1,4722 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  OpenClaw 对话状态管理：从 Session 存储到 Context Engine 的源码级拆解
+  #
+
+
+基于 OpenClaw v2026.4.21 源码深度分析
+作者：小伟 | 2026-04-30
+
+
+  导读
+  #
+
+一个 LLM Agent 能&quot;记住&quot;什么、如何管理对话上下文、如何在有限的 context window 中塞入最有价值的信息，这些是 Agent 系统的核心挑战。OpenClaw 的对话状态管理不是简单的&quot;把历史消息传给模型&quot;，而是一个分层架构：从持久化存储 → Session 生命周期 → Session Manager → Context Engine → Compaction → Transcript Repair，每一层各司其职。
+本文将从源码级别完整拆解这一架构。
+
+
+  1. 总览：对话状态管理架构
+  #
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    OpenClaw 对话状态管理体系                                │
+│                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────┐ │
+│  │  存储层：持久化                                                       │ │
+│  │  Session Store (sessions.json) &#43; JSONL Transcript (session.jsonl)   │ │
+│  │  &#43; Session Store Cache &#43; Session Write Lock                          │ │
+│  └────────────────────────────────┬───────────────────────────────────┘ │
+│                                   │                                     │
+│  ┌────────────────────────────────▼───────────────────────────────────┐ │
+│  │  会话层：Session 生命周期                                              │ │
+│  │  Session 创建 / 路由 / 分组 / 维护（prune/rotate/maintenance）      │ │
+│  └────────────────────────────────┬───────────────────────────────────┘ │
+│                                   │                                     │
+│  ┌────────────────────────────────▼───────────────────────────────────┐ │
+│  │  引擎层：Session Manager &#43; Context Engine                             │ │
+│  │  SessionManager (pi-coding-agent) &#43; Context Engine (assemble/ingest)│ │
+│  │  &#43; Context Window Guard &#43; Token Estimation                          │ │
+│  └────────────────────────────────┬───────────────────────────────────┘ │
+│                                   │                                     │
+│  ┌────────────────────────────────▼───────────────────────────────────┐ │
+│  │  维护层：Compaction &#43; Maintenance                                     │ │
+│  │  Context Engine Maintenance &#43; Compaction &#43; Session Truncation       │ │
+│  │  &#43; Transcript Rewrite &#43; Tool Result Truncation                      │ │
+│  └────────────────────────────────┬───────────────────────────────────┘ │
+│                                   │                                     │
+│  ┌────────────────────────────────▼───────────────────────────────────┐ │
+│  │  安全层：Repair &#43; Guard                                               │ │
+│  │  Session File Repair &#43; Tool Result Context Guard                    │ │
+│  │  &#43; Tool Use/Result Pairing Sanitize &#43; Thinking Block Repair         │ │
+│  └────────────────────────────────────────────────────────────────────┘ │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+  2. 存储层：Session Store &#43; JSONL Transcript
+  #
+
+
+  2.1 双存储结构
+  #
+
+OpenClaw 使用两种文件格式来管理对话状态：">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/">
+  <meta property="og:site_name" content="基于LLM的系统设计与实现">
+  <meta property="og:title" content="基于LLM的系统设计与实现">
+  <meta property="og:description" content="OpenClaw 对话状态管理：从 Session 存储到 Context Engine 的源码级拆解 # 基于 OpenClaw v2026.4.21 源码深度分析 作者：小伟 | 2026-04-30
+导读 # 一个 LLM Agent 能&#34;记住&#34;什么、如何管理对话上下文、如何在有限的 context window 中塞入最有价值的信息，这些是 Agent 系统的核心挑战。OpenClaw 的对话状态管理不是简单的&#34;把历史消息传给模型&#34;，而是一个分层架构：从持久化存储 → Session 生命周期 → Session Manager → Context Engine → Compaction → Transcript Repair，每一层各司其职。
+本文将从源码级别完整拆解这一架构。
+1. 总览：对话状态管理架构 # ┌──────────────────────────────────────────────────────────────────────────┐ │ OpenClaw 对话状态管理体系 │ │ │ │ ┌────────────────────────────────────────────────────────────────────┐ │ │ │ 存储层：持久化 │ │ │ │ Session Store (sessions.json) &#43; JSONL Transcript (session.jsonl) │ │ │ │ &#43; Session Store Cache &#43; Session Write Lock │ │ │ └────────────────────────────────┬───────────────────────────────────┘ │ │ │ │ │ ┌────────────────────────────────▼───────────────────────────────────┐ │ │ │ 会话层：Session 生命周期 │ │ │ │ Session 创建 / 路由 / 分组 / 维护（prune/rotate/maintenance） │ │ │ └────────────────────────────────┬───────────────────────────────────┘ │ │ │ │ │ ┌────────────────────────────────▼───────────────────────────────────┐ │ │ │ 引擎层：Session Manager &#43; Context Engine │ │ │ │ SessionManager (pi-coding-agent) &#43; Context Engine (assemble/ingest)│ │ │ │ &#43; Context Window Guard &#43; Token Estimation │ │ │ └────────────────────────────────┬───────────────────────────────────┘ │ │ │ │ │ ┌────────────────────────────────▼───────────────────────────────────┐ │ │ │ 维护层：Compaction &#43; Maintenance │ │ │ │ Context Engine Maintenance &#43; Compaction &#43; Session Truncation │ │ │ │ &#43; Transcript Rewrite &#43; Tool Result Truncation │ │ │ └────────────────────────────────┬───────────────────────────────────┘ │ │ │ │ │ ┌────────────────────────────────▼───────────────────────────────────┐ │ │ │ 安全层：Repair &#43; Guard │ │ │ │ Session File Repair &#43; Tool Result Context Guard │ │ │ │ &#43; Tool Use/Result Pairing Sanitize &#43; Thinking Block Repair │ │ │ └────────────────────────────────────────────────────────────────────┘ │ │ │ └──────────────────────────────────────────────────────────────────────────┘ 2. 存储层：Session Store &#43; JSONL Transcript # 2.1 双存储结构 # OpenClaw 使用两种文件格式来管理对话状态：">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="docs">
+<title>Openclaw Conversation State Management | 基于LLM的系统设计与实现</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.82a42bc12a9d075dec61907a12e3c606fe4237d56e127db2ccb4e2e2b58df6ec.js" integrity="sha256-gqQrwSqdB13sYZB6EuPGBv5CN9VuEn2yzLTi4rWN9uw=" crossorigin="anonymous"></script>
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>基于LLM的系统设计与实现</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b757002e9620728c23883bffd127cb72" class="toggle"  />
+    <label for="section-b757002e9620728c23883bffd127cb72" class="flex justify-between">
+      <a role="button" class="">Platform *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0b800a1752a4e836473ce3e89db51e41" class="toggle"  />
+    <label for="section-0b800a1752a4e836473ce3e89db51e41" class="flex justify-between">
+      <a role="button" class="">Multi-agent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="toggle"  />
+    <label for="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="flex justify-between">
+      <a role="button" class="">Communication *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Agent Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Reflection</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Planning</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Sandbox</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Tool use</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle" checked />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code/" class="">Cloud Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle" checked />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/openclaw-sandbox-security/" class="">Openclaw Sandbox Security</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/stability/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/" class="active">Openclaw Conversation State Management</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/" class="">Openclaw Tool Invocation Flow</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle"  />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">(Manus)context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Openclaw Conversation State Management</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openclaw-对话状态管理从-session-存储到-context-engine-的源码级拆解">OpenClaw 对话状态管理：从 Session 存储到 Context Engine 的源码级拆解</a>
+      <ul>
+        <li><a href="#导读">导读</a></li>
+        <li><a href="#1-总览对话状态管理架构">1. 总览：对话状态管理架构</a></li>
+        <li><a href="#2-存储层session-store--jsonl-transcript">2. 存储层：Session Store + JSONL Transcript</a>
+          <ul>
+            <li><a href="#21-双存储结构">2.1 双存储结构</a></li>
+            <li><a href="#22-session-store-加载">2.2 Session Store 加载</a></li>
+            <li><a href="#23-session-维护策略">2.3 Session 维护策略</a></li>
+            <li><a href="#24-high-water-磁盘预算策略">2.4 High-Water 磁盘预算策略</a></li>
+            <li><a href="#25-session-文件轮转">2.5 Session 文件轮转</a></li>
+            <li><a href="#26-session-store-缓存">2.6 Session Store 缓存</a></li>
+            <li><a href="#27-session-write-lock">2.7 Session Write Lock</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-会话层session-生命周期">3. 会话层：Session 生命周期</a>
+          <ul>
+            <li><a href="#31-session-key-路由">3.1 Session Key 路由</a></li>
+            <li><a href="#32-session-元数据合并">3.2 Session 元数据合并</a></li>
+            <li><a href="#33-session-交付上下文">3.3 Session 交付上下文</a></li>
+            <li><a href="#34-session-元数据">3.4 Session 元数据</a></li>
+            <li><a href="#35-session-身份标识">3.5 Session 身份标识</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-引擎层session-manager--context-engine">4. 引擎层：Session Manager + Context Engine</a>
+          <ul>
+            <li><a href="#41-session-manager-初始化">4.1 Session Manager 初始化</a></li>
+            <li><a href="#42-session-manager-缓存">4.2 Session Manager 缓存</a></li>
+            <li><a href="#43-context-engine-生命周期钩子">4.3 Context Engine 生命周期钩子</a></li>
+            <li><a href="#44-context-engine-维护maintenance">4.4 Context Engine 维护（Maintenance）</a></li>
+            <li><a href="#45-延迟维护调度">4.5 延迟维护调度</a></li>
+            <li><a href="#46-延迟维护-worker">4.6 延迟维护 Worker</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-维护层compaction--transcript-管理">5. 维护层：Compaction + Transcript 管理</a>
+          <ul>
+            <li><a href="#51-transcript-rewrite">5.1 Transcript Rewrite</a></li>
+            <li><a href="#52-tool-result-截断">5.2 Tool Result 截断</a></li>
+            <li><a href="#53-字符估算">5.3 字符估算</a></li>
+            <li><a href="#54-compaction-常量">5.4 Compaction 常量</a></li>
+            <li><a href="#55-compaction-超时">5.5 Compaction 超时</a></li>
+            <li><a href="#56-compaction-retry--aggregate-timeout">5.6 Compaction Retry + Aggregate Timeout</a></li>
+            <li><a href="#57-session-truncation">5.7 Session Truncation</a></li>
+          </ul>
+        </li>
+        <li><a href="#6-安全层repair--guard">6. 安全层：Repair + Guard</a>
+          <ul>
+            <li><a href="#61-session-文件自修复">6.1 Session 文件自修复</a></li>
+            <li><a href="#62-transcript-repair">6.2 Transcript Repair</a></li>
+            <li><a href="#63-tool-result-context-guard">6.3 Tool Result Context Guard</a></li>
+          </ul>
+        </li>
+        <li><a href="#7-完整对话状态管理序列图">7. 完整对话状态管理序列图</a></li>
+        <li><a href="#8-关键设计模式">8. 关键设计模式</a>
+          <ul>
+            <li><a href="#81-jsonl-格式的优势">8.1 JSONL 格式的优势</a></li>
+            <li><a href="#82-三层会话存储">8.2 三层会话存储</a></li>
+            <li><a href="#83-延迟维护模式">8.3 延迟维护模式</a></li>
+            <li><a href="#84-自修复能力">8.4 自修复能力</a></li>
+            <li><a href="#85-tool-useresult-配对保护">8.5 Tool Use/Result 配对保护</a></li>
+            <li><a href="#86-token-预算控制">8.6 Token 预算控制</a></li>
+          </ul>
+        </li>
+        <li><a href="#9-配置示例">9. 配置示例</a>
+          <ul>
+            <li><a href="#91-session-维护配置">9.1 Session 维护配置</a></li>
+            <li><a href="#92-context-配置">9.2 Context 配置</a></li>
+          </ul>
+        </li>
+        <li><a href="#10-源码模块索引">10. 源码模块索引</a></li>
+        <li><a href="#11-参考资料">11. 参考资料</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="openclaw-对话状态管理从-session-存储到-context-engine-的源码级拆解">
+  OpenClaw 对话状态管理：从 Session 存储到 Context Engine 的源码级拆解
+  <a class="anchor" href="#openclaw-%e5%af%b9%e8%af%9d%e7%8a%b6%e6%80%81%e7%ae%a1%e7%90%86%e4%bb%8e-session-%e5%ad%98%e5%82%a8%e5%88%b0-context-engine-%e7%9a%84%e6%ba%90%e7%a0%81%e7%ba%a7%e6%8b%86%e8%a7%a3">#</a>
+</h1>
+<blockquote>
+<p><strong>基于 OpenClaw v2026.4.21 源码深度分析</strong>
+作者：小伟 | 2026-04-30</p></blockquote>
+<hr>
+<h2 id="导读">
+  导读
+  <a class="anchor" href="#%e5%af%bc%e8%af%bb">#</a>
+</h2>
+<p>一个 LLM Agent 能&quot;记住&quot;什么、如何管理对话上下文、如何在有限的 context window 中塞入最有价值的信息，这些是 Agent 系统的核心挑战。OpenClaw 的对话状态管理不是简单的&quot;把历史消息传给模型&quot;，而是一个分层架构：从持久化存储 → Session 生命周期 → Session Manager → Context Engine → Compaction → Transcript Repair，每一层各司其职。</p>
+<p>本文将从源码级别完整拆解这一架构。</p>
+<hr>
+<h2 id="1-总览对话状态管理架构">
+  1. 总览：对话状态管理架构
+  <a class="anchor" href="#1-%e6%80%bb%e8%a7%88%e5%af%b9%e8%af%9d%e7%8a%b6%e6%80%81%e7%ae%a1%e7%90%86%e6%9e%b6%e6%9e%84">#</a>
+</h2>
+<pre tabindex="0"><code>┌──────────────────────────────────────────────────────────────────────────┐
+│                    OpenClaw 对话状态管理体系                                │
+│                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────┐ │
+│  │  存储层：持久化                                                       │ │
+│  │  Session Store (sessions.json) + JSONL Transcript (session.jsonl)   │ │
+│  │  + Session Store Cache + Session Write Lock                          │ │
+│  └────────────────────────────────┬───────────────────────────────────┘ │
+│                                   │                                     │
+│  ┌────────────────────────────────▼───────────────────────────────────┐ │
+│  │  会话层：Session 生命周期                                              │ │
+│  │  Session 创建 / 路由 / 分组 / 维护（prune/rotate/maintenance）      │ │
+│  └────────────────────────────────┬───────────────────────────────────┘ │
+│                                   │                                     │
+│  ┌────────────────────────────────▼───────────────────────────────────┐ │
+│  │  引擎层：Session Manager + Context Engine                             │ │
+│  │  SessionManager (pi-coding-agent) + Context Engine (assemble/ingest)│ │
+│  │  + Context Window Guard + Token Estimation                          │ │
+│  └────────────────────────────────┬───────────────────────────────────┘ │
+│                                   │                                     │
+│  ┌────────────────────────────────▼───────────────────────────────────┐ │
+│  │  维护层：Compaction + Maintenance                                     │ │
+│  │  Context Engine Maintenance + Compaction + Session Truncation       │ │
+│  │  + Transcript Rewrite + Tool Result Truncation                      │ │
+│  └────────────────────────────────┬───────────────────────────────────┘ │
+│                                   │                                     │
+│  ┌────────────────────────────────▼───────────────────────────────────┐ │
+│  │  安全层：Repair + Guard                                               │ │
+│  │  Session File Repair + Tool Result Context Guard                    │ │
+│  │  + Tool Use/Result Pairing Sanitize + Thinking Block Repair         │ │
+│  └────────────────────────────────────────────────────────────────────┘ │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+</code></pre><hr>
+<h2 id="2-存储层session-store--jsonl-transcript">
+  2. 存储层：Session Store + JSONL Transcript
+  <a class="anchor" href="#2-%e5%ad%98%e5%82%a8%e5%b1%82session-store--jsonl-transcript">#</a>
+</h2>
+<h3 id="21-双存储结构">
+  2.1 双存储结构
+  <a class="anchor" href="#21-%e5%8f%8c%e5%ad%98%e5%82%a8%e7%bb%93%e6%9e%84">#</a>
+</h3>
+<p>OpenClaw 使用<strong>两种文件格式</strong>来管理对话状态：</p>
+<table>
+  <thead>
+      <tr>
+          <th>文件</th>
+          <th>路径</th>
+          <th>格式</th>
+          <th>用途</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>sessions.json</code></td>
+          <td><code>~/.openclaw/agents/&lt;agentId&gt;/sessions/sessions.json</code></td>
+          <td>JSON</td>
+          <td>Session 元数据索引（轻量）</td>
+      </tr>
+      <tr>
+          <td><code>&lt;sessionId&gt;.jsonl</code></td>
+          <td><code>~/.openclaw/agents/&lt;agentId&gt;/sessions/&lt;sessionId&gt;.jsonl</code></td>
+          <td>JSONL</td>
+          <td>完整对话记录（逐行 JSON）</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/paths.ts">paths.ts</a> / <a href="https://github.com/openclaw/openclaw/blob/main/src/config/sessions/store.ts">store.ts</a></p>
+<h3 id="22-session-store-加载">
+  2.2 Session Store 加载
+  <a class="anchor" href="#22-session-store-%e5%8a%a0%e8%bd%bd">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/config/sessions/store-load.ts">store-load.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/config/sessions/store-load.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 从文件系统加载 sessions.json
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">loadSessionStore</span>(<span style="color:#a6e22e">storePath</span>, <span style="color:#a6e22e">options</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 1. 优先从缓存读取
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">isSessionStoreCacheEnabled</span>()) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">cached</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">readSessionStoreCache</span>(<span style="color:#a6e22e">storePath</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">cached</span>) <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">cached</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 2. 从磁盘读取
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">content</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">fs</span>.<span style="color:#a6e22e">readFile</span>(<span style="color:#a6e22e">storePath</span>, <span style="color:#e6db74">&#34;utf-8&#34;</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">store</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">JSON</span>.<span style="color:#a6e22e">parse</span>(<span style="color:#a6e22e">content</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 3. 清理过期条目
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">pruneStaleEntries</span>(<span style="color:#a6e22e">store</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 4. 限制最大条目数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">capEntryCount</span>(<span style="color:#a6e22e">store</span>, <span style="color:#a6e22e">config</span>.<span style="color:#a6e22e">maxEntries</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 5. 写入缓存
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">writeSessionStoreCache</span>(<span style="color:#a6e22e">storePath</span>, <span style="color:#a6e22e">store</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">store</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="23-session-维护策略">
+  2.3 Session 维护策略
+  <a class="anchor" href="#23-session-%e7%bb%b4%e6%8a%a4%e7%ad%96%e7%95%a5">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/config/sessions/store-maintenance.ts">store-maintenance.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/config/sessions/store-maintenance.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 默认维护策略
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_SESSION_PRUNE_AFTER_MS</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">720</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">60</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">60</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">1000</span>;  <span style="color:#75715e">// 30 天
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_SESSION_MAX_ENTRIES</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">500</span>;                        <span style="color:#75715e">// 最大 500 条
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_SESSION_ROTATE_BYTES</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">10485760</span>;                 <span style="color:#75715e">// 10 MB 轮转
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_SESSION_MAINTENANCE_MODE</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;enforce&#34;</span>;             <span style="color:#75715e">// 强制模式
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_SESSION_DISK_BUDGET_HIGH_WATER_RATIO</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.8</span>;      <span style="color:#75715e">// 高水位 80%
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveMaintenanceConfigFromInput</span>(<span style="color:#a6e22e">maintenance</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">mode</span>: <span style="color:#66d9ef">maintenance?.mode</span> <span style="color:#f92672">??</span> <span style="color:#a6e22e">DEFAULT_SESSION_MAINTENANCE_MODE</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">pruneAfterMs</span>: <span style="color:#66d9ef">resolvePruneAfterMs</span>(<span style="color:#a6e22e">maintenance</span>),
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">maxEntries</span>: <span style="color:#66d9ef">maintenance?.maxEntries</span> <span style="color:#f92672">??</span> <span style="color:#a6e22e">DEFAULT_SESSION_MAX_ENTRIES</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">rotateBytes</span>: <span style="color:#66d9ef">resolveRotateBytes</span>(<span style="color:#a6e22e">maintenance</span>),
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">maxDiskBytes</span>: <span style="color:#66d9ef">resolveMaxDiskBytes</span>(<span style="color:#a6e22e">maintenance</span>),
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">highWaterBytes</span>: <span style="color:#66d9ef">resolveHighWaterBytes</span>(<span style="color:#a6e22e">maintenance</span>, <span style="color:#a6e22e">maxDiskBytes</span>)
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 清理过期条目
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">pruneStaleEntries</span>(<span style="color:#a6e22e">store</span>, <span style="color:#a6e22e">overrideMaxAgeMs</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">cutoffMs</span> <span style="color:#f92672">=</span> Date.<span style="color:#a6e22e">now</span>() <span style="color:#f92672">-</span> <span style="color:#a6e22e">maxAgeMs</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">const</span> [<span style="color:#a6e22e">key</span>, <span style="color:#a6e22e">entry</span>] <span style="color:#66d9ef">of</span> Object.<span style="color:#a6e22e">entries</span>(<span style="color:#a6e22e">store</span>)) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">entry</span><span style="color:#f92672">?</span>.<span style="color:#a6e22e">updatedAt</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">null</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">entry</span>.<span style="color:#a6e22e">updatedAt</span> <span style="color:#f92672">&lt;</span> <span style="color:#a6e22e">cutoffMs</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">delete</span> <span style="color:#a6e22e">store</span>[<span style="color:#a6e22e">key</span>];  <span style="color:#75715e">// 直接删除
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="24-high-water-磁盘预算策略">
+  2.4 High-Water 磁盘预算策略
+  <a class="anchor" href="#24-high-water-%e7%a3%81%e7%9b%98%e9%a2%84%e7%ae%97%e7%ad%96%e7%95%a5">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// High-Water 策略：写入超过 cap 时批量清理，而非每次都触发完整清理
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveHighWaterBytes</span>(<span style="color:#a6e22e">maintenance</span>, <span style="color:#a6e22e">maxDiskBytes</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">maxDiskBytes</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">null</span>) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">null</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> Math.<span style="color:#a6e22e">floor</span>(<span style="color:#a6e22e">maxDiskBytes</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">0.8</span>);  <span style="color:#75715e">// 80% 水位线
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><h3 id="25-session-文件轮转">
+  2.5 Session 文件轮转
+  <a class="anchor" href="#25-session-%e6%96%87%e4%bb%b6%e8%bd%ae%e8%bd%ac">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/config/sessions/store-load.ts">store-load.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/config/sessions/store-load.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 当 session 文件超过 rotateBytes 时自动轮转
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">rotateSessionFile</span>(<span style="color:#a6e22e">sessionFile</span>, <span style="color:#a6e22e">rotateBytes</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">stat</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">fs</span>.<span style="color:#a6e22e">statSync</span>(<span style="color:#a6e22e">sessionFile</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">stat</span>.<span style="color:#a6e22e">size</span> <span style="color:#f92672">&gt;</span> <span style="color:#a6e22e">rotateBytes</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 归档旧文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">archivePath</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">`</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">sessionFile</span><span style="color:#e6db74">}</span><span style="color:#e6db74">.</span><span style="color:#e6db74">${</span>Date.<span style="color:#a6e22e">now</span>()<span style="color:#e6db74">}</span><span style="color:#e6db74">.archive`</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">fs</span>.<span style="color:#a6e22e">renameSync</span>(<span style="color:#a6e22e">sessionFile</span>, <span style="color:#a6e22e">archivePath</span>);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="26-session-store-缓存">
+  2.6 Session Store 缓存
+  <a class="anchor" href="#26-session-store-%e7%bc%93%e5%ad%98">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/config/sessions/store-cache.ts">store-cache.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// Session Store 缓存机制
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">isSessionStoreCacheEnabled() {</span> ... }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">readSessionStoreCache</span>(<span style="color:#a6e22e">storePath</span>) { ... }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">writeSessionStoreCache</span>(<span style="color:#a6e22e">storePath</span>, <span style="color:#a6e22e">store</span>) { ... }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">setSerializedSessionStore</span>(<span style="color:#a6e22e">key</span>, <span style="color:#a6e22e">value</span>) { ... }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">getSerializedSessionStore</span>(<span style="color:#a6e22e">key</span>) { ... }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// TTL 缓存
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveCacheTtlMs() {</span> ... }  <span style="color:#75715e">// 默认 TTL
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">createExpiringMapCache() {</span> ... }  <span style="color:#75715e">// 过期 Map 缓存
+</span></span></span></code></pre></div><h3 id="27-session-write-lock">
+  2.7 Session Write Lock
+  <a class="anchor" href="#27-session-write-lock">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-write-lock.ts">session-write-lock.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/session-write-lock.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 默认参数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_STALE_MS</span>          <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span><span style="color:#a6e22e">_800_000</span>;   <span style="color:#75715e">// 30 分钟
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_MAX_HOLD_MS</span>       <span style="color:#f92672">=</span>   <span style="color:#ae81ff">300</span><span style="color:#a6e22e">_000</span>;   <span style="color:#75715e">// 5 分钟
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_WATCHDOG_INTERVAL</span> <span style="color:#f92672">=</span>    <span style="color:#ae81ff">60</span><span style="color:#a6e22e">_000</span>;   <span style="color:#75715e">// 1 分钟
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_TIMEOUT_GRACE_MS</span>  <span style="color:#f92672">=</span>   <span style="color:#ae81ff">120</span><span style="color:#a6e22e">_000</span>;   <span style="color:#75715e">// 2 分钟
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 获取 session 写锁
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">acquireSessionWriteLock</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">lockPath</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">`</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">sessionFile</span><span style="color:#e6db74">}</span><span style="color:#e6db74">.lock`</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 1. 可重入检查
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">held</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">HELD_LOCKS</span>.<span style="color:#66d9ef">get</span>(<span style="color:#a6e22e">normalizedSessionFile</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">allowReentrant</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">held</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">held</span>.<span style="color:#a6e22e">count</span> <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">release</span><span style="color:#f92672">:</span> () <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">releaseHeldLock</span>(...) };
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 2. 重试循环
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">while</span> (Date.<span style="color:#a6e22e">now</span>() <span style="color:#f92672">-</span> <span style="color:#a6e22e">startedAt</span> <span style="color:#f92672">&lt;</span> <span style="color:#a6e22e">timeoutMs</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// wx 标志：文件存在则失败
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">handle</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">fs</span>.<span style="color:#a6e22e">open</span>(<span style="color:#a6e22e">lockPath</span>, <span style="color:#e6db74">&#34;wx&#34;</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">handle</span>.<span style="color:#a6e22e">writeFile</span>(<span style="color:#a6e22e">JSON</span>.<span style="color:#a6e22e">stringify</span>({
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">pid</span>: <span style="color:#66d9ef">process.pid</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">createdAt</span>: <span style="color:#66d9ef">new</span> Date().<span style="color:#a6e22e">toISOString</span>(),
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">starttime</span>: <span style="color:#66d9ef">getProcessStartTime</span>(<span style="color:#a6e22e">process</span>.<span style="color:#a6e22e">pid</span>)
+</span></span><span style="display:flex;"><span>      }));
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">release</span> };
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">catch</span> (<span style="color:#a6e22e">err</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">err</span>.<span style="color:#a6e22e">code</span> <span style="color:#f92672">!==</span> <span style="color:#e6db74">&#34;EEXIST&#34;</span>) <span style="color:#66d9ef">throw</span> <span style="color:#a6e22e">err</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 检查 stale lock
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#66d9ef">if</span> (<span style="color:#66d9ef">await</span> <span style="color:#a6e22e">shouldReclaimContendedLockFile</span>(<span style="color:#a6e22e">lockPath</span>)) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">fs</span>.<span style="color:#a6e22e">rm</span>(<span style="color:#a6e22e">lockPath</span>, { <span style="color:#a6e22e">force</span>: <span style="color:#66d9ef">true</span> });
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">continue</span>;
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 指数退避
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">sleep</span>(<span style="color:#a6e22e">delay</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Watchdog 后台清理
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">ensureWatchdogStarted</span>(<span style="color:#a6e22e">intervalMs</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">setInterval</span>(() <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">runLockWatchdogCheck</span>(), <span style="color:#a6e22e">intervalMs</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><hr>
+<h2 id="3-会话层session-生命周期">
+  3. 会话层：Session 生命周期
+  <a class="anchor" href="#3-%e4%bc%9a%e8%af%9d%e5%b1%82session-%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f">#</a>
+</h2>
+<h3 id="31-session-key-路由">
+  3.1 Session Key 路由
+  <a class="anchor" href="#31-session-key-%e8%b7%af%e7%94%b1">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/session-key.ts">session-key.ts</a> / <a href="https://github.com/openclaw/openclaw/blob/main/src/config/sessions/store.ts">store.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/config/sessions/store.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Group Session Key 解析
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveGroupSessionKey</span>(<span style="color:#a6e22e">ctx</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">from</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">ctx</span>.<span style="color:#a6e22e">From</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">chatType</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">ctx</span>.<span style="color:#a6e22e">ChatType</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">provider</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">ctx</span>.<span style="color:#a6e22e">Provider</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 构建 key: provider:kind:id
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">key</span><span style="color:#f92672">:</span> <span style="color:#e6db74">`</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">provider</span><span style="color:#e6db74">}</span><span style="color:#e6db74">:</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">kind</span><span style="color:#e6db74">}</span><span style="color:#e6db74">:</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">finalId</span><span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">channel</span>: <span style="color:#66d9ef">provider</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">id</span>: <span style="color:#66d9ef">finalId</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">chatType</span>: <span style="color:#66d9ef">kind</span>
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Group 显示名称构建
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">buildGroupDisplayName</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">providerKey</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">provider</span> <span style="color:#f92672">??</span> <span style="color:#e6db74">&#34;group&#34;</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">detail</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">space</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">subject</span> <span style="color:#f92672">||</span> <span style="color:#e6db74">&#34;&#34;</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">token</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">normalizeGroupLabel</span>(<span style="color:#a6e22e">detail</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">fallbackId</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">token</span> <span style="color:#f92672">?</span> <span style="color:#e6db74">`</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">providerKey</span><span style="color:#e6db74">}</span><span style="color:#e6db74">:</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">token</span><span style="color:#e6db74">}</span><span style="color:#e6db74">`</span> <span style="color:#f92672">:</span> <span style="color:#a6e22e">providerKey</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="32-session-元数据合并">
+  3.2 Session 元数据合并
+  <a class="anchor" href="#32-session-%e5%85%83%e6%95%b0%e6%8d%ae%e5%90%88%e5%b9%b6">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/config/sessions/types.ts">types.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/config/sessions/types.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 合并 session 条目（保留活跃度信息）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">mergeSessionEntryPreserveActivity</span>(<span style="color:#a6e22e">existing</span>, <span style="color:#a6e22e">next</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">merged</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">mergeSessionEntry</span>(<span style="color:#a6e22e">existing</span>, <span style="color:#a6e22e">next</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 保留活跃度相关字段
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">merged</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="33-session-交付上下文">
+  3.3 Session 交付上下文
+  <a class="anchor" href="#33-session-%e4%ba%a4%e4%bb%98%e4%b8%8a%e4%b8%8b%e6%96%87">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/config/sessions/delivery-context.shared.ts">delivery-context.shared.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// Session 交付字段归一化
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">normalizeSessionDeliveryFields</span>(<span style="color:#a6e22e">entry</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    ...<span style="color:#a6e22e">normalizeDeliveryContext</span>(<span style="color:#a6e22e">entry</span>),
+</span></span><span style="display:flex;"><span>    ...<span style="color:#a6e22e">normalizeSessionDeliveryFields</span>(<span style="color:#a6e22e">entry</span>)
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 从 session 构建交付上下文
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">deliveryContextFromSession</span>(<span style="color:#a6e22e">entry</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">channel</span>: <span style="color:#66d9ef">entry.channel</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">accountId</span>: <span style="color:#66d9ef">entry.accountId</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">targetId</span>: <span style="color:#66d9ef">entry.targetId</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="34-session-元数据">
+  3.4 Session 元数据
+  <a class="anchor" href="#34-session-%e5%85%83%e6%95%b0%e6%8d%ae">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/acp/runtime/session-meta.ts">session-meta.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// Session 元数据管理
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - sessionStartedAt    → daily reset 基准
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - lastInteractionAt   → idle reset 基准
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - updatedAt           → 列表/修剪用，不影响 freshness
+</span></span></span></code></pre></div><h3 id="35-session-身份标识">
+  3.5 Session 身份标识
+  <a class="anchor" href="#35-session-%e8%ba%ab%e4%bb%bd%e6%a0%87%e8%af%86">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/acp/runtime/session-identity.ts">session-identity.ts</a> / <a href="https://github.com/openclaw/openclaw/blob/main/src/acp/runtime/session-identifiers.ts">session-identifiers.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// Session 身份标识管理
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 唯一 ID
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 关联 Agent
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 关联 Channel
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 关联 Conversation
+</span></span></span></code></pre></div><hr>
+<h2 id="4-引擎层session-manager--context-engine">
+  4. 引擎层：Session Manager + Context Engine
+  <a class="anchor" href="#4-%e5%bc%95%e6%93%8e%e5%b1%82session-manager--context-engine">#</a>
+</h2>
+<h3 id="41-session-manager-初始化">
+  4.1 Session Manager 初始化
+  <a class="anchor" href="#41-session-manager-%e5%88%9d%e5%a7%8b%e5%8c%96">#</a>
+</h3>
+<p>OpenClaw 使用 <code>@mariozechner/pi-coding-agent</code> 库中的 <code>SessionManager</code> 作为核心会话管理器。</p>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/session-manager-init.ts">session-manager-init.ts</a> / <a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/session-manager-cache.ts">session-manager-cache.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// SessionManager 初始化流程
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 1. 从 JSONL 文件加载 transcript
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 2. 构建 SessionManager 实例
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 3. 缓存 SessionManager（减少重复加载）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 4. 预 warm session 文件
+</span></span></span></code></pre></div><h3 id="42-session-manager-缓存">
+  4.2 Session Manager 缓存
+  <a class="anchor" href="#42-session-manager-%e7%bc%93%e5%ad%98">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/session-manager-cache.ts">session-manager-cache.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// Session Manager 缓存机制
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 缓存 key: sessionKey
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 缓存 value: SessionManager 实例
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 过期策略: TTL + 主动失效
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 访问追踪: trackSessionManagerAccess()
+</span></span></span></code></pre></div><h3 id="43-context-engine-生命周期钩子">
+  4.3 Context Engine 生命周期钩子
+  <a class="anchor" href="#43-context-engine-%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f%e9%92%a9%e5%ad%90">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/context-engine-maintenance.ts">context-engine-maintenance.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/context-engine-maintenance.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 安装 Context Engine 循环钩子
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">installContextEngineLoopHook</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> { <span style="color:#a6e22e">contextEngine</span>, <span style="color:#a6e22e">sessionId</span>, <span style="color:#a6e22e">sessionKey</span>, <span style="color:#a6e22e">sessionFile</span>, <span style="color:#a6e22e">tokenBudget</span>, <span style="color:#a6e22e">modelId</span> } <span style="color:#f92672">=</span> <span style="color:#a6e22e">params</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#a6e22e">afterTurn</span>(<span style="color:#a6e22e">messages</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 1. 调用 contextEngine.afterTurn()
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#66d9ef">if</span> (<span style="color:#66d9ef">typeof</span> <span style="color:#a6e22e">contextEngine</span>.<span style="color:#a6e22e">afterTurn</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;function&#34;</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">contextEngine</span>.<span style="color:#a6e22e">afterTurn</span>({ <span style="color:#a6e22e">messages</span>, <span style="color:#a6e22e">sessionKey</span> });
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 2. Ingest 新消息到 Context Engine
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">newMessages</span>.<span style="color:#a6e22e">length</span> <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (<span style="color:#66d9ef">typeof</span> <span style="color:#a6e22e">contextEngine</span>.<span style="color:#a6e22e">ingestBatch</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;function&#34;</span>) {
+</span></span><span style="display:flex;"><span>          <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">contextEngine</span>.<span style="color:#a6e22e">ingestBatch</span>({ <span style="color:#a6e22e">messages</span>: <span style="color:#66d9ef">newMessages</span> });
+</span></span><span style="display:flex;"><span>        } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">const</span> <span style="color:#a6e22e">message</span> <span style="color:#66d9ef">of</span> <span style="color:#a6e22e">newMessages</span>) {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">contextEngine</span>.<span style="color:#a6e22e">ingest</span>({ <span style="color:#a6e22e">message</span> });
+</span></span><span style="display:flex;"><span>          }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 3. Assemble 完整上下文
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">assembled</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">contextEngine</span>.<span style="color:#a6e22e">assemble</span>({
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">tokenBudget</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">modelId</span>
+</span></span><span style="display:flex;"><span>      });
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">assembled</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>核心流程</strong>：</p>
+<pre tabindex="0"><code>每轮对话结束后：
+1. afterTurn()  → 通知 Context Engine 本轮完成
+2. ingest()     → 将新消息摄入 Context Engine
+3. assemble()   → 组装下一轮所需的上下文
+</code></pre><h3 id="44-context-engine-维护maintenance">
+  4.4 Context Engine 维护（Maintenance）
+  <a class="anchor" href="#44-context-engine-%e7%bb%b4%e6%8a%a4maintenance">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/context-engine-maintenance.ts">context-engine-maintenance.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/context-engine-maintenance.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 延迟维护任务常量
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">TURN_MAINTENANCE_TASK_KIND</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;context_engine_turn_maintenance&#34;</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">TURN_MAINTENANCE_TASK_LABEL</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;Context engine turn maintenance&#34;</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">TURN_MAINTENANCE_WAIT_POLL_MS</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">100</span>;           <span style="color:#75715e">// 等待轮询间隔
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">TURN_MAINTENANCE_LONG_WAIT_MS</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">10000</span>;         <span style="color:#75715e">// 长等待超时
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 执行上下文引擎维护
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">executeContextEngineMaintenance</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#66d9ef">typeof</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">contextEngine</span>.<span style="color:#a6e22e">maintain</span> <span style="color:#f92672">!==</span> <span style="color:#e6db74">&#34;function&#34;</span>) <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">result</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">contextEngine</span>.<span style="color:#a6e22e">maintain</span>({
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">sessionId</span>: <span style="color:#66d9ef">params.sessionId</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">sessionKey</span>: <span style="color:#66d9ef">params.sessionKey</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">sessionFile</span>: <span style="color:#66d9ef">params.sessionFile</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">runtimeContext</span>: <span style="color:#66d9ef">buildContextEngineMaintenanceRuntimeContext</span>({
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">sessionManager</span>: <span style="color:#66d9ef">params.sessionManager</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">rewriteTranscriptEntries</span>: <span style="color:#66d9ef">async</span> (<span style="color:#a6e22e">request</span>) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 重写 transcript 条目
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">rewriteTranscriptEntriesInSessionManager</span>({
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">sessionManager</span>: <span style="color:#66d9ef">params.sessionManager</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">replacements</span>: <span style="color:#66d9ef">request.replacements</span>
+</span></span><span style="display:flex;"><span>        });
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    })
+</span></span><span style="display:flex;"><span>  });
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">result</span>.<span style="color:#a6e22e">changed</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">log</span>.<span style="color:#a6e22e">info</span>(<span style="color:#e6db74">`[context-engine] maintenance(</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">reason</span><span style="color:#e6db74">}</span><span style="color:#e6db74">) changed transcript`</span>);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">result</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 运行维护
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">runContextEngineMaintenance</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 如果配置为后台模式，调度延迟任务
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">reason</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;turn&#34;</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">contextEngine</span>.<span style="color:#a6e22e">info</span>.<span style="color:#a6e22e">turnMaintenanceMode</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;background&#34;</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">scheduleDeferredTurnMaintenance</span>(<span style="color:#a6e22e">params</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 否则同步执行
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">executeContextEngineMaintenance</span>(<span style="color:#a6e22e">params</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="45-延迟维护调度">
+  4.5 延迟维护调度
+  <a class="anchor" href="#45-%e5%bb%b6%e8%bf%9f%e7%bb%b4%e6%8a%a4%e8%b0%83%e5%ba%a6">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 延迟维护调度器
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">scheduleDeferredTurnMaintenance</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">sessionKey</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">normalizeSessionKey</span>(<span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">sessionKey</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">sessionKey</span>) <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 检查是否已有活跃维护任务
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">activeRun</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">activeDeferredTurnMaintenanceRuns</span>.<span style="color:#66d9ef">get</span>(<span style="color:#a6e22e">sessionKey</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">activeRun</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">activeRun</span>.<span style="color:#a6e22e">rerunRequested</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;  <span style="color:#75715e">// 标记需要重新运行
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 创建任务描述符
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">task</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">buildTurnMaintenanceTaskDescriptor</span>({ <span style="color:#a6e22e">sessionKey</span> });
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 入队到 session lane
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">enqueueCommandInLane</span>(
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">resolveDeferredTurnMaintenanceLane</span>(<span style="color:#a6e22e">sessionKey</span>),
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> () <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">runDeferredTurnMaintenanceWorker</span>({
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">contextEngine</span>: <span style="color:#66d9ef">params.contextEngine</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">sessionId</span>: <span style="color:#66d9ef">params.sessionId</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">sessionKey</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">sessionFile</span>: <span style="color:#66d9ef">params.sessionFile</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">sessionManager</span>: <span style="color:#66d9ef">params.sessionManager</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">runId</span>: <span style="color:#66d9ef">task.runId</span>
+</span></span><span style="display:flex;"><span>    })
+</span></span><span style="display:flex;"><span>  );
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="46-延迟维护-worker">
+  4.6 延迟维护 Worker
+  <a class="anchor" href="#46-%e5%bb%b6%e8%bf%9f%e7%bb%b4%e6%8a%a4-worker">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 延迟维护 Worker
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">runDeferredTurnMaintenanceWorker</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">shutdownAbort</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">createDeferredTurnMaintenanceAbortSignal</span>();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">sessionLane</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">resolveSessionLane</span>(<span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">sessionKey</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 1. 等待 session lane 空闲
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">for</span> (;;) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">while</span> (<span style="color:#a6e22e">getQueueSize</span>(<span style="color:#a6e22e">sessionLane</span>) <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">sleepWithAbort</span>(<span style="color:#a6e22e">TURN_MAINTENANCE_WAIT_POLL_MS</span>, <span style="color:#a6e22e">shutdownAbort</span>.<span style="color:#a6e22e">abortSignal</span>);
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">Promise</span>.<span style="color:#a6e22e">resolve</span>();
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">getQueueSize</span>(<span style="color:#a6e22e">sessionLane</span>) <span style="color:#f92672">===</span> <span style="color:#ae81ff">0</span>) <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 2. 开始维护
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#a6e22e">startTaskRunByRunId</span>({
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">runId</span>: <span style="color:#66d9ef">params.runId</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">progressSummary</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Running deferred maintenance.&#34;</span>
+</span></span><span style="display:flex;"><span>    });
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">result</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">executeContextEngineMaintenance</span>({
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">contextEngine</span>: <span style="color:#66d9ef">params.contextEngine</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">executionMode</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;background&#34;</span>
+</span></span><span style="display:flex;"><span>    });
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 3. 完成
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#a6e22e">completeTaskRunByRunId</span>({
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">runId</span>: <span style="color:#66d9ef">params.runId</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">progressSummary</span>: <span style="color:#66d9ef">result?.changed</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">?</span> <span style="color:#e6db74">&#34;Deferred maintenance completed with transcript changes.&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Deferred maintenance completed.&#34;</span>
+</span></span><span style="display:flex;"><span>    });
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  } <span style="color:#66d9ef">catch</span> (<span style="color:#a6e22e">err</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 错误处理
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#a6e22e">failTaskRunByRunId</span>({ <span style="color:#a6e22e">runId</span>: <span style="color:#66d9ef">params.runId</span>, <span style="color:#a6e22e">error</span>: <span style="color:#66d9ef">reason</span> });
+</span></span><span style="display:flex;"><span>  } <span style="color:#66d9ef">finally</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">shutdownAbort</span>.<span style="color:#a6e22e">dispose</span>();
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><hr>
+<h2 id="5-维护层compaction--transcript-管理">
+  5. 维护层：Compaction + Transcript 管理
+  <a class="anchor" href="#5-%e7%bb%b4%e6%8a%a4%e5%b1%82compaction--transcript-%e7%ae%a1%e7%90%86">#</a>
+</h2>
+<h3 id="51-transcript-rewrite">
+  5.1 Transcript Rewrite
+  <a class="anchor" href="#51-transcript-rewrite">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/transcript-rewrite.ts">transcript-rewrite.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// Transcript 重写机制
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 在 SessionManager 中重写条目
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">rewriteTranscriptEntriesInSessionManager</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> { <span style="color:#a6e22e">sessionManager</span>, <span style="color:#a6e22e">replacements</span> } <span style="color:#f92672">=</span> <span style="color:#a6e22e">params</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 根据 replacements 替换 transcript 中的条目
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 返回重写的条目数和释放的字节数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 在 Session 文件中重写条目
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">rewriteTranscriptEntriesInSessionFile</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> { <span style="color:#a6e22e">sessionFile</span>, <span style="color:#a6e22e">sessionId</span>, <span style="color:#a6e22e">sessionKey</span>, <span style="color:#a6e22e">request</span> } <span style="color:#f92672">=</span> <span style="color:#a6e22e">params</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 直接操作 JSONL 文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><h3 id="52-tool-result-截断">
+  5.2 Tool Result 截断
+  <a class="anchor" href="#52-tool-result-%e6%88%aa%e6%96%ad">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/tool-result-truncation.ts">tool-result-truncation.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/tool-result-truncation.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 动态计算 tool result 最大字符数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveLiveToolResultMaxChars</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 根据当前上下文窗口剩余空间动态调整
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 避免单个工具结果吃掉太多 token
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 截断 SessionManager 中过大的 tool results
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">truncateOversizedToolResultsInSessionManager</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> { <span style="color:#a6e22e">sessionManager</span>, <span style="color:#a6e22e">contextWindowTokens</span> } <span style="color:#f92672">=</span> <span style="color:#a6e22e">params</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">branch</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">sessionManager</span>.<span style="color:#a6e22e">getBranch</span>();
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">messages</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">branch</span>.<span style="color:#a6e22e">messages</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 估算每个消息的字符数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 截断超过限制的 tool results
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 重写 transcript
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">rewriteResult</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">rewriteTranscriptEntriesInSessionManager</span>({
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">sessionManager</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">replacements</span>
+</span></span><span style="display:flex;"><span>  });
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="53-字符估算">
+  5.3 字符估算
+  <a class="anchor" href="#53-%e5%ad%97%e7%ac%a6%e4%bc%b0%e7%ae%97">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-file-repair.ts">session-file-repair.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 字符估算常量
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">IMAGE_CHAR_ESTIMATE</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">8000</span>;  <span style="color:#75715e">// 图片估算 8000 字符
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 估算消息字符数（带缓存）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">estimateMessageCharsCached</span>(<span style="color:#a6e22e">msg</span>, <span style="color:#a6e22e">cache</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">hit</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">cache</span>.<span style="color:#66d9ef">get</span>(<span style="color:#a6e22e">msg</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">hit</span> <span style="color:#f92672">!==</span> <span style="color:#66d9ef">undefined</span>) <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">hit</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">estimated</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">estimateMessageChars</span>(<span style="color:#a6e22e">msg</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">cache</span>.<span style="color:#66d9ef">set</span>(<span style="color:#a6e22e">msg</span>, <span style="color:#a6e22e">estimated</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">estimated</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 不同类型消息的字符估算
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">estimateMessageChars</span>(<span style="color:#a6e22e">msg</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">msg</span>.<span style="color:#a6e22e">role</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;user&#34;</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 用户消息：直接计算
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">typeof</span> <span style="color:#a6e22e">content</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;string&#34;</span> <span style="color:#f92672">?</span> <span style="color:#a6e22e">content.length</span> : <span style="color:#66d9ef">estimateContentBlockChars</span>(<span style="color:#a6e22e">content</span>);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">msg</span>.<span style="color:#a6e22e">role</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;assistant&#34;</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 助手消息：text + thinking + toolCall
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">let</span> <span style="color:#a6e22e">chars</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">const</span> <span style="color:#a6e22e">block</span> <span style="color:#66d9ef">of</span> <span style="color:#a6e22e">content</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">block</span>.<span style="color:#66d9ef">type</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;text&#34;</span>) <span style="color:#a6e22e">chars</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">block</span>.<span style="color:#a6e22e">text</span>.<span style="color:#a6e22e">length</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">block</span>.<span style="color:#66d9ef">type</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;thinking&#34;</span>) <span style="color:#a6e22e">chars</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">block</span>.<span style="color:#a6e22e">thinking</span>.<span style="color:#a6e22e">length</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">block</span>.<span style="color:#66d9ef">type</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;toolCall&#34;</span>) <span style="color:#a6e22e">chars</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">JSON</span>.<span style="color:#a6e22e">stringify</span>(<span style="color:#a6e22e">block</span>.<span style="color:#a6e22e">arguments</span> <span style="color:#f92672">??</span> {}).<span style="color:#a6e22e">length</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">chars</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">isToolResultMessage</span>(<span style="color:#a6e22e">msg</span>)) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Tool result：加权计算（4/2 倍）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">chars</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">estimateContentBlockChars</span>(<span style="color:#a6e22e">getToolResultContent</span>(<span style="color:#a6e22e">msg</span>));
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> Math.<span style="color:#a6e22e">max</span>(<span style="color:#a6e22e">chars</span>, Math.<span style="color:#a6e22e">ceil</span>(<span style="color:#a6e22e">chars</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">2</span>));
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 上下文总字符估算（带缓存）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">estimateContextChars</span>(<span style="color:#a6e22e">messages</span>, <span style="color:#a6e22e">cache</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">messages</span>.<span style="color:#a6e22e">reduce</span>((<span style="color:#a6e22e">sum</span>, <span style="color:#a6e22e">msg</span>) <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">sum</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">estimateMessageCharsCached</span>(<span style="color:#a6e22e">msg</span>, <span style="color:#a6e22e">cache</span>), <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="54-compaction-常量">
+  5.4 Compaction 常量
+  <a class="anchor" href="#54-compaction-%e5%b8%b8%e9%87%8f">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-compaction-constants.ts">pi-compaction-constants.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// Compaction 相关常量
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 最大 active transcript 字节
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 最大 total transcript 字节
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - Compaction 触发阈值
+</span></span></span></code></pre></div><h3 id="55-compaction-超时">
+  5.5 Compaction 超时
+  <a class="anchor" href="#55-compaction-%e8%b6%85%e6%97%b6">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/compaction-safety-timeout.ts">compaction-safety-timeout.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// Compaction 安全超时
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 防止 compaction 过程卡死
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 超时后自动重试
+</span></span></span></code></pre></div><h3 id="56-compaction-retry--aggregate-timeout">
+  5.6 Compaction Retry + Aggregate Timeout
+  <a class="anchor" href="#56-compaction-retry--aggregate-timeout">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/compaction-retry-aggregate-timeout.ts">compaction-retry-aggregate-timeout.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// Compaction 失败自动重试
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 指数退避
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 聚合超时计算（防止重试总耗时超过 agent timeout）
+</span></span></span></code></pre></div><h3 id="57-session-truncation">
+  5.7 Session Truncation
+  <a class="anchor" href="#57-session-truncation">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/session-truncation.ts">session-truncation.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// Compaction 后物理截断 transcript 文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 截断规则：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 1. 保留 session header
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 2. 保留非 message 条目（custom, model_change, thinking_level_change, compaction 等）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 3. 截断旧消息，保留最近的消息
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 4. 确保 tool_use 和 tool_result 成对出现
+</span></span></span></code></pre></div><hr>
+<h2 id="6-安全层repair--guard">
+  6. 安全层：Repair + Guard
+  <a class="anchor" href="#6-%e5%ae%89%e5%85%a8%e5%b1%82repair--guard">#</a>
+</h2>
+<h3 id="61-session-文件自修复">
+  6.1 Session 文件自修复
+  <a class="anchor" href="#61-session-%e6%96%87%e4%bb%b6%e8%87%aa%e4%bf%ae%e5%a4%8d">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-file-repair.ts">session-file-repair.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/session-file-repair.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Session 文件自修复
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">repairSessionFileIfNeeded</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">sessionFile</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">sessionFile</span>.<span style="color:#a6e22e">trim</span>();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 1. 读取文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">content</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">fs</span>.<span style="color:#a6e22e">readFile</span>(<span style="color:#a6e22e">sessionFile</span>, <span style="color:#e6db74">&#34;utf-8&#34;</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">lines</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">content</span>.<span style="color:#a6e22e">split</span>(<span style="color:#e6db74">/\r?\n/</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 2. 逐行解析 JSON
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">entries</span> <span style="color:#f92672">=</span> [];
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">let</span> <span style="color:#a6e22e">droppedLines</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">const</span> <span style="color:#a6e22e">line</span> <span style="color:#66d9ef">of</span> <span style="color:#a6e22e">lines</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">line</span>.<span style="color:#a6e22e">trim</span>()) <span style="color:#66d9ef">continue</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">entry</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">JSON</span>.<span style="color:#a6e22e">parse</span>(<span style="color:#a6e22e">line</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">entries</span>.<span style="color:#a6e22e">push</span>(<span style="color:#a6e22e">entry</span>);
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">catch</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">droppedLines</span> <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;  <span style="color:#75715e">// 记录丢弃行数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 3. 验证 session header
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">isSessionHeader</span>(<span style="color:#a6e22e">entries</span>[<span style="color:#ae81ff">0</span>])) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">repaired</span>: <span style="color:#66d9ef">false</span>, <span style="color:#a6e22e">reason</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;invalid session header&#34;</span> };
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 4. 如果有损坏的行，执行修复
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">droppedLines</span> <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">cleaned</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">entries</span>.<span style="color:#a6e22e">map</span>(<span style="color:#a6e22e">entry</span> <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">JSON</span>.<span style="color:#a6e22e">stringify</span>(<span style="color:#a6e22e">entry</span>)).<span style="color:#a6e22e">join</span>(<span style="color:#e6db74">&#34;\n&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 备份原文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">backupPath</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">`</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">sessionFile</span><span style="color:#e6db74">}</span><span style="color:#e6db74">.bak-</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">process</span>.<span style="color:#a6e22e">pid</span><span style="color:#e6db74">}</span><span style="color:#e6db74">-</span><span style="color:#e6db74">${</span>Date.<span style="color:#a6e22e">now</span>()<span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">fs</span>.<span style="color:#a6e22e">writeFile</span>(<span style="color:#a6e22e">backupPath</span>, <span style="color:#a6e22e">content</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 原子写入
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">tmpPath</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">`</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">sessionFile</span><span style="color:#e6db74">}</span><span style="color:#e6db74">.repair-</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">process</span>.<span style="color:#a6e22e">pid</span><span style="color:#e6db74">}</span><span style="color:#e6db74">-</span><span style="color:#e6db74">${</span>Date.<span style="color:#a6e22e">now</span>()<span style="color:#e6db74">}</span><span style="color:#e6db74">.tmp`</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">fs</span>.<span style="color:#a6e22e">writeFile</span>(<span style="color:#a6e22e">tmpPath</span>, <span style="color:#a6e22e">cleaned</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">fs</span>.<span style="color:#a6e22e">rename</span>(<span style="color:#a6e22e">tmpPath</span>, <span style="color:#a6e22e">sessionFile</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">repaired</span>: <span style="color:#66d9ef">true</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">droppedLines</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">backupPath</span>
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">repaired</span>: <span style="color:#66d9ef">false</span>, <span style="color:#a6e22e">droppedLines</span>: <span style="color:#66d9ef">0</span> };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="62-transcript-repair">
+  6.2 Transcript Repair
+  <a class="anchor" href="#62-transcript-repair">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-transcript-repair.ts">session-transcript-repair.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/session-transcript-repair.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 检测 thinking 块
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">isThinkingLikeBlock</span>(<span style="color:#a6e22e">block</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">block</span><span style="color:#f92672">?</span>.<span style="color:#66d9ef">type</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;thinking&#34;</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">block</span><span style="color:#f92672">?</span>.<span style="color:#66d9ef">type</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;redacted_thinking&#34;</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 检测原始工具调用块
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">isRawToolCallBlock</span>(<span style="color:#a6e22e">block</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">typeof</span> <span style="color:#a6e22e">block</span><span style="color:#f92672">?</span>.<span style="color:#66d9ef">type</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;string&#34;</span> <span style="color:#f92672">&amp;&amp;</span>
+</span></span><span style="display:flex;"><span>    (<span style="color:#a6e22e">block</span>.<span style="color:#66d9ef">type</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;toolCall&#34;</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">block</span>.<span style="color:#66d9ef">type</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;toolUse&#34;</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">block</span>.<span style="color:#66d9ef">type</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;functionCall&#34;</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 检测工具调用 ID
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">hasToolCallId</span>(<span style="color:#a6e22e">block</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">typeof</span> <span style="color:#a6e22e">block</span><span style="color:#f92672">?</span>.<span style="color:#a6e22e">id</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;string&#34;</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">block</span>.<span style="color:#a6e22e">id</span>.<span style="color:#a6e22e">trim</span>().<span style="color:#a6e22e">length</span> <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 清理工具调用块
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">sanitizeToolCallBlock</span>(<span style="color:#a6e22e">block</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">normalizedName</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">normalizeLowercaseStringOrEmpty</span>(<span style="color:#a6e22e">block</span>.<span style="color:#a6e22e">name</span><span style="color:#f92672">?</span>.<span style="color:#a6e22e">trim</span>());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 特殊处理 sessions_spawn（红附件）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">normalizedName</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;sessions_spawn&#34;</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>      ...<span style="color:#a6e22e">block</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">arguments</span>: <span style="color:#66d9ef">redactSessionsSpawnAttachmentsArgs</span>(<span style="color:#a6e22e">block</span>.<span style="color:#a6e22e">arguments</span>),
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">input</span>: <span style="color:#66d9ef">redactSessionsSpawnAttachmentsArgs</span>(<span style="color:#a6e22e">block</span>.<span style="color:#a6e22e">input</span>)
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">block</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 检测 replay 安全的 thinking 助手回合
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">isReplaySafeThinkingAssistantTurn</span>(<span style="color:#a6e22e">content</span>, <span style="color:#a6e22e">allowedToolNames</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">let</span> <span style="color:#a6e22e">sawToolCall</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 检查是否包含不允许的工具调用
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 检查 tool_call 是否有对应的 tool_result
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>;  <span style="color:#75715e">// 安全
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 清理工具调用输入
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">sanitizeToolCallInputs</span>(<span style="color:#a6e22e">block</span>) { ... }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 创建缺失的 tool result
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">makeMissingToolResult</span>(<span style="color:#a6e22e">block</span>) { ... }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 修复 tool use / result 配对
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">repairToolUseResultPairing</span>(<span style="color:#a6e22e">messages</span>) { ... }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 清理 tool use / result 配对
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">sanitizeToolUseResultPairing</span>(<span style="color:#a6e22e">messages</span>) { ... }
+</span></span></code></pre></div><h3 id="63-tool-result-context-guard">
+  6.3 Tool Result Context Guard
+  <a class="anchor" href="#63-tool-result-context-guard">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/tool-result-context-guard.ts">tool-result-context-guard.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/tool-result-context-guard.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 安装 Tool Result Context Guard
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">installToolResultContextGuard</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 确保 tool result 不包含敏感信息
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 过滤 session 管理工具的结果
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 防止 agent-to-agent 通信的信息泄露
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><hr>
+<h2 id="7-完整对话状态管理序列图">
+  7. 完整对话状态管理序列图
+  <a class="anchor" href="#7-%e5%ae%8c%e6%95%b4%e5%af%b9%e8%af%9d%e7%8a%b6%e6%80%81%e7%ae%a1%e7%90%86%e5%ba%8f%e5%88%97%e5%9b%be">#</a>
+</h2>
+<pre tabindex="0"><code>┌────────────┐  ┌──────────────┐  ┌──────────────┐  ┌────────────┐  ┌────────────┐
+│  用户消息   │  │ Session Store│  │Session Manager│  │Context     │  │  LLM API   │
+│            │  │ + JSONL      │  │ (pi-coding)  │  │  Engine    │  │            │
+└─────┬──────┘  └──────┬───────┘  └──────┬───────┘  └─────┬──────┘  └─────┬──────┘
+      │                │                  │                │               │
+      │ 新消息到达      │                  │                │               │
+      │───────────────▶│                  │                │               │
+      │                │                  │                │               │
+      │                │ repairIfNeeded() │                │               │
+      │                │─────────────────▶│                │               │
+      │                │                  │                │               │
+      │                │ 加载 JSONL        │                │               │
+      │                │▶────────────────▶│                │               │
+      │                │                  │                │               │
+      │                │ 初始化 SessionManager             │               │
+      │                │─────────────────────────────────▶│               │
+      │                │                  │                │               │
+      │                │ 获取写锁          │                │               │
+      │                │ acquireLock()     │                │               │
+      │                │◀─────────────────│                │               │
+      │                │                  │                │               │
+      │                │                  │ assemble()     │               │
+      │                │                  │───────────────▶│               │
+      │                │                  │                │               │
+      │                │                  │ 上下文组装      │               │
+      │                │                  │◀───────────────│               │
+      │                │                  │                │               │
+      │                │                  │ 调用 LLM API   │               │
+      │                │                  │───────────────────────────────▶│
+      │                │                  │                │               │
+      │                │                  │◀───────────────────────────────│
+      │                │                  │  模型响应       │               │
+      │                │                  │                │               │
+      │                │                  │ ingest()       │               │
+      │                │                  │───────────────▶│               │
+      │                │                  │                │               │
+      │                │                  │ afterTurn()    │               │
+      │                │                  │───────────────▶│               │
+      │                │                  │                │               │
+      │                │ 写入 transcript   │                │               │
+      │                │◀─────────────────│                │               │
+      │                │                  │                │               │
+      │                │ 释放写锁          │                │               │
+      │                │ releaseLock()     │                │               │
+      │                │◀─────────────────│                │               │
+      │                │                  │                │               │
+      │                │                  │ 触发 maintenance               │
+      │                │                  │───────────────▶│               │
+      │                │                  │                │               │
+      │                │                  │ maintain()     │               │
+      │                │                  │◀───────────────│               │
+      │                │                  │                │               │
+      │                │                  │ 需要 compaction?                │
+      │                │                  │───Yes──▶ 压缩                   │
+      │                │                  │                │               │
+      │                │ 更新 sessions.json               │               │
+      │                │◀─────────────────│                │               │
+      │                │                  │                │               │
+      │                │                  │ prune/rotate?  │               │
+      │                │                  │───Yes──▶ 维护                   │
+</code></pre><hr>
+<h2 id="8-关键设计模式">
+  8. 关键设计模式
+  <a class="anchor" href="#8-%e5%85%b3%e9%94%ae%e8%ae%be%e8%ae%a1%e6%a8%a1%e5%bc%8f">#</a>
+</h2>
+<h3 id="81-jsonl-格式的优势">
+  8.1 JSONL 格式的优势
+  <a class="anchor" href="#81-jsonl-%e6%a0%bc%e5%bc%8f%e7%9a%84%e4%bc%98%e5%8a%bf">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// JSONL（JSON Lines）格式的优势：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 1. 逐行追加，无需重写整个文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 2. 损坏时只需丢弃坏行，不影响其他数据
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 3. 流式读取，支持大文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 4. 自修复能力强
+</span></span></span></code></pre></div><h3 id="82-三层会话存储">
+  8.2 三层会话存储
+  <a class="anchor" href="#82-%e4%b8%89%e5%b1%82%e4%bc%9a%e8%af%9d%e5%ad%98%e5%82%a8">#</a>
+</h3>
+<pre tabindex="0"><code>Store 层（sessions.json）:
+  - 轻量元数据索引
+  - 快速查询所有 session
+  - 维护策略执行
+
+SessionManager 层（内存）:
+  - 完整对话上下文
+  - Token 估算
+  - 消息组装
+
+JSONL 层（磁盘）:
+  - 持久化对话记录
+  - 自修复能力
+  - 原子写入
+</code></pre><h3 id="83-延迟维护模式">
+  8.3 延迟维护模式
+  <a class="anchor" href="#83-%e5%bb%b6%e8%bf%9f%e7%bb%b4%e6%8a%a4%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// Context Engine 维护支持两种模式：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 1. 同步模式：立即执行，适用于小维护
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 2. 延迟模式：等待 session lane 空闲后执行，适用于大维护
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 延迟模式的优势：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 不阻塞用户交互
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 等待其他操作完成后执行
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 支持 abort（进程关闭时取消）
+</span></span></span></code></pre></div><h3 id="84-自修复能力">
+  8.4 自修复能力
+  <a class="anchor" href="#84-%e8%87%aa%e4%bf%ae%e5%a4%8d%e8%83%bd%e5%8a%9b">#</a>
+</h3>
+<pre tabindex="0"><code>Session 文件的自修复流程：
+1. 读取文件 → 逐行解析
+2. 丢弃无法解析的行（记录数量）
+3. 验证 session header
+4. 原子写入修复后的内容
+5. 保留原文件备份
+</code></pre><h3 id="85-tool-useresult-配对保护">
+  8.5 Tool Use/Result 配对保护
+  <a class="anchor" href="#85-tool-useresult-%e9%85%8d%e5%af%b9%e4%bf%9d%e6%8a%a4">#</a>
+</h3>
+<pre tabindex="0"><code>对话中 tool_use 和 tool_result 必须成对出现：
+- 有 tool_use 无 tool_result → 创建缺失的 result
+- 有 tool_result 无 tool_use → 丢弃孤立的 result
+- tool_call_id 不匹配 → 修复 ID
+</code></pre><h3 id="86-token-预算控制">
+  8.6 Token 预算控制
+  <a class="anchor" href="#86-token-%e9%a2%84%e7%ae%97%e6%8e%a7%e5%88%b6">#</a>
+</h3>
+<pre tabindex="0"><code>Context Engine 组装上下文时：
+- tokenBudget 控制总 token 数
+- estimateContextChars() 估算字符数
+- 根据模型上下文窗口动态调整
+- 优先保留最近的消息
+- Compaction 后截断旧消息
+</code></pre><hr>
+<h2 id="9-配置示例">
+  9. 配置示例
+  <a class="anchor" href="#9-%e9%85%8d%e7%bd%ae%e7%a4%ba%e4%be%8b">#</a>
+</h2>
+<h3 id="91-session-维护配置">
+  9.1 Session 维护配置
+  <a class="anchor" href="#91-session-%e7%bb%b4%e6%8a%a4%e9%85%8d%e7%bd%ae">#</a>
+</h3>
+<pre tabindex="0"><code class="language-json5" data-lang="json5">{
+  &#34;session&#34;: {
+    &#34;maintenance&#34;: {
+      &#34;mode&#34;: &#34;enforce&#34;,       // warn | enforce
+      &#34;pruneAfter&#34;: &#34;30d&#34;,     // 30 天后清理
+      &#34;maxEntries&#34;: 500,       // 最多 500 条
+      &#34;rotateBytes&#34;: &#34;10MB&#34;    // 10MB 轮转
+    }
+  }
+}
+</code></pre><h3 id="92-context-配置">
+  9.2 Context 配置
+  <a class="anchor" href="#92-context-%e9%85%8d%e7%bd%ae">#</a>
+</h3>
+<pre tabindex="0"><code class="language-json5" data-lang="json5">{
+  &#34;context&#34;: {
+    &#34;tokenBudget&#34;: 128000,     // 总 token 预算
+    &#34;maxActiveTranscriptBytes&#34;: 1048576,  // 1MB
+    &#34;maxTotalTranscriptBytes&#34;: 10485760   // 10MB
+  }
+}
+</code></pre><hr>
+<h2 id="10-源码模块索引">
+  10. 源码模块索引
+  <a class="anchor" href="#10-%e6%ba%90%e7%a0%81%e6%a8%a1%e5%9d%97%e7%b4%a2%e5%bc%95">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>模块</th>
+          <th>功能</th>
+          <th>GitHub 链接</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>存储层</strong></td>
+          <td></td>
+          <td></td>
+      </tr>
+      <tr>
+          <td><code>config/sessions/store.ts</code></td>
+          <td>Session Store 核心</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/config/sessions/store.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>config/sessions/store-load.ts</code></td>
+          <td>Store 加载 + 维护</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/config/sessions/store-load.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>config/sessions/store-cache.ts</code></td>
+          <td>Store 缓存</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/config/sessions/store-cache.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>config/sessions/types.ts</code></td>
+          <td>Session 类型定义</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/config/sessions/types.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>config/sessions/delivery-context.shared.ts</code></td>
+          <td>交付上下文</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/config/sessions/delivery-context.shared.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>session-write-lock.ts</code></td>
+          <td>Session 写锁</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-write-lock.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><strong>会话层</strong></td>
+          <td></td>
+          <td></td>
+      </tr>
+      <tr>
+          <td><code>session-key.ts</code></td>
+          <td>Session Key 管理</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/session-key.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>acp/runtime/session-meta.ts</code></td>
+          <td>Session 元数据</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/acp/runtime/session-meta.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>acp/runtime/session-identity.ts</code></td>
+          <td>Session 身份</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/acp/runtime/session-identity.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>acp/runtime/session-identifiers.ts</code></td>
+          <td>Session 标识符</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/acp/runtime/session-identifiers.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><strong>引擎层</strong></td>
+          <td></td>
+          <td></td>
+      </tr>
+      <tr>
+          <td><code>pi-embedded-runner/session-manager-init.ts</code></td>
+          <td>Session Manager 初始化</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/session-manager-init.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>pi-embedded-runner/session-manager-cache.ts</code></td>
+          <td>Session Manager 缓存</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/session-manager-cache.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>pi-embedded-runner/context-engine-maintenance.ts</code></td>
+          <td>Context Engine 维护</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/context-engine-maintenance.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>pi-embedded-runner/install-context-engine-loop-hook</code></td>
+          <td>Context Engine 钩子</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/context-engine-maintenance.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><strong>维护层</strong></td>
+          <td></td>
+          <td></td>
+      </tr>
+      <tr>
+          <td><code>pi-embedded-runner/transcript-rewrite.ts</code></td>
+          <td>Transcript 重写</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/transcript-rewrite.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>pi-embedded-runner/tool-result-truncation.ts</code></td>
+          <td>Tool Result 截断</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/tool-result-truncation.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>pi-embedded-runner/session-truncation.ts</code></td>
+          <td>Session 截断</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/session-truncation.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>pi-compaction-constants.ts</code></td>
+          <td>Compaction 常量</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-compaction-constants.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>pi-embedded-runner/compaction-safety-timeout.ts</code></td>
+          <td>Compaction 超时</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/compaction-safety-timeout.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>pi-embedded-runner/run/compaction-retry-aggregate-timeout.ts</code></td>
+          <td>Compaction 重试</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/run/compaction-retry-aggregate-timeout.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><strong>安全层</strong></td>
+          <td></td>
+          <td></td>
+      </tr>
+      <tr>
+          <td><code>session-file-repair.ts</code></td>
+          <td>Session 文件自修复</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-file-repair.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>session-transcript-repair.ts</code></td>
+          <td>Transcript 修复</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/session-transcript-repair.ts">查看</a></td>
+      </tr>
+      <tr>
+          <td><code>pi-embedded-runner/tool-result-context-guard.ts</code></td>
+          <td>Tool Result 保护</td>
+          <td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/tool-result-context-guard.ts">查看</a></td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="11-参考资料">
+  11. 参考资料
+  <a class="anchor" href="#11-%e5%8f%82%e8%80%83%e8%b5%84%e6%96%99">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>资源</th>
+          <th>链接</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>OpenClaw 文档</td>
+          <td><a href="https://docs.openclaw.ai">https://docs.openclaw.ai</a></td>
+      </tr>
+      <tr>
+          <td>GitHub 仓库</td>
+          <td><a href="https://github.com/openclaw/openclaw">https://github.com/openclaw/openclaw</a></td>
+      </tr>
+      <tr>
+          <td>DeepWiki（AI 源码导读）</td>
+          <td><a href="https://deepwiki.com/openclaw/openclaw">https://deepwiki.com/openclaw/openclaw</a></td>
+      </tr>
+      <tr>
+          <td>Session 管理</td>
+          <td><a href="https://docs.openclaw.ai/concepts/session.md">https://docs.openclaw.ai/concepts/session.md</a></td>
+      </tr>
+      <tr>
+          <td>Compaction</td>
+          <td><a href="https://docs.openclaw.ai/concepts/compaction.md">https://docs.openclaw.ai/concepts/compaction.md</a></td>
+      </tr>
+      <tr>
+          <td>Context Engine</td>
+          <td><a href="https://docs.openclaw.ai/concepts/context-engine.md">https://docs.openclaw.ai/concepts/context-engine.md</a></td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<p><em>本文基于 OpenClaw v2026.4.21 源码分析，所有代码引用均来自官方 GitHub 仓库。</em></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openclaw-对话状态管理从-session-存储到-context-engine-的源码级拆解">OpenClaw 对话状态管理：从 Session 存储到 Context Engine 的源码级拆解</a>
+      <ul>
+        <li><a href="#导读">导读</a></li>
+        <li><a href="#1-总览对话状态管理架构">1. 总览：对话状态管理架构</a></li>
+        <li><a href="#2-存储层session-store--jsonl-transcript">2. 存储层：Session Store + JSONL Transcript</a>
+          <ul>
+            <li><a href="#21-双存储结构">2.1 双存储结构</a></li>
+            <li><a href="#22-session-store-加载">2.2 Session Store 加载</a></li>
+            <li><a href="#23-session-维护策略">2.3 Session 维护策略</a></li>
+            <li><a href="#24-high-water-磁盘预算策略">2.4 High-Water 磁盘预算策略</a></li>
+            <li><a href="#25-session-文件轮转">2.5 Session 文件轮转</a></li>
+            <li><a href="#26-session-store-缓存">2.6 Session Store 缓存</a></li>
+            <li><a href="#27-session-write-lock">2.7 Session Write Lock</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-会话层session-生命周期">3. 会话层：Session 生命周期</a>
+          <ul>
+            <li><a href="#31-session-key-路由">3.1 Session Key 路由</a></li>
+            <li><a href="#32-session-元数据合并">3.2 Session 元数据合并</a></li>
+            <li><a href="#33-session-交付上下文">3.3 Session 交付上下文</a></li>
+            <li><a href="#34-session-元数据">3.4 Session 元数据</a></li>
+            <li><a href="#35-session-身份标识">3.5 Session 身份标识</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-引擎层session-manager--context-engine">4. 引擎层：Session Manager + Context Engine</a>
+          <ul>
+            <li><a href="#41-session-manager-初始化">4.1 Session Manager 初始化</a></li>
+            <li><a href="#42-session-manager-缓存">4.2 Session Manager 缓存</a></li>
+            <li><a href="#43-context-engine-生命周期钩子">4.3 Context Engine 生命周期钩子</a></li>
+            <li><a href="#44-context-engine-维护maintenance">4.4 Context Engine 维护（Maintenance）</a></li>
+            <li><a href="#45-延迟维护调度">4.5 延迟维护调度</a></li>
+            <li><a href="#46-延迟维护-worker">4.6 延迟维护 Worker</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-维护层compaction--transcript-管理">5. 维护层：Compaction + Transcript 管理</a>
+          <ul>
+            <li><a href="#51-transcript-rewrite">5.1 Transcript Rewrite</a></li>
+            <li><a href="#52-tool-result-截断">5.2 Tool Result 截断</a></li>
+            <li><a href="#53-字符估算">5.3 字符估算</a></li>
+            <li><a href="#54-compaction-常量">5.4 Compaction 常量</a></li>
+            <li><a href="#55-compaction-超时">5.5 Compaction 超时</a></li>
+            <li><a href="#56-compaction-retry--aggregate-timeout">5.6 Compaction Retry + Aggregate Timeout</a></li>
+            <li><a href="#57-session-truncation">5.7 Session Truncation</a></li>
+          </ul>
+        </li>
+        <li><a href="#6-安全层repair--guard">6. 安全层：Repair + Guard</a>
+          <ul>
+            <li><a href="#61-session-文件自修复">6.1 Session 文件自修复</a></li>
+            <li><a href="#62-transcript-repair">6.2 Transcript Repair</a></li>
+            <li><a href="#63-tool-result-context-guard">6.3 Tool Result Context Guard</a></li>
+          </ul>
+        </li>
+        <li><a href="#7-完整对话状态管理序列图">7. 完整对话状态管理序列图</a></li>
+        <li><a href="#8-关键设计模式">8. 关键设计模式</a>
+          <ul>
+            <li><a href="#81-jsonl-格式的优势">8.1 JSONL 格式的优势</a></li>
+            <li><a href="#82-三层会话存储">8.2 三层会话存储</a></li>
+            <li><a href="#83-延迟维护模式">8.3 延迟维护模式</a></li>
+            <li><a href="#84-自修复能力">8.4 自修复能力</a></li>
+            <li><a href="#85-tool-useresult-配对保护">8.5 Tool Use/Result 配对保护</a></li>
+            <li><a href="#86-token-预算控制">8.6 Token 预算控制</a></li>
+          </ul>
+        </li>
+        <li><a href="#9-配置示例">9. 配置示例</a>
+          <ul>
+            <li><a href="#91-session-维护配置">9.1 Session 维护配置</a></li>
+            <li><a href="#92-context-配置">9.2 Context 配置</a></li>
+          </ul>
+        </li>
+        <li><a href="#10-源码模块索引">10. 源码模块索引</a></li>
+        <li><a href="#11-参考资料">11. 参考资料</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+

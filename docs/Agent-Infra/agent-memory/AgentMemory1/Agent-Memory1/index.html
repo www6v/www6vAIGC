@@ -1,0 +1,4255 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  Agent Memory 原理
+  #
+
+
+本文是《大模型 Agent 和应用》Agent Memory 系列的上篇，聚焦定义、生命周期与架构模式。下篇《Agent Memory 实践》将深入关键技术、工业实践与选型指南。
+
+
+  本章导读
+  #
+
+如果你用过 ChatGPT、Claude 或者任何大语言模型，你一定经历过这种挫败——你花了三个小时跟它讨论一个技术方案，关掉浏览器，第二天重新打开，它对你昨天说的一切一无所知。
+这不是因为它&quot;变笨了&quot;，而是因为它根本没有记忆。它每次醒来都是一个新的会话，带着同一套预训练知识，却对你们的共同历史一无所知。
+这就引出了本文的核心问题：如果记忆是人类智能的基石，为什么 Agent 的记忆系统直到 2023 年才成为一个独立的研究方向？ 而在短短两年内，它又如何从一个简单的&quot;把对话历史塞进 prompt&quot;的朴素做法，演变成一个包含分层存储、向量检索、文件系统范式、反思学习的复杂工程体系？
+本文将回答以下问题：
+
+什么是 Agent Memory？它与模型知识、对话上下文有什么本质区别？
+Agent Memory 的&quot;生命周期&quot;是怎样的——写入、存储、检索、遗忘各自面临什么挑战？
+业界出现了哪几种典型的 Memory 架构模式？它们各自的权衡是什么？
+
+
+
+  0. 引子：没有记忆的 Agent 会怎样？
+  #
+
+想象一下这个场景：
+
+你正在用 Agent 帮你写一个分布式系统的方案设计。第一轮对话，你告诉它系统的规模、用户量、延迟要求。第二轮，你让它分析几种存储方案。第三轮，你指出方案三的某个问题，它做了修改。第四轮，你问：&ldquo;记得我们一开始说的那个延迟要求吗？&rdquo;
+它回答：&ldquo;什么延迟要求？&rdquo;
+这不是假设。这就是 2023 年之前绝大多数 LLM Agent 的真实状态。
+
+  0.1 一个&quot;金鱼&quot;Agent 的日常
+  #
+
+LLM 的本质是一个无状态函数（stateless function）：给它一段文本（prompt），它返回下一段文本。不记住上一次交互，不记住上一次交互的结果，不记住上一次交互中你纠正过的错误。
+在没有 Memory 系统的情况下，Agent 的行为特征与人类的&quot;顺行性遗忘&quot;（anterograde amnesia）惊人地相似——它能调用训练中学到的一切知识（相当于&quot;长期语义记忆&quot;），却无法形成任何新的情景记忆（episodic memory）。
+
+  0.2 人类记忆的启发
+  #
+
+人类的记忆不是一块&quot;硬盘&quot;。认知神经科学将人类记忆分为至少三个层次：">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory1/Agent-Memory1/">
+  <meta property="og:site_name" content="基于LLM的系统设计与实现">
+  <meta property="og:title" content="Agent Memory 原理">
+  <meta property="og:description" content="Agent Memory 原理 # 本文是《大模型 Agent 和应用》Agent Memory 系列的上篇，聚焦定义、生命周期与架构模式。下篇《Agent Memory 实践》将深入关键技术、工业实践与选型指南。
+本章导读 # 如果你用过 ChatGPT、Claude 或者任何大语言模型，你一定经历过这种挫败——你花了三个小时跟它讨论一个技术方案，关掉浏览器，第二天重新打开，它对你昨天说的一切一无所知。
+这不是因为它&#34;变笨了&#34;，而是因为它根本没有记忆。它每次醒来都是一个新的会话，带着同一套预训练知识，却对你们的共同历史一无所知。
+这就引出了本文的核心问题：如果记忆是人类智能的基石，为什么 Agent 的记忆系统直到 2023 年才成为一个独立的研究方向？ 而在短短两年内，它又如何从一个简单的&#34;把对话历史塞进 prompt&#34;的朴素做法，演变成一个包含分层存储、向量检索、文件系统范式、反思学习的复杂工程体系？
+本文将回答以下问题：
+什么是 Agent Memory？它与模型知识、对话上下文有什么本质区别？ Agent Memory 的&#34;生命周期&#34;是怎样的——写入、存储、检索、遗忘各自面临什么挑战？ 业界出现了哪几种典型的 Memory 架构模式？它们各自的权衡是什么？ 0. 引子：没有记忆的 Agent 会怎样？ # 想象一下这个场景：
+你正在用 Agent 帮你写一个分布式系统的方案设计。第一轮对话，你告诉它系统的规模、用户量、延迟要求。第二轮，你让它分析几种存储方案。第三轮，你指出方案三的某个问题，它做了修改。第四轮，你问：“记得我们一开始说的那个延迟要求吗？”
+它回答：“什么延迟要求？”
+这不是假设。这就是 2023 年之前绝大多数 LLM Agent 的真实状态。
+0.1 一个&#34;金鱼&#34;Agent 的日常 # LLM 的本质是一个无状态函数（stateless function）：给它一段文本（prompt），它返回下一段文本。不记住上一次交互，不记住上一次交互的结果，不记住上一次交互中你纠正过的错误。
+在没有 Memory 系统的情况下，Agent 的行为特征与人类的&#34;顺行性遗忘&#34;（anterograde amnesia）惊人地相似——它能调用训练中学到的一切知识（相当于&#34;长期语义记忆&#34;），却无法形成任何新的情景记忆（episodic memory）。
+0.2 人类记忆的启发 # 人类的记忆不是一块&#34;硬盘&#34;。认知神经科学将人类记忆分为至少三个层次：">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="docs">
+<title>Agent Memory 原理 | 基于LLM的系统设计与实现</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory1/Agent-Memory1/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.82a42bc12a9d075dec61907a12e3c606fe4237d56e127db2ccb4e2e2b58df6ec.js" integrity="sha256-gqQrwSqdB13sYZB6EuPGBv5CN9VuEn2yzLTi4rWN9uw=" crossorigin="anonymous"></script>
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>基于LLM的系统设计与实现</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b757002e9620728c23883bffd127cb72" class="toggle"  />
+    <label for="section-b757002e9620728c23883bffd127cb72" class="flex justify-between">
+      <a role="button" class="">Platform *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0b800a1752a4e836473ce3e89db51e41" class="toggle"  />
+    <label for="section-0b800a1752a4e836473ce3e89db51e41" class="flex justify-between">
+      <a role="button" class="">Multi-agent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="toggle"  />
+    <label for="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="flex justify-between">
+      <a role="button" class="">Communication *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle" checked />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Agent Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory1/Agent-Memory1/" class="active">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Reflection</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Planning</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Sandbox</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Tool use</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle"  />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code/" class="">Cloud Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle"  />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/openclaw-sandbox-security/" class="">Openclaw Sandbox Security</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/stability/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/" class="">Openclaw Conversation State Management</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/" class="">Openclaw Tool Invocation Flow</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle"  />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">(Manus)context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Agent Memory 原理</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#agent-memory-原理">Agent Memory 原理</a>
+      <ul>
+        <li><a href="#本章导读">本章导读</a></li>
+        <li><a href="#0-引子没有记忆的-agent-会怎样">0. 引子：没有记忆的 Agent 会怎样？</a>
+          <ul>
+            <li><a href="#01-一个金鱼agent-的日常">0.1 一个&quot;金鱼&quot;Agent 的日常</a></li>
+            <li><a href="#02-人类记忆的启发">0.2 人类记忆的启发</a></li>
+            <li><a href="#03-从无限上下文的幻想到分层记忆">0.3 从&quot;无限上下文&quot;的幻想到分层记忆</a></li>
+          </ul>
+        </li>
+        <li><a href="#1-什么是-agent-memory">1. 什么是 Agent Memory？</a>
+          <ul>
+            <li><a href="#11-定义与边界什么算记忆什么不算">1.1 定义与边界：什么算记忆，什么不算？</a></li>
+            <li><a href="#12-为什么-llm-需要额外的-memory">1.2 为什么 LLM 需要额外的 Memory？</a></li>
+            <li><a href="#13-memory-的分类体系">1.3 Memory 的分类体系</a></li>
+          </ul>
+        </li>
+        <li><a href="#2-记忆是怎么工作的agent-memory-的生命周期">2. 记忆是怎么工作的：Agent Memory 的生命周期</a>
+          <ul>
+            <li><a href="#21-写入从交互中提取记忆">2.1 写入：从交互中提取记忆</a></li>
+            <li><a href="#22-存储记忆放在哪里">2.2 存储：记忆放在哪里？</a></li>
+            <li><a href="#23-检索在需要时找到正确的记忆">2.3 检索：在需要时找到正确的记忆</a></li>
+            <li><a href="#24-遗忘记忆管理的另一面">2.4 遗忘：记忆管理的另一面</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-架构设计几种经典的-memory-模式">3. 架构设计：几种经典的 Memory 模式</a>
+          <ul>
+            <li><a href="#31-扁平列表模式flat-memory">3.1 扁平列表模式（Flat Memory）</a></li>
+            <li><a href="#32-分层记忆模式hierarchical-memory">3.2 分层记忆模式（Hierarchical Memory）</a></li>
+            <li><a href="#33-检索增强模式retrieval-augmented-memory">3.3 检索增强模式（Retrieval-Augmented Memory）</a></li>
+            <li><a href="#34-文件系统范式filesystem-paradigm">3.4 文件系统范式（Filesystem Paradigm）</a></li>
+            <li><a href="#35-学习型记忆模式learning-memory">3.5 学习型记忆模式（Learning Memory）</a></li>
+            <li><a href="#36-五种模式的权衡分析">3.6 五种模式的权衡分析</a></li>
+          </ul>
+        </li>
+        <li><a href="#本文小结">本文小结</a>
+          <ul>
+            <li><a href="#核心要点">核心要点</a></li>
+            <li><a href="#下篇预告">下篇预告</a></li>
+          </ul>
+        </li>
+        <li><a href="#参考文献">参考文献</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="agent-memory-原理">
+  Agent Memory 原理
+  <a class="anchor" href="#agent-memory-%e5%8e%9f%e7%90%86">#</a>
+</h1>
+<blockquote>
+<p>本文是《大模型 Agent 和应用》Agent Memory 系列的<strong>上篇</strong>，聚焦定义、生命周期与架构模式。下篇《Agent Memory 实践》将深入关键技术、工业实践与选型指南。</p></blockquote>
+<hr>
+<h2 id="本章导读">
+  本章导读
+  <a class="anchor" href="#%e6%9c%ac%e7%ab%a0%e5%af%bc%e8%af%bb">#</a>
+</h2>
+<p>如果你用过 ChatGPT、Claude 或者任何大语言模型，你一定经历过这种挫败——你花了三个小时跟它讨论一个技术方案，关掉浏览器，第二天重新打开，它对你昨天说的一切一无所知。</p>
+<p>这不是因为它&quot;变笨了&quot;，而是因为它根本没有<strong>记忆</strong>。它每次醒来都是一个新的会话，带着同一套预训练知识，却对你们的共同历史一无所知。</p>
+<p>这就引出了本文的核心问题：<strong>如果记忆是人类智能的基石，为什么 Agent 的记忆系统直到 2023 年才成为一个独立的研究方向？</strong> 而在短短两年内，它又如何从一个简单的&quot;把对话历史塞进 prompt&quot;的朴素做法，演变成一个包含分层存储、向量检索、文件系统范式、反思学习的复杂工程体系？</p>
+<p>本文将回答以下问题：</p>
+<ol>
+<li>什么是 Agent Memory？它与模型知识、对话上下文有什么本质区别？</li>
+<li>Agent Memory 的&quot;生命周期&quot;是怎样的——写入、存储、检索、遗忘各自面临什么挑战？</li>
+<li>业界出现了哪几种典型的 Memory 架构模式？它们各自的权衡是什么？</li>
+</ol>
+<hr>
+<h2 id="0-引子没有记忆的-agent-会怎样">
+  0. 引子：没有记忆的 Agent 会怎样？
+  <a class="anchor" href="#0-%e5%bc%95%e5%ad%90%e6%b2%a1%e6%9c%89%e8%ae%b0%e5%bf%86%e7%9a%84-agent-%e4%bc%9a%e6%80%8e%e6%a0%b7">#</a>
+</h2>
+<p>想象一下这个场景：</p>
+<blockquote>
+<p>你正在用 Agent 帮你写一个分布式系统的方案设计。第一轮对话，你告诉它系统的规模、用户量、延迟要求。第二轮，你让它分析几种存储方案。第三轮，你指出方案三的某个问题，它做了修改。第四轮，你问：&ldquo;记得我们一开始说的那个延迟要求吗？&rdquo;</p>
+<p>它回答：&ldquo;什么延迟要求？&rdquo;</p></blockquote>
+<p>这不是假设。这就是 2023 年之前绝大多数 LLM Agent 的真实状态。</p>
+<h3 id="01-一个金鱼agent-的日常">
+  0.1 一个&quot;金鱼&quot;Agent 的日常
+  <a class="anchor" href="#01-%e4%b8%80%e4%b8%aa%e9%87%91%e9%b1%bcagent-%e7%9a%84%e6%97%a5%e5%b8%b8">#</a>
+</h3>
+<p>LLM 的本质是一个<strong>无状态函数</strong>（stateless function）：给它一段文本（prompt），它返回下一段文本。不记住上一次交互，不记住上一次交互的结果，不记住上一次交互中你纠正过的错误。</p>
+<p>在没有 Memory 系统的情况下，Agent 的行为特征与人类的&quot;顺行性遗忘&quot;（anterograde amnesia）惊人地相似——它能调用训练中学到的一切知识（相当于&quot;长期语义记忆&quot;），却无法形成任何新的情景记忆（episodic memory）。</p>
+<h3 id="02-人类记忆的启发">
+  0.2 人类记忆的启发
+  <a class="anchor" href="#02-%e4%ba%ba%e7%b1%bb%e8%ae%b0%e5%bf%86%e7%9a%84%e5%90%af%e5%8f%91">#</a>
+</h3>
+<p>人类的记忆不是一块&quot;硬盘&quot;。认知神经科学将人类记忆分为至少三个层次：</p>
+<ul>
+<li><strong>工作记忆（Working Memory）</strong>：当下正在处理的信息，容量有限（经典研究认为 7±2 个组块），类似于 Agent 的上下文窗口。</li>
+<li><strong>长期记忆（Long-term Memory）</strong>：经过巩固后持久存储的信息，又分为：
+<ul>
+<li><strong>情景记忆（Episodic Memory）</strong>：具体事件的记忆（&ldquo;昨天大风让我写一个方案&rdquo;）</li>
+<li><strong>语义记忆（Semantic Memory）</strong>：抽象知识的记忆（&ldquo;分布式一致性需要多数派共识&rdquo;）</li>
+</ul>
+</li>
+<li><strong>程序性记忆（Procedural Memory）</strong>：技能和习惯（&ldquo;我知道怎么设计 Raft 协议&rdquo;），类似于模型参数。</li>
+</ul>
+<p>Agent Memory 研究的核心洞察是：<strong>Agent 需要类似人类的分层记忆系统，而不仅仅是扩大上下文窗口。</strong> 把工作记忆做大（比如 1M tokens）并不能替代长期记忆——就像给一个顺行性遗忘症患者一个 100 万字的记事本，他仍然无法形成新的记忆。</p>
+<h3 id="03-从无限上下文的幻想到分层记忆">
+  0.3 从&quot;无限上下文&quot;的幻想到分层记忆
+  <a class="anchor" href="#03-%e4%bb%8e%e6%97%a0%e9%99%90%e4%b8%8a%e4%b8%8b%e6%96%87%e7%9a%84%e5%b9%bb%e6%83%b3%e5%88%b0%e5%88%86%e5%b1%82%e8%ae%b0%e5%bf%86">#</a>
+</h3>
+<p>2023 年，随着 GPT-4 的 32K、128K 上下文窗口发布，一度有人提出&quot;记忆问题已经解决了&quot;——只要窗口够大，把一切历史记录都塞进去就行。</p>
+<p>但这个直觉在三个维度上被证明是错误的：</p>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>问题</th>
+          <th>数据</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>注意力稀释</strong></td>
+          <td>关键信息被淹没在长上下文中</td>
+          <td>&ldquo;Lost in the Middle&rdquo; 研究（Liu et al., 2023）：当上下文超过 4K tokens 后，模型对中间位置信息的召回率显著下降</td>
+      </tr>
+      <tr>
+          <td><strong>token 经济学</strong></td>
+          <td>每次请求都要携带全部历史</td>
+          <td>GPT-4 的 input token 价格是 $10/1M，128K 上下文 × 100 轮对话 = 12.8M tokens = $128</td>
+      </tr>
+      <tr>
+          <td><strong>物理上限</strong></td>
+          <td>上下文窗口再大也有边界</td>
+          <td>即使 1M tokens（约 75 万中文字），也不等于&quot;无限记忆&quot;——它仍然是一个有界的滑动窗口</td>
+      </tr>
+  </tbody>
+</table>
+<p>这些问题迫使研究者和工程师去寻找一个更根本的解决方案：<strong>Agent 需要真正的记忆系统</strong>——能选择性地记住重要的东西，能在需要时快速检索，能优雅地遗忘不再需要的东西。</p>
+<hr>
+<h2 id="1-什么是-agent-memory">
+  1. 什么是 Agent Memory？
+  <a class="anchor" href="#1-%e4%bb%80%e4%b9%88%e6%98%af-agent-memory">#</a>
+</h2>
+<h3 id="11-定义与边界什么算记忆什么不算">
+  1.1 定义与边界：什么算记忆，什么不算？
+  <a class="anchor" href="#11-%e5%ae%9a%e4%b9%89%e4%b8%8e%e8%be%b9%e7%95%8c%e4%bb%80%e4%b9%88%e7%ae%97%e8%ae%b0%e5%bf%86%e4%bb%80%e4%b9%88%e4%b8%8d%e7%ae%97">#</a>
+</h3>
+<p>在开始讨论之前，我们需要先划定边界。&ldquo;记忆&quot;这个词在 LLM 领域被过度使用了——KV Cache 优化叫&quot;memory optimization&rdquo;，上下文管理叫&quot;context memory&quot;，甚至模型微调也叫&quot;memory update&quot;。</p>
+<p>在本文中，我们明确定义：</p>
+<blockquote>
+<p><strong>Agent Memory</strong> 是指 Agent 在<strong>推理时（inference-time）<strong>能够主动写入、存储、检索和更新的</strong>外部持久化信息系统</strong>。它与模型参数无关，与训练过程无关，只与 Agent 在运行时如何管理自身经验有关。</p></blockquote>
+<p>这个定义排除了两类常被混淆的概念：</p>
+<table>
+  <thead>
+      <tr>
+          <th>概念</th>
+          <th>为什么不是 Agent Memory</th>
+          <th>类比</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>模型参数（Knowledge）</strong></td>
+          <td>参数是训练时固定的，推理时不可变（除非做微调）</td>
+          <td>相当于人的&quot;先天知识 + 长期教育&quot;——你不会因为聊了一次天就改变大脑的突触连接</td>
+      </tr>
+      <tr>
+          <td><strong>KV Cache</strong></td>
+          <td>KV Cache 是推理过程中的内部优化，不跨 session 持久化</td>
+          <td>相当于人的&quot;工作记忆缓冲&quot;——关掉电源就没了</td>
+      </tr>
+  </tbody>
+</table>
+<p>同时，这个定义包含了一个关键要素：<strong>Agent 能够主动管理自己的记忆</strong>。这区别于传统的 RAG 系统——在 RAG 中，检索和注入是外部系统控制的，Agent 本身不&quot;知道&quot;自己有一个记忆库。而在 Agent Memory 系统中，记忆的管理是 Agent 行为的一部分。</p>
+<blockquote>
+<p><strong>关键区分</strong>：Agent Memory vs 对话历史（Context）</p>
+<p>对话历史是<strong>被动的记录</strong>——系统自动保存你说了什么。Agent Memory 是<strong>主动的选择</strong>——Agent 决定什么值得记住、以什么格式存储、什么时候检索。</p>
+<p>类比：对话历史像手机的&quot;通话记录&quot;，Agent Memory 像你的&quot;笔记本&quot;。通话记录自动保存每一通电话，但你不会去翻通话记录来回忆重要的信息——你会翻笔记本，因为那里面是你主动记录的关键内容。</p></blockquote>
+<h3 id="12-为什么-llm-需要额外的-memory">
+  1.2 为什么 LLM 需要额外的 Memory？
+  <a class="anchor" href="#12-%e4%b8%ba%e4%bb%80%e4%b9%88-llm-%e9%9c%80%e8%a6%81%e9%a2%9d%e5%a4%96%e7%9a%84-memory">#</a>
+</h3>
+<h4 id="121-上下文窗口的物理限制">
+  1.2.1 上下文窗口的物理限制
+  <a class="anchor" href="#121-%e4%b8%8a%e4%b8%8b%e6%96%87%e7%aa%97%e5%8f%a3%e7%9a%84%e7%89%a9%e7%90%86%e9%99%90%e5%88%b6">#</a>
+</h4>
+<p>LLM 的上下文窗口本质上是一个<strong>有界的输入缓冲区</strong>。无论它多大，都有以下限制：</p>
+<ul>
+<li><strong>有限的容量</strong>：128K tokens ≈ 约 9.6 万中文字。对于长期运行的 Agent（比如一个持续数周的编程助手），这个数字远远不够。</li>
+<li><strong>有限的注意力</strong>：即使技术上能容纳 1M tokens，模型的注意力机制也会在长序列中产生&quot;注意力稀释&quot;。Liu et al.（2023）的 &ldquo;Needle In A Haystack&rdquo; 实验清晰地展示了这一点：当关键信息被埋在长上下文的中间时，模型的召回率会显著下降。</li>
+<li><strong>不可变的边界</strong>：上下文窗口是模型架构的一部分，用户在推理时无法扩展它。</li>
+</ul>
+<h4 id="122-注意力稀释的量化分析">
+  1.2.2 注意力稀释的量化分析
+  <a class="anchor" href="#122-%e6%b3%a8%e6%84%8f%e5%8a%9b%e7%a8%80%e9%87%8a%e7%9a%84%e9%87%8f%e5%8c%96%e5%88%86%e6%9e%90">#</a>
+</h4>
+<p>&ldquo;Lost in the Middle&rdquo; 效应不仅是定性观察，也有量化的数据。多项研究表明：</p>
+<ul>
+<li>当上下文长度超过 4K tokens 后，模型对<strong>中间位置</strong>信息的提取准确率开始下降。</li>
+<li>当上下文长度达到 32K 以上时，中间位置的信息召回率可能降至 60% 以下。</li>
+<li>模型对<strong>首尾位置</strong>的信息（primacy/recency effect）保持较高召回率。</li>
+</ul>
+<p>这意味着，如果你把 Agent 的记忆全部塞进 prompt 的前面，它&quot;记住&quot;的只有最近几条和最早几条——中间的交互就像被遗忘了一样。</p>
+<h4 id="123-成本考量">
+  1.2.3 成本考量
+  <a class="anchor" href="#123-%e6%88%90%e6%9c%ac%e8%80%83%e9%87%8f">#</a>
+</h4>
+<p>假设你有一个客服 Agent，平均每次对话 2K tokens，每天处理 500 次对话。如果不做记忆管理，每次请求都携带完整的对话历史：</p>
+<ul>
+<li>第 1 轮：2K tokens</li>
+<li>第 2 轮：4K tokens（累积历史）</li>
+<li>第 10 轮：20K tokens</li>
+<li>第 50 轮：100K tokens</li>
+</ul>
+<p>平均每次请求的 token 消耗是 O(n²) 增长的。对于一个 50 轮的对话，总 token 消耗约 500K，而<strong>有效的新信息可能只有最后 2K</strong>。这意味着 99.6% 的 token 费用是在为&quot;重复携带已知信息&quot;买单。</p>
+<blockquote>
+<p><strong>工程启示</strong>：好的记忆系统不只是让 Agent &ldquo;更聪明&rdquo;，也是让 Agent &ldquo;更便宜&rdquo;。</p></blockquote>
+<h3 id="13-memory-的分类体系">
+  1.3 Memory 的分类体系
+  <a class="anchor" href="#13-memory-%e7%9a%84%e5%88%86%e7%b1%bb%e4%bd%93%e7%b3%bb">#</a>
+</h3>
+<p>对于 Agent Memory 这个快速演进的领域，一个清晰的分类框架是理解各种方案的前提。综合 arXiv:2512.13564（&ldquo;Memory in the Age of AI Agents&rdquo;）和 arXiv:2603.07670（&ldquo;Memory for Autonomous LLM Agents&rdquo;）的工作，我们从三个维度来分类。</p>
+<h4 id="131-forms形态记忆以什么形式存在">
+  1.3.1 Forms（形态）：记忆以什么形式存在？
+  <a class="anchor" href="#131-forms%e5%bd%a2%e6%80%81%e8%ae%b0%e5%bf%86%e4%bb%a5%e4%bb%80%e4%b9%88%e5%bd%a2%e5%bc%8f%e5%ad%98%e5%9c%a8">#</a>
+</h4>
+<table>
+  <thead>
+      <tr>
+          <th>形态</th>
+          <th>存储介质</th>
+          <th>典型实现</th>
+          <th>优势</th>
+          <th>局限</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>明文记忆（Explicit Memory）</strong></td>
+          <td>文本文件、Markdown、JSON</td>
+          <td>OpenClaw 的 MEMORY.md，Claude Code 的 session 日志</td>
+          <td>可读性强，可直接编辑，版本控制友好</td>
+          <td>检索依赖文本匹配或向量化，语义理解需要额外处理</td>
+      </tr>
+      <tr>
+          <td><strong>向量记忆（Vector Memory）</strong></td>
+          <td>向量数据库（Milvus, Qdrant, FAISS 等）</td>
+          <td>Mem0 的记忆嵌入，OpenClaw 的 LanceDB 层</td>
+          <td>语义相似度检索，支持模糊匹配</td>
+          <td>丢失精确细节，嵌入质量依赖编码模型，调试困难</td>
+      </tr>
+      <tr>
+          <td><strong>参数记忆（Parametric Memory）</strong></td>
+          <td>模型参数/Adapter 权重</td>
+          <td>MemOS 的参数记忆层，学习型记忆系统</td>
+          <td>最紧凑的信息编码，与推理深度集成</td>
+          <td>更新成本高，不可直接读取或编辑，灾难性遗忘风险</td>
+      </tr>
+      <tr>
+          <td><strong>结构化记忆（Structured Memory）</strong></td>
+          <td>知识图谱、关系数据库、图数据库</td>
+          <td>OpenViking 的文件系统层级结构</td>
+          <td>支持关系推理、多跳查询、可解释性强</td>
+          <td>构建成本高，维护复杂，查询语言学习曲线</td>
+      </tr>
+  </tbody>
+</table>
+<h4 id="132-functions功能记忆系统能做什么">
+  1.3.2 Functions（功能）：记忆系统能做什么？
+  <a class="anchor" href="#132-functions%e5%8a%9f%e8%83%bd%e8%ae%b0%e5%bf%86%e7%b3%bb%e7%bb%9f%e8%83%bd%e5%81%9a%e4%bb%80%e4%b9%88">#</a>
+</h4>
+<p>记忆系统不是简单的&quot;存和取&quot;。一个完整的 Agent Memory 系统至少需要支持以下功能：</p>
+<ol>
+<li>
+<p><strong>存储（Storage）</strong>：将信息写入记忆。可以是直接写入（&ldquo;记住用户叫大风&rdquo;），也可以是摘要压缩（&ldquo;将 50 轮对话浓缩为 3 条关键结论&rdquo;），还可以是结构化提取（&ldquo;从对话中提取用户的偏好设置并写入 JSON&rdquo;）。</p>
+</li>
+<li>
+<p><strong>检索（Retrieval）</strong>：在需要时找到相关的记忆。可以是精确匹配（关键词搜索），也可以是语义相似度（向量检索），还可以是结构化查询（图遍历、SQL）。</p>
+</li>
+<li>
+<p><strong>遗忘（Forgetting）</strong>：淘汰不再需要的记忆。遗忘不是系统的缺陷，而是其核心功能——就像人类需要遗忘来保持认知效率一样，Agent 也需要遗忘来避免记忆膨胀和检索噪声。遗忘策略包括 TTL（过期自动删除）、重要性衰减（长期未访问的记忆降低权重）、容量上限（FIFO/LRU 淘汰）。</p>
+</li>
+<li>
+<p><strong>更新（Updating）</strong>：修正或补充已有的记忆。当用户说&quot;我改名了&quot;时，系统需要更新而非追加记忆。这涉及冲突检测、版本管理、一致性保证。</p>
+</li>
+<li>
+<p><strong>整合（Integration）</strong>：将多个记忆片段融合为更高层次的知识。例如，从多次对话中提取用户的编程偏好，形成一个统一的用户画像。</p>
+</li>
+</ol>
+<h4 id="133-dynamics动态演化记忆如何随时间变化">
+  1.3.3 Dynamics（动态演化）：记忆如何随时间变化？
+  <a class="anchor" href="#133-dynamics%e5%8a%a8%e6%80%81%e6%bc%94%e5%8c%96%e8%ae%b0%e5%bf%86%e5%a6%82%e4%bd%95%e9%9a%8f%e6%97%b6%e9%97%b4%e5%8f%98%e5%8c%96">#</a>
+</h4>
+<p>记忆不是静态的。arXiv:2603.07670 特别关注了记忆的动态演化过程：</p>
+<ul>
+<li><strong>生成（Generation）</strong>：记忆在交互中产生。关键问题是：什么时候生成记忆？是每次交互都生成，还是只在检测到&quot;值得记忆&quot;的信息时生成？</li>
+<li><strong>衰减（Decay）</strong>：记忆的&quot;新鲜度&quot;随时间降低。Ebbinghaus 遗忘曲线在 Agent 记忆中也有对应——长期未检索的记忆应该被降级或淘汰。</li>
+<li><strong>巩固（Consolidation）</strong>：类似人类睡眠中的记忆巩固过程，Agent 可以在&quot;空闲时间&quot;（Heartbeat 机制）对原始日志进行蒸馏，提取长期记忆。</li>
+<li><strong>迁移（Transfer）</strong>：记忆从一个 Agent 迁移到另一个，或从一个模型迁移到另一个。Letta 的 &ldquo;port memory across models&rdquo; 就是这一能力的体现。</li>
+</ul>
+<p>这三个维度（Forms × Functions × Dynamics）构成了一个理解 Agent Memory 系统的三维坐标系。</p>
+<hr>
+<h2 id="2-记忆是怎么工作的agent-memory-的生命周期">
+  2. 记忆是怎么工作的：Agent Memory 的生命周期
+  <a class="anchor" href="#2-%e8%ae%b0%e5%bf%86%e6%98%af%e6%80%8e%e4%b9%88%e5%b7%a5%e4%bd%9c%e7%9a%84agent-memory-%e7%9a%84%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f">#</a>
+</h2>
+<p>一个 Agent Memory 系统要正常工作，必须经历一个完整的生命周期：<strong>写入 → 存储 → 检索 → 遗忘</strong>。这个循环不是一次性的，而是持续运转的——就像人的大脑每时每刻都在编码新记忆、巩固旧记忆、遗忘无用信息一样。</p>
+<h3 id="21-写入从交互中提取记忆">
+  2.1 写入：从交互中提取记忆
+  <a class="anchor" href="#21-%e5%86%99%e5%85%a5%e4%bb%8e%e4%ba%a4%e4%ba%92%e4%b8%ad%e6%8f%90%e5%8f%96%e8%ae%b0%e5%bf%86">#</a>
+</h3>
+<p>写入是记忆生命周期的起点，也是最容易被低估的环节。</p>
+<h4 id="211-三种写入策略">
+  2.1.1 三种写入策略
+  <a class="anchor" href="#211-%e4%b8%89%e7%a7%8d%e5%86%99%e5%85%a5%e7%ad%96%e7%95%a5">#</a>
+</h4>
+<table>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th>做法</th>
+          <th>适用场景</th>
+          <th>典型系统</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>直接存储</strong></td>
+          <td>原始文本原样保存</td>
+          <td>短期记忆、精确信息不可丢失的场景</td>
+          <td>Claude Code 的 session 日志</td>
+      </tr>
+      <tr>
+          <td><strong>摘要压缩</strong></td>
+          <td>用 LLM 将长文本压缩为摘要</td>
+          <td>中期记忆、需要节省 token 开销的场景</td>
+          <td>Mem0 的分层蒸馏压缩</td>
+      </tr>
+      <tr>
+          <td><strong>结构化提取</strong></td>
+          <td>从文本中提取结构化信息（名称、偏好、决策）写入</td>
+          <td>长期记忆、需要高效检索的场景</td>
+          <td>OpenClaw 的 USER.md 更新</td>
+      </tr>
+  </tbody>
+</table>
+<h4 id="212-关键决策什么值得记">
+  2.1.2 关键决策：什么值得记？
+  <a class="anchor" href="#212-%e5%85%b3%e9%94%ae%e5%86%b3%e7%ad%96%e4%bb%80%e4%b9%88%e5%80%bc%e5%be%97%e8%ae%b0">#</a>
+</h4>
+<p>这是写入环节最核心的设计决策。想象一下，如果你记住每一顿饭吃了什么、每一路公交车等了多久、每一个路人的长相——你的大脑早就崩溃了。人类的大脑通过选择性注意力和情感标记来决定什么值得记住。</p>
+<p>Agent 需要做类似的判断：</p>
+<ul>
+<li><strong>高价值信息</strong>：用户偏好（&ldquo;我喜欢用 Rust&rdquo;）、关键决策（&ldquo;方案 B 被采纳&rdquo;）、纠正过的错误（&ldquo;不要用方案 X，它有问题&rdquo;）→ <strong>必须记</strong></li>
+<li><strong>中价值信息</strong>：项目背景、技术选型理由、讨论过程 → <strong>摘要后记</strong></li>
+<li><strong>低价值信息</strong>：寒暄、重复的问题、已解决的简单 bug → <strong>不记或短期存储</strong></li>
+</ul>
+<h3 id="22-存储记忆放在哪里">
+  2.2 存储：记忆放在哪里？
+  <a class="anchor" href="#22-%e5%ad%98%e5%82%a8%e8%ae%b0%e5%bf%86%e6%94%be%e5%9c%a8%e5%93%aa%e9%87%8c">#</a>
+</h3>
+<p>写入了记忆之后，下一个问题是：存在哪里？这不是一个纯技术问题，而是取决于记忆的&quot;热温冷&quot;程度。</p>
+<h4 id="221-三级存储模型">
+  2.2.1 三级存储模型
+  <a class="anchor" href="#221-%e4%b8%89%e7%ba%a7%e5%ad%98%e5%82%a8%e6%a8%a1%e5%9e%8b">#</a>
+</h4>
+<p>借鉴计算机体系结构中的&quot;缓存 → 主存 → 磁盘&quot;分层模型，Agent Memory 也演化出了类似的分层架构：</p>
+<table>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>类比</th>
+          <th>存储介质</th>
+          <th>访问延迟</th>
+          <th>容量</th>
+          <th>典型内容</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>短期记忆</strong></td>
+          <td>CPU 寄存器/缓存</td>
+          <td>上下文窗口</td>
+          <td>极低（模型原生）</td>
+          <td>极小（4K-128K tokens）</td>
+          <td>当前对话的活跃信息</td>
+      </tr>
+      <tr>
+          <td><strong>中期记忆</strong></td>
+          <td>RAM</td>
+          <td>向量数据库</td>
+          <td>低（几十 ms）</td>
+          <td>中等（百万级向量）</td>
+          <td>近期交互的嵌入表示</td>
+      </tr>
+      <tr>
+          <td><strong>长期记忆</strong></td>
+          <td>磁盘</td>
+          <td>持久化文件、知识图谱</td>
+          <td>中（文件读取）</td>
+          <td>大（受限于磁盘）</td>
+          <td>用户画像、核心决策、经验教训</td>
+      </tr>
+  </tbody>
+</table>
+<h4 id="222-记忆巩固从短期到长期">
+  2.2.2 记忆巩固：从短期到长期
+  <a class="anchor" href="#222-%e8%ae%b0%e5%bf%86%e5%b7%a9%e5%9b%ba%e4%bb%8e%e7%9f%ad%e6%9c%9f%e5%88%b0%e9%95%bf%e6%9c%9f">#</a>
+</h4>
+<p>在人类大脑中，海马体负责将短期记忆巩固为长期记忆——这个过程主要发生在睡眠期间。Agent Memory 系统也有类似的机制：</p>
+<ul>
+<li><strong>OpenClaw 的 Heartbeat</strong>：定期（每 30 分钟左右）扫描 <code>memory/</code> 目录中的原始日志，提取关键洞察并更新 MEMORY.md。这相当于&quot;睡眠中的记忆巩固&quot;。</li>
+<li><strong>Mem0 的分层蒸馏</strong>：通过单次 pass 的多级压缩引擎，将冗长的聊天历史逐步蒸馏为紧凑的结构化记忆。</li>
+<li><strong>OpenViking 的自动会话管理</strong>：自动压缩对话内容、资源引用、工具调用，提取长期记忆，实现上下文自迭代。</li>
+</ul>
+<h3 id="23-检索在需要时找到正确的记忆">
+  2.3 检索：在需要时找到正确的记忆
+  <a class="anchor" href="#23-%e6%a3%80%e7%b4%a2%e5%9c%a8%e9%9c%80%e8%a6%81%e6%97%b6%e6%89%be%e5%88%b0%e6%ad%a3%e7%a1%ae%e7%9a%84%e8%ae%b0%e5%bf%86">#</a>
+</h3>
+<p>存储只是第一步——如果找不到，存储就没有意义。检索是 Agent Memory 系统中最复杂、也最具挑战性的环节。</p>
+<h4 id="231-三种检索方式">
+  2.3.1 三种检索方式
+  <a class="anchor" href="#231-%e4%b8%89%e7%a7%8d%e6%a3%80%e7%b4%a2%e6%96%b9%e5%bc%8f">#</a>
+</h4>
+<table>
+  <thead>
+      <tr>
+          <th>方式</th>
+          <th>原理</th>
+          <th>优势</th>
+          <th>局限</th>
+          <th>典型场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>精确匹配</strong></td>
+          <td>关键词搜索、正则匹配</td>
+          <td>精确、快速、可预测</td>
+          <td>无法处理语义相似性</td>
+          <td>&ldquo;查找用户名字&rdquo;、&ldquo;查找上次提到的 API 地址&rdquo;</td>
+      </tr>
+      <tr>
+          <td><strong>语义相似度</strong></td>
+          <td>向量嵌入 + 相似度搜索（余弦/内积）</td>
+          <td>支持模糊匹配、语义理解</td>
+          <td>丢失精确细节、嵌入质量依赖模型</td>
+          <td>&ldquo;找与性能优化相关的讨论&rdquo;</td>
+      </tr>
+      <tr>
+          <td><strong>结构化查询</strong></td>
+          <td>SQL、图遍历、目录路径</td>
+          <td>精确、支持关系推理</td>
+          <td>需要预定义结构、构建成本高</td>
+          <td>&ldquo;找出所有与项目 X 相关的决策&rdquo;</td>
+      </tr>
+  </tbody>
+</table>
+<h4 id="232-检索时机什么时候查">
+  2.3.2 检索时机：什么时候查？
+  <a class="anchor" href="#232-%e6%a3%80%e7%b4%a2%e6%97%b6%e6%9c%ba%e4%bb%80%e4%b9%88%e6%97%b6%e5%80%99%e6%9f%a5">#</a>
+</h4>
+<p>检索时机是一个常被忽视的设计决策：</p>
+<ul>
+<li><strong>每次对话都检索</strong>：最安全，但延迟最高、token 消耗最大。适合对记忆准确性要求极高的场景。</li>
+<li><strong>按需触发</strong>：只在 Agent 判断可能需要历史信息时才检索。延迟低，但可能错过重要记忆。</li>
+<li><strong>混合策略</strong>：对高频记忆（如用户画像）每次加载，对低频记忆按需检索。这是大多数生产系统的选择。</li>
+</ul>
+<h4 id="233-检索失败的三种模式">
+  2.3.3 检索失败的三种模式
+  <a class="anchor" href="#233-%e6%a3%80%e7%b4%a2%e5%a4%b1%e8%b4%a5%e7%9a%84%e4%b8%89%e7%a7%8d%e6%a8%a1%e5%bc%8f">#</a>
+</h4>
+<p>检索系统设计得再精巧，也避免不了失败。常见的失败模式有三种：</p>
+<ol>
+<li><strong>找不到（Recall Failure）</strong>：记忆存在但没检索到。通常是因为向量嵌入的语义偏差，或者关键词不匹配。</li>
+<li><strong>找错（Precision Failure）</strong>：检索到了不相关的记忆。这比&quot;找不到&quot;更危险——错误的记忆会让 Agent 做出错误的判断。</li>
+<li><strong>找到太多（Overload）</strong>：检索结果过多，超过了上下文窗口的承载能力。这回到了原始的&quot;注意力稀释&quot;问题。</li>
+</ol>
+<p>一个好的检索系统需要在召回率（recall）和精确率（precision）之间找到平衡，并根据场景动态调整。</p>
+<h3 id="24-遗忘记忆管理的另一面">
+  2.4 遗忘：记忆管理的另一面
+  <a class="anchor" href="#24-%e9%81%97%e5%bf%98%e8%ae%b0%e5%bf%86%e7%ae%a1%e7%90%86%e7%9a%84%e5%8f%a6%e4%b8%80%e9%9d%a2">#</a>
+</h3>
+<p>大多数人讨论记忆时只关注&quot;怎么记住&quot;，却忽视了&quot;怎么遗忘&quot;。但遗忘不是缺陷——它是记忆系统的<strong>核心功能</strong>。</p>
+<h4 id="241-主动遗忘-vs-被动遗忘">
+  2.4.1 主动遗忘 vs 被动遗忘
+  <a class="anchor" href="#241-%e4%b8%bb%e5%8a%a8%e9%81%97%e5%bf%98-vs-%e8%a2%ab%e5%8a%a8%e9%81%97%e5%bf%98">#</a>
+</h4>
+<table>
+  <thead>
+      <tr>
+          <th>类型</th>
+          <th>机制</th>
+          <th>类比</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>主动遗忘</strong></td>
+          <td>系统主动淘汰不再需要的记忆</td>
+          <td>人类的定期整理——清理旧文件、丢弃过期物品</td>
+      </tr>
+      <tr>
+          <td><strong>被动遗忘</strong></td>
+          <td>记忆未被检索到或检索排名太低</td>
+          <td>人类的&quot;想不起来&quot;——记忆还在，但找不到路径</td>
+      </tr>
+  </tbody>
+</table>
+<h4 id="242-遗忘策略">
+  2.4.2 遗忘策略
+  <a class="anchor" href="#242-%e9%81%97%e5%bf%98%e7%ad%96%e7%95%a5">#</a>
+</h4>
+<table>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th>原理</th>
+          <th>适用场景</th>
+          <th>风险</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>TTL（Time-To-Live）</strong></td>
+          <td>记忆过期后自动删除</td>
+          <td>临时信息、会话数据</td>
+          <td>可能删除仍有价值的长期记忆</td>
+      </tr>
+      <tr>
+          <td><strong>重要性衰减</strong></td>
+          <td>长期未访问的记忆权重降低，最终被淘汰</td>
+          <td>用户偏好的变化跟踪</td>
+          <td>权重函数设计不当会导致误删</td>
+      </tr>
+      <tr>
+          <td><strong>容量上限</strong></td>
+          <td>记忆库达到容量上限时，按 LRU/FIFO 淘汰最老的</td>
+          <td>资源受限的轻量级系统</td>
+          <td>FIFO 可能删除重要但久远的记忆</td>
+      </tr>
+      <tr>
+          <td><strong>手动删除</strong></td>
+          <td>用户或 Agent 主动删除指定记忆</td>
+          <td>隐私敏感信息</td>
+          <td>需要用户参与，不够自动化</td>
+      </tr>
+  </tbody>
+</table>
+<blockquote>
+<p><strong>遗忘不是 bug，是 feature</strong>：一个没有遗忘机制的记忆系统，最终会因为记忆膨胀而变得毫无用处——就像一个塞满了东西却从不整理的抽屉，你再也找不到需要的东西了。</p></blockquote>
+<hr>
+<h2 id="3-架构设计几种经典的-memory-模式">
+  3. 架构设计：几种经典的 Memory 模式
+  <a class="anchor" href="#3-%e6%9e%b6%e6%9e%84%e8%ae%be%e8%ae%a1%e5%87%a0%e7%a7%8d%e7%bb%8f%e5%85%b8%e7%9a%84-memory-%e6%a8%a1%e5%bc%8f">#</a>
+</h2>
+<p>了解了记忆的生命周期之后，我们来看实际系统中出现的几种典型架构模式。每种模式都是对&quot;如何管理 Agent 记忆&quot;这个问题的不同回答，各有优劣。</p>
+<h3 id="31-扁平列表模式flat-memory">
+  3.1 扁平列表模式（Flat Memory）
+  <a class="anchor" href="#31-%e6%89%81%e5%b9%b3%e5%88%97%e8%a1%a8%e6%a8%a1%e5%bc%8fflat-memory">#</a>
+</h3>
+<p>最简单的方案：<strong>对话历史 = 记忆</strong>。把所有交互记录按时间顺序放在一个列表里，每次请求都携带全部历史。</p>
+<pre tabindex="0"><code>[消息1, 消息2, 消息3, ..., 消息N]  →  全部塞进 prompt
+</code></pre><p><strong>优点</strong>：零复杂度。不需要额外的存储、检索或遗忘机制。</p>
+<p><strong>致命缺陷</strong>：</p>
+<ul>
+<li>上下文窗口有限，历史超过窗口时必须截断</li>
+<li>截断后丢失早期信息</li>
+<li>即使不截断，&ldquo;Lost in the Middle&rdquo; 效应导致中间信息被忽略</li>
+<li>token 消耗随对话轮数 O(n²) 增长</li>
+</ul>
+<p>这种模式只适合<strong>极短期的交互</strong>（如单轮问答）。对于任何需要持续上下文的应用，它都不够用了。</p>
+<h3 id="32-分层记忆模式hierarchical-memory">
+  3.2 分层记忆模式（Hierarchical Memory）
+  <a class="anchor" href="#32-%e5%88%86%e5%b1%82%e8%ae%b0%e5%bf%86%e6%a8%a1%e5%bc%8fhierarchical-memory">#</a>
+</h3>
+<p>MemGPT（arXiv:2310.08560）和它的产品化版本 Letta，提出了一种革命性的思路：<strong>把操作系统的内存管理思想引入 LLM</strong>。</p>
+<h4 id="321-虚拟上下文管理virtual-context-management">
+  3.2.1 虚拟上下文管理（Virtual Context Management）
+  <a class="anchor" href="#321-%e8%99%9a%e6%8b%9f%e4%b8%8a%e4%b8%8b%e6%96%87%e7%ae%a1%e7%90%86virtual-context-management">#</a>
+</h4>
+<p>核心思想类比计算机的虚拟内存系统：</p>
+<table>
+  <thead>
+      <tr>
+          <th>计算机内存</th>
+          <th>Agent 记忆</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>CPU 寄存器</td>
+          <td>上下文窗口中的活跃信息</td>
+      </tr>
+      <tr>
+          <td>RAM（主存）</td>
+          <td>可随时加载到上下文中的记忆块</td>
+      </tr>
+      <tr>
+          <td>磁盘（辅存）</td>
+          <td>持久化存储的全部记忆</td>
+      </tr>
+      <tr>
+          <td>页面调度（Page Swapping）</td>
+          <td>将记忆从长期存储加载到上下文窗口</td>
+      </tr>
+  </tbody>
+</table>
+<p>MemGPT 将记忆分为两个核心层级：</p>
+<ul>
+<li><strong>主上下文（Main Context）</strong>：相当于主存。包含当前对话的活跃信息和最近加载的记忆块。</li>
+<li><strong>外部存储（Archival Storage）</strong>：相当于磁盘。包含全部的历史记忆，按需加载到主上下文中。</li>
+</ul>
+<h4 id="322-agent-自己决定加载什么">
+  3.2.2 Agent 自己决定加载什么
+  <a class="anchor" href="#322-agent-%e8%87%aa%e5%b7%b1%e5%86%b3%e5%ae%9a%e5%8a%a0%e8%bd%bd%e4%bb%80%e4%b9%88">#</a>
+</h4>
+<p>MemGPT 的关键创新在于：<strong>不是外部系统决定加载什么记忆，而是 Agent 自己决定</strong>。Agent 可以通过工具调用来读写自己的记忆存储——它可以在需要时主动搜索档案库（archival storage），把相关的记忆加载到主上下文中。</p>
+<p>这种设计的代价是：Agent 需要额外的 token 来执行记忆管理操作（搜索、加载、存储），并且对模型的推理能力有更高要求——它需要知道&quot;我需要什么记忆&quot;和&quot;去哪里找&quot;。</p>
+<h3 id="33-检索增强模式retrieval-augmented-memory">
+  3.3 检索增强模式（Retrieval-Augmented Memory）
+  <a class="anchor" href="#33-%e6%a3%80%e7%b4%a2%e5%a2%9e%e5%bc%ba%e6%a8%a1%e5%bc%8fretrieval-augmented-memory">#</a>
+</h3>
+<p>这种模式的思路是：<strong>把记忆当外部知识库查询</strong>，也就是 RAG（Retrieval-Augmented Generation）的思路应用到 Agent 记忆中。</p>
+<pre tabindex="0"><code>用户输入 → 检索系统（从记忆库中找到相关内容） → 注入 prompt → LLM 生成回复
+</code></pre><p><strong>索引策略</strong>：将记忆文本嵌入为向量，存储在向量数据库中。</p>
+<p><strong>检索策略</strong>：将用户输入也嵌入为向量，在向量数据库中进行相似度搜索，返回 top-k 相关记忆。</p>
+<p><strong>优势</strong>：</p>
+<ul>
+<li>检索效率高（向量数据库通常在毫秒级返回结果）</li>
+<li>支持语义模糊匹配</li>
+<li>记忆库可以独立于 Agent 扩展</li>
+</ul>
+<p><strong>局限</strong>：</p>
+<ul>
+<li>检索到的是&quot;信息片段&quot;，不是&quot;记忆&quot;——它们没有与 Agent 的经验建立联系</li>
+<li>向量嵌入的质量直接影响检索效果，而嵌入模型的选择和调优是一个独立的技术问题</li>
+<li>扁平的向量存储缺乏全局结构——就像把所有文件扔进一个文件夹然后靠文件名搜索</li>
+</ul>
+<h3 id="34-文件系统范式filesystem-paradigm">
+  3.4 文件系统范式（Filesystem Paradigm）
+  <a class="anchor" href="#34-%e6%96%87%e4%bb%b6%e7%b3%bb%e7%bb%9f%e8%8c%83%e5%bc%8ffilesystem-paradigm">#</a>
+</h3>
+<p>OpenViking 提出了一种不同的思路：<strong>用文件系统的层级结构来组织 Agent 的记忆</strong>，而非扁平的向量存储。</p>
+<h4 id="341-核心设计">
+  3.4.1 核心设计
+  <a class="anchor" href="#341-%e6%a0%b8%e5%bf%83%e8%ae%be%e8%ae%a1">#</a>
+</h4>
+<pre tabindex="0"><code>/memory/
+  /users/
+    /user1/
+      preferences.md
+      history/
+  /projects/
+    /project-x/
+      decisions.md
+      context.md
+/resources/
+  /docs/
+  /code/
+/skills/
+  /tools/
+  /workflows/
+</code></pre><p>这种设计解决了传统 RAG 的几个核心问题：</p>
+<ul>
+<li><strong>碎片化</strong>：记忆、资源、技能统一管理，不再分散在代码、向量数据库和各种配置文件中</li>
+<li><strong>扁平检索局限</strong>：目录层级提供了&quot;全局视图&quot;——你可以通过路径精确定位到某个子域的记忆</li>
+<li><strong>黑盒检索</strong>：传统 RAG 的检索链是不透明的，而文件系统的目录结构是可见、可调试的</li>
+</ul>
+<h4 id="342-l0l1l2-三级上下文">
+  3.4.2 L0/L1/L2 三级上下文
+  <a class="anchor" href="#342-l0l1l2-%e4%b8%89%e7%ba%a7%e4%b8%8a%e4%b8%8b%e6%96%87">#</a>
+</h4>
+<p>OpenViking 引入了三级按需加载机制：</p>
+<table>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>内容</th>
+          <th>加载时机</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>L0</strong></td>
+          <td>全局上下文（用户画像、Agent 配置）</td>
+          <td>每次会话启动时加载</td>
+      </tr>
+      <tr>
+          <td><strong>L1</strong></td>
+          <td>当前子域上下文（如当前项目相关记忆）</td>
+          <td>切换到相关子域时加载</td>
+      </tr>
+      <tr>
+          <td><strong>L2</strong></td>
+          <td>细粒度上下文（特定问题的详细记忆）</td>
+          <td>按需检索加载</td>
+      </tr>
+  </tbody>
+</table>
+<p>这种分级加载的核心价值是<strong>显著降低 token 消耗</strong>——不是所有记忆都需要每次都加载到上下文窗口中。</p>
+<h4 id="343-目录递归检索">
+  3.4.3 目录递归检索
+  <a class="anchor" href="#343-%e7%9b%ae%e5%bd%95%e9%80%92%e5%bd%92%e6%a3%80%e7%b4%a2">#</a>
+</h4>
+<p>不同于向量数据库的全局相似度搜索，OpenViking 采用&quot;目录定位 + 语义搜索&quot;的递归检索方式：先通过目录层级缩小搜索范围，再在子域内进行语义搜索。这类似于你先到&quot;项目文档&quot;文件夹里，再搜索特定内容——比在整个文件系统中搜索要精确得多。</p>
+<h3 id="35-学习型记忆模式learning-memory">
+  3.5 学习型记忆模式（Learning Memory）
+  <a class="anchor" href="#35-%e5%ad%a6%e4%b9%a0%e5%9e%8b%e8%ae%b0%e5%bf%86%e6%a8%a1%e5%bc%8flearning-memory">#</a>
+</h3>
+<p>上述四种模式都假设记忆只是&quot;存和取&quot;。但人类记忆的一个关键功能是<strong>学习</strong>——我们不仅记住事情，还会从经验中改变行为。</p>
+<p>Reflexion（arXiv:2303.11366）展示了一条路径：<strong>Agent 通过语言反馈来修正自己的策略</strong>。当 Agent 在某个任务中失败时，它会生成一段自我反思（&ldquo;我没有考虑到 X，下次应该先检查 Y&rdquo;），并将这段反思存储为记忆。下一次遇到类似任务时，它会检索这段记忆来指导行动。</p>
+<pre tabindex="0"><code>失败 → 生成反思 → 存储为记忆 → 下次检索 → 修正策略 → 成功
+</code></pre><p>更进阶的路径是<strong>闭环学习</strong>（Closed Learning Loop）——Agent 不仅使用工具，还能产出训练数据，用于后续的强化学习训练。记忆在这里不只是参考，而是训练数据的来源。</p>
+<h3 id="36-五种模式的权衡分析">
+  3.6 五种模式的权衡分析
+  <a class="anchor" href="#36-%e4%ba%94%e7%a7%8d%e6%a8%a1%e5%bc%8f%e7%9a%84%e6%9d%83%e8%a1%a1%e5%88%86%e6%9e%90">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>复杂度</th>
+          <th>可扩展性</th>
+          <th>检索质量</th>
+          <th>维护成本</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>扁平列表</td>
+          <td>极低</td>
+          <td>极差（窗口限制）</td>
+          <td>差（Lost in the Middle）</td>
+          <td>极低</td>
+          <td>单轮问答、简单对话</td>
+      </tr>
+      <tr>
+          <td>分层记忆</td>
+          <td>高</td>
+          <td>好</td>
+          <td>好（Agent 自主决策）</td>
+          <td>高</td>
+          <td>长期交互 Agent、个人助手</td>
+      </tr>
+      <tr>
+          <td>检索增强</td>
+          <td>中</td>
+          <td>好</td>
+          <td>中（依赖嵌入质量）</td>
+          <td>中</td>
+          <td>知识库问答、RAG Agent</td>
+      </tr>
+      <tr>
+          <td>文件系统范式</td>
+          <td>中</td>
+          <td>好</td>
+          <td>好（结构化 + 语义）</td>
+          <td>中</td>
+          <td>多项目管理、复杂 Agent</td>
+      </tr>
+      <tr>
+          <td>学习型记忆</td>
+          <td>极高</td>
+          <td>中</td>
+          <td>好（但需要训练数据）</td>
+          <td>极高</td>
+          <td>自优化 Agent、RL 训练</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="本文小结">
+  本文小结
+  <a class="anchor" href="#%e6%9c%ac%e6%96%87%e5%b0%8f%e7%bb%93">#</a>
+</h2>
+<h3 id="核心要点">
+  核心要点
+  <a class="anchor" href="#%e6%a0%b8%e5%bf%83%e8%a6%81%e7%82%b9">#</a>
+</h3>
+<ol>
+<li><strong>Agent Memory ≠ 上下文窗口</strong>。上下文窗口是有界的输入缓冲区，Agent Memory 是可持久化、可检索、可演化的外部信息系统。</li>
+<li><strong>分层是必然的</strong>。从短期记忆（上下文窗口）到中期记忆（向量数据库）再到长期记忆（持久化文件），没有任何单一存储介质能覆盖所有需求。</li>
+<li><strong>遗忘和记忆同等重要</strong>。没有遗忘机制的记忆系统最终会因为噪声膨胀而失效。TTL、重要性衰减、容量上限是三种基本的遗忘策略。</li>
+<li><strong>五种架构模式各有优劣</strong>：扁平列表简单但不可扩展，分层记忆强大但复杂，检索增强高效但可能丢失语义，文件系统范式提供结构化组织，学习型记忆最具前瞻性但实现成本最高。</li>
+</ol>
+<h3 id="下篇预告">
+  下篇预告
+  <a class="anchor" href="#%e4%b8%8b%e7%af%87%e9%a2%84%e5%91%8a">#</a>
+</h3>
+<p>在《Agent Memory 实践》中，我们将：</p>
+<ul>
+<li>深入 Prompt 压缩、向量检索、跨模态记忆等<strong>关键技术</strong></li>
+<li>分析 MemOS、Mem0、Letta、OpenViking、Claude Code、OpenClaw、Hermes Agent 等八个真实系统的<strong>工业实践</strong></li>
+<li>揭示&quot;本地文件系统存储&quot;成为 Agent Memory 主流选择的<strong>核心洞察</strong></li>
+<li>提供需求分析框架和渐进式架构的<strong>实践指南</strong></li>
+</ul>
+<h2 id="参考文献">
+  参考文献
+  <a class="anchor" href="#%e5%8f%82%e8%80%83%e6%96%87%e7%8c%ae">#</a>
+</h2>
+<p>[1] Shinn, N., et al. (2023). <em>Memory in the Age of AI Agents</em>. arXiv:2512.13564.（综述：Agent 记忆系统全景）</p>
+<p>[2] Du, P. (2026). <em>Memory for Autonomous LLM Agents</em>. arXiv:2603.07670.（综述：自主 LLM Agent 的记忆系统，含动态演化分析）</p>
+<p>[3] Park, J. S., et al. (2023). <em>Generative Agents: Interactive Simulacra of Human Behavior</em>. arXiv:2304.03442.（开创性工作：25 个 Agent 在虚拟小镇中的社会交互与记忆系统）</p>
+<p>[4] Shinn, N., et al. (2023). <em>MemGPT: Towards LLMs as Operating Systems</em>. arXiv:2310.08560.（开创性工作：将 OS 内存管理思想引入 LLM，提出虚拟上下文管理）</p>
+<p>[5] Shinn, N., &amp; Labash, B. (2023). <em>Reflexion: Language Agents with Verbal Reinforcement Learning</em>. arXiv:2303.11366.（开创性工作：语言层面的反射式自我修正，学习型记忆的先驱）</p>
+<p>[6] Wang, Y., et al. (2023). <em>CoALA: A Survey on the Coordinated Learning and Acting of LLM-Based Agents</em>. arXiv:2309.02427.（LLM Agent 学习框架：Learning 与 Acting 的协同）</p>
+<p>[7] Liu, N. F., et al. (2023). <em>Lost in the Middle: Improving the Utilization of Long Contexts</em>.（注意力稀释效应研究：上下文超过 4K tokens 后中间位置信息召回率显著下降）</p>
+<hr>
+<p><em>本文是《大模型 Agent 和应用》Agent Memory 系列的上篇。下篇《Agent Memory 实践》可参见 <code>chapter-part2-practice.md</code>。</em></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#agent-memory-原理">Agent Memory 原理</a>
+      <ul>
+        <li><a href="#本章导读">本章导读</a></li>
+        <li><a href="#0-引子没有记忆的-agent-会怎样">0. 引子：没有记忆的 Agent 会怎样？</a>
+          <ul>
+            <li><a href="#01-一个金鱼agent-的日常">0.1 一个&quot;金鱼&quot;Agent 的日常</a></li>
+            <li><a href="#02-人类记忆的启发">0.2 人类记忆的启发</a></li>
+            <li><a href="#03-从无限上下文的幻想到分层记忆">0.3 从&quot;无限上下文&quot;的幻想到分层记忆</a></li>
+          </ul>
+        </li>
+        <li><a href="#1-什么是-agent-memory">1. 什么是 Agent Memory？</a>
+          <ul>
+            <li><a href="#11-定义与边界什么算记忆什么不算">1.1 定义与边界：什么算记忆，什么不算？</a></li>
+            <li><a href="#12-为什么-llm-需要额外的-memory">1.2 为什么 LLM 需要额外的 Memory？</a></li>
+            <li><a href="#13-memory-的分类体系">1.3 Memory 的分类体系</a></li>
+          </ul>
+        </li>
+        <li><a href="#2-记忆是怎么工作的agent-memory-的生命周期">2. 记忆是怎么工作的：Agent Memory 的生命周期</a>
+          <ul>
+            <li><a href="#21-写入从交互中提取记忆">2.1 写入：从交互中提取记忆</a></li>
+            <li><a href="#22-存储记忆放在哪里">2.2 存储：记忆放在哪里？</a></li>
+            <li><a href="#23-检索在需要时找到正确的记忆">2.3 检索：在需要时找到正确的记忆</a></li>
+            <li><a href="#24-遗忘记忆管理的另一面">2.4 遗忘：记忆管理的另一面</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-架构设计几种经典的-memory-模式">3. 架构设计：几种经典的 Memory 模式</a>
+          <ul>
+            <li><a href="#31-扁平列表模式flat-memory">3.1 扁平列表模式（Flat Memory）</a></li>
+            <li><a href="#32-分层记忆模式hierarchical-memory">3.2 分层记忆模式（Hierarchical Memory）</a></li>
+            <li><a href="#33-检索增强模式retrieval-augmented-memory">3.3 检索增强模式（Retrieval-Augmented Memory）</a></li>
+            <li><a href="#34-文件系统范式filesystem-paradigm">3.4 文件系统范式（Filesystem Paradigm）</a></li>
+            <li><a href="#35-学习型记忆模式learning-memory">3.5 学习型记忆模式（Learning Memory）</a></li>
+            <li><a href="#36-五种模式的权衡分析">3.6 五种模式的权衡分析</a></li>
+          </ul>
+        </li>
+        <li><a href="#本文小结">本文小结</a>
+          <ul>
+            <li><a href="#核心要点">核心要点</a></li>
+            <li><a href="#下篇预告">下篇预告</a></li>
+          </ul>
+        </li>
+        <li><a href="#参考文献">参考文献</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
