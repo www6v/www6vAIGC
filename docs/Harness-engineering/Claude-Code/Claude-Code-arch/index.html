@@ -34,7 +34,7 @@ Claude Code 是 Anthropic 于 2025 年 2 月推出的 agentic coding tool ——
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code-arch/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.7fd637db08933d3aeb29d0c9372c05bad60394d153248db9b7d553d23f95d617.js" integrity="sha256-f9Y32wiTPTrrKdDJNywFutYDlNFTJI25t9VT0j&#43;V1hc=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.592fe432b9f9a1f22eaee004cd0e6b3c0e632feaedc82825dafe3e53f7f964d7.js" integrity="sha256-WS/kMrn5ofIuruAEzQ5rPA5jL&#43;rtyCgl2v4&#43;U/f5ZNc=" crossorigin="anonymous"></script>
 <link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code-arch/index.xml" title="基于LLM的系统设计与实现" />
 <!--
 Made with Book Theme
@@ -2542,6 +2542,19 @@ https://github.com/alex-shpak/hugo-book
   
 
   
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-code-stability/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
     <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code/" class="">Cloud Code 架构[A1]</a>
   
 
@@ -3618,31 +3631,49 @@ https://github.com/alex-shpak/hugo-book
   <a class="anchor" href="#21-%e5%85%ad%e6%94%af%e6%9f%b1%e6%9e%b6%e6%9e%84%e5%85%a8%e6%99%af%e5%9b%be">#</a>
 </h3>
 <p>Claude Code 的强大不是来自某个杀手锏功能，而是来自六个核心支柱的协同运作——每一个支柱都在放大其他支柱的效果 [[openedclaude/claude-reviews-claude]]。</p>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TD
-    SP[&#34;📋 System Prompt&lt;br/&gt;(身份 + 规则 + 42+ 工具描述)&#34;]
+
+
+<script src="/www6vAIGC/mermaid.min.js"></script>
+
+  <script>mermaid.initialize({
+  "flowchart": {
+    "useMaxWidth":true
+  },
+  "theme": "default"
+}
+)</script>
+
+
+
+
+<pre class="mermaid">
+graph TD
+    SP["📋 System Prompt<br/>(身份 + 规则 + 42+ 工具描述)"]
     
-    SP --&gt; TS[&#34;🔧 工具系统&lt;br/&gt;(42+ 工具，每个 30+ 方法)&#34;]
-    SP --&gt; QL[&#34;🔄 查询循环&lt;br/&gt;(12 步状态机)&#34;]
-    SP --&gt; CM[&#34;🧠 上下文管理&lt;br/&gt;(5 级压缩流水线)&#34;]
+    SP --> TS["🔧 工具系统<br/>(42+ 工具，每个 30+ 方法)"]
+    SP --> QL["🔄 查询循环<br/>(12 步状态机)"]
+    SP --> CM["🧠 上下文管理<br/>(5 级压缩流水线)"]
     
-    TS --&gt; AS[&#34;🛡️ 权限与安全&lt;br/&gt;(7 层纵深防御)&#34;]
-    QL --&gt; AS
-    CM --&gt; AS
+    TS --> AS["🛡️ 权限与安全<br/>(7 层纵深防御)"]
+    QL --> AS
+    CM --> AS
     
-    TS --&gt; MA[&#34;👥 多 Agent 协调&lt;br/&gt;(3 后端，7 种任务)&#34;]
-    QL --&gt; MA
+    TS --> MA["👥 多 Agent 协调<br/>(3 后端，7 种任务)"]
+    QL --> MA
     
-    TS --&gt; EX[&#34;🧩 Skill &amp; Plugin &amp; MCP&lt;br/&gt;(6 源，MCP 协议)&#34;]
-    QL --&gt; EX
-    CM --&gt; EX
+    TS --> EX["🧩 Skill & Plugin & MCP<br/>(6 源，MCP 协议)"]
+    QL --> EX
+    CM --> EX
     
-    AS --&gt; EXT
-    MA --&gt; EXT
+    AS --> EXT
+    MA --> EXT
     
-    User[&#34;👤 用户&#34;] --&gt; CLI[&#34;CLI / IDE / Web&#34;]
-    CLI --&gt; QL
-    QL --&gt; User
-</code></pre><p><strong>一句话数据流</strong>：</p>
+    User["👤 用户"] --> CLI["CLI / IDE / Web"]
+    CLI --> QL
+    QL --> User
+</pre>
+
+<p><strong>一句话数据流</strong>：</p>
 <blockquote>
 <p>用户输入 → CLI (cli.tsx) → QueryEngine.query() → System Prompt 组装 → 流式 API 调用 → 工具提取 → 权限检查 → 工具执行 → 结果注入 → 继续/结束决策 → 下一次迭代或响应</p></blockquote>
 <h3 id="22-六大设计哲学">
@@ -3701,38 +3732,43 @@ https://github.com/alex-shpak/hugo-book
   2.3 Core 层组件执行流程
   <a class="anchor" href="#23-core-%e5%b1%82%e7%bb%84%e4%bb%b6%e6%89%a7%e8%a1%8c%e6%b5%81%e7%a8%8b">#</a>
 </h3>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">flowchart TD
-    User[&#34;👤 用户 Prompt&#34;] --&gt; QE[&#34;QueryEngine&#34;]
-    QE --&gt; QL[&#34;queryLoop (AsyncGenerator)&#34;]
+
+
+<pre class="mermaid">
+flowchart TD
+    User["👤 用户 Prompt"] --> QE["QueryEngine"]
+    QE --> QL["queryLoop (AsyncGenerator)"]
     
     subgraph 预处理 [上下文压缩流水线 (Step 1-5)]
-        S1[&#34;① applyToolResultBudget&lt;br/&gt;裁剪超大工具结果&#34;] --&gt; 
-        S2[&#34;② snipCompact&lt;br/&gt;裁剪最旧历史&#34;] --&gt; 
-        S3[&#34;③ microcompact&lt;br/&gt;缓存感知压缩（时间衰减）&#34;] --&gt; 
-        S4[&#34;④ contextCollapse&lt;br/&gt;折叠冗余上下文&#34;] --&gt; 
-        S5[&#34;⑤ autocompact&lt;br/&gt;AI 生成摘要&#34;]
+        S1["① applyToolResultBudget<br/>裁剪超大工具结果"] --> 
+        S2["② snipCompact<br/>裁剪最旧历史"] --> 
+        S3["③ microcompact<br/>缓存感知压缩（时间衰减）"] --> 
+        S4["④ contextCollapse<br/>折叠冗余上下文"] --> 
+        S5["⑤ autocompact<br/>AI 生成摘要"]
     end
     
-    QL --&gt; S1
-    S5 --&gt; S6[&#34;⑥ tokenWarningState&lt;br/&gt;预算检查与用户告警&#34;]
-    S6 --&gt; S7[&#34;⑦ callModel&lt;br/&gt;流式 API 调用&#34;]
-    S7 --&gt;|&#34;text + tool_calls&#34;| S8[&#34;⑧ StreamingToolExecutor&lt;br/&gt;边流式边执行&#34;]
-    S8 --&gt; S9[&#34;⑨ stopHooks&lt;br/&gt;评估停止条件&#34;]
-    S9 --&gt; S10[&#34;⑩ tokenBudget check&lt;br/&gt;硬预算限制&#34;]
-    S10 --&gt; S11[&#34;⑪ getAttachmentMessages&lt;br/&gt;注入记忆/技能&#34;]
-    S11 --&gt; S12[&#34;⑫ state transition&lt;br/&gt;更新状态&#34;]
-    S12 --&gt; S1{&#34;继续/结束？&#34;}
-    S1 --&gt;|&#34;tool_use 继续循环&#34;| S7
-    S1 --&gt;|&#34;end_turn 终止&#34;| QE
-    QE --&gt;|&#34;最终响应&#34;| User
+    QL --> S1
+    S5 --> S6["⑥ tokenWarningState<br/>预算检查与用户告警"]
+    S6 --> S7["⑦ callModel<br/>流式 API 调用"]
+    S7 -->|"text + tool_calls"| S8["⑧ StreamingToolExecutor<br/>边流式边执行"]
+    S8 --> S9["⑨ stopHooks<br/>评估停止条件"]
+    S9 --> S10["⑩ tokenBudget check<br/>硬预算限制"]
+    S10 --> S11["⑪ getAttachmentMessages<br/>注入记忆/技能"]
+    S11 --> S12["⑫ state transition<br/>更新状态"]
+    S12 --> S1{"继续/结束？"}
+    S1 -->|"tool_use 继续循环"| S7
+    S1 -->|"end_turn 终止"| QE
+    QE -->|"最终响应"| User
     
-    S6 -.-&gt;|&#34;预算告警&#34;| User
-    S9 -.-&gt;|&#34;Hook 拦截&#34;| S12
-    S10 -.-&gt;|&#34;超预算&#34;| REC[&#34;恢复降级链&#34;]
-    S8 -.-&gt;|&#34;Subagent 调用&#34;| SA[&#34;Subagent 派生器&#34;]
-    SA --&gt;|&#34;独立 queryLoop&#34;| QL
-    REC -.-&gt;|&#34;降级后重试&#34;| S7
-</code></pre><p><strong>12 步状态机说明</strong>：</p>
+    S6 -.->|"预算告警"| User
+    S9 -.->|"Hook 拦截"| S12
+    S10 -.->|"超预算"| REC["恢复降级链"]
+    S8 -.->|"Subagent 调用"| SA["Subagent 派生器"]
+    SA -->|"独立 queryLoop"| QL
+    REC -.->|"降级后重试"| S7
+</pre>
+
+<p><strong>12 步状态机说明</strong>：</p>
 <table>
   <thead>
       <tr>
@@ -5716,36 +5752,41 @@ tailUuid   → 当前对话链的尾部
   <a class="anchor" href="#vim-%e6%a8%a1%e5%bc%8f%e6%95%99%e7%a7%91%e4%b9%a6%e7%ba%a7%e7%8a%b6%e6%80%81%e6%9c%ba">#</a>
 </h4>
 <p>Claude Code 为输入框内建了完整的 Vim 编辑模式。状态机架构如下 [[openedclaude/claude-reviews-claude, EP14]]：</p>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">stateDiagram-v2
-    [*] --&gt; idle
-    idle --&gt; count : [1-9]
-    idle --&gt; operator : [d/c/y]
-    idle --&gt; find : [fFtT]
-    idle --&gt; g_prefix : [g]
-    idle --&gt; replace : [r]
-    idle --&gt; indent : [&gt;&lt;]
-    idle --&gt; INSERT : [i/a/I/A/o/O]
+
+
+<pre class="mermaid">
+stateDiagram-v2
+    [*] --> idle
+    idle --> count : [1-9]
+    idle --> operator : [d/c/y]
+    idle --> find : [fFtT]
+    idle --> g_prefix : [g]
+    idle --> replace : [r]
+    idle --> indent : [><]
+    idle --> INSERT : [i/a/I/A/o/O]
     
-    count --&gt; operator : 数字后跟运算符
-    count --&gt; idle : 超时/取消
+    count --> operator : 数字后跟运算符
+    count --> idle : 超时/取消
     
-    operator --&gt; idle : [motion] 执行
-    operator --&gt; operatorCount : [0-9]
-    operator --&gt; operatorTextObj : [ia]
-    operator --&gt; operatorFind : [fFtT]
+    operator --> idle : [motion] 执行
+    operator --> operatorCount : [0-9]
+    operator --> operatorTextObj : [ia]
+    operator --> operatorFind : [fFtT]
     
-    INSERT --&gt; idle : [Esc]
+    INSERT --> idle : [Esc]
     
-    find --&gt; idle : [char] 执行
-    find --&gt; idle : 超时
+    find --> idle : [char] 执行
+    find --> idle : 超时
     
-    g_prefix --&gt; idle : [g/j/G] 执行
-    g_prefix --&gt; idle : 超时
+    g_prefix --> idle : [g/j/G] 执行
+    g_prefix --> idle : 超时
     
-    replace --&gt; idle : [char] 执行
+    replace --> idle : [char] 执行
     
-    indent --&gt; idle : 执行
-</code></pre><p><strong>转换函数是纯函数</strong>——无副作用，确定性输出：</p>
+    indent --> idle : 执行
+</pre>
+
+<p><strong>转换函数是纯函数</strong>——无副作用，确定性输出：</p>
 <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">transition</span>(<span style="color:#a6e22e">state</span>, <span style="color:#a6e22e">input</span>, <span style="color:#a6e22e">ctx</span>)<span style="color:#f92672">:</span> <span style="color:#a6e22e">TransitionResult</span> {
 </span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">switch</span> (<span style="color:#a6e22e">state</span>.<span style="color:#66d9ef">type</span>) {
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">case</span> <span style="color:#e6db74">&#39;idle&#39;</span><span style="color:#f92672">:</span> <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">fromIdle</span>(<span style="color:#a6e22e">input</span>, <span style="color:#a6e22e">ctx</span>)
