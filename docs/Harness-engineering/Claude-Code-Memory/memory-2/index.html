@@ -1,0 +1,4319 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  Claude Code Memory 深度解析 — 项目记忆的两种路径
+  #
+
+
+&ldquo;The bitter lesson is based on the historical observations that 1) AI researchers have often tried to build knowledge into their agents, 2) this always helps in the short term, and is personally satisfying to the researcher, but 3) in the long run it always degrades performance, and 4) eventually the methods based on scaling computation and data win.&rdquo;
+— Rich Sutton, The Bitter Lesson [7]">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Claude-Code-Memory/memory-2/">
+  <meta property="og:site_name" content="基于LLM的系统设计与实现">
+  <meta property="og:title" content="Cloud Code Memory">
+  <meta property="og:description" content="Claude Code Memory 深度解析 — 项目记忆的两种路径 # “The bitter lesson is based on the historical observations that 1) AI researchers have often tried to build knowledge into their agents, 2) this always helps in the short term, and is personally satisfying to the researcher, but 3) in the long run it always degrades performance, and 4) eventually the methods based on scaling computation and data win.”
+— Rich Sutton, The Bitter Lesson [7]">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>Cloud Code Memory | 基于LLM的系统设计与实现</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Claude-Code-Memory/memory-2/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.ad086cef805ff68068f25e3678622b5c40db259e511dc8d779a7864a178eaa47.js" integrity="sha256-rQhs74Bf9oBo8l42eGIrXEDbJZ5RHcjXeaeGSheOqkc=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Claude-Code-Memory/memory-2/index.xml" title="基于LLM的系统设计与实现" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>基于LLM的系统设计与实现</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b757002e9620728c23883bffd127cb72" class="toggle"  />
+    <label for="section-b757002e9620728c23883bffd127cb72" class="flex justify-between">
+      <a role="button" class="">Platform *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0b800a1752a4e836473ce3e89db51e41" class="toggle"  />
+    <label for="section-0b800a1752a4e836473ce3e89db51e41" class="flex justify-between">
+      <a role="button" class="">Multi-agent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="toggle"  />
+    <label for="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="flex justify-between">
+      <a role="button" class="">Communication *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Agent Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Reflection</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Planning</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Sandbox</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Tool use</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle" checked />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code-arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-code-stability/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6db2f1703f556e0dbe0a7ff92bcfc2b5" class="toggle" checked />
+    <label for="section-6db2f1703f556e0dbe0a7ff92bcfc2b5" class="flex justify-between">
+      <a role="button" class="">Claude Code Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code-Memory/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code-Memory/memory-2/" class="active">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code-Memory/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0a4f54793a95f042d99660667b3f1c3f" class="toggle"  />
+    <label for="section-0a4f54793a95f042d99660667b3f1c3f" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/managed-agent/managed-agent/" class="">Managed Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle"  />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/openclaw-sandbox-security/" class="">Openclaw Sandbox Security</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/stability/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/" class="">Openclaw Conversation State Management</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/" class="">Openclaw Tool Invocation Flow</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle"  />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">(Manus)context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Cloud Code Memory</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#claude-code-memory-深度解析--项目记忆的两种路径">Claude Code Memory 深度解析 — 项目记忆的两种路径</a>
+      <ul>
+        <li><a href="#引言ai-编程助手为什么需要跨会话记忆">引言：AI 编程助手为什么需要跨会话记忆？</a>
+          <ul>
+            <li><a href="#多源研究视角">多源研究视角</a></li>
+          </ul>
+        </li>
+        <li><a href="#1-两种记忆路径claudemd-vs-auto-memory">1. 两种记忆路径：CLAUDE.md vs. auto memory</a>
+          <ul>
+            <li><a href="#11-claudemd项目宪法">1.1 CLAUDE.md：项目宪法</a></li>
+            <li><a href="#12-auto-memory工作日志">1.2 auto memory：工作日志</a></li>
+            <li><a href="#13-两种路径的对比">1.3 两种路径的对比</a></li>
+          </ul>
+        </li>
+        <li><a href="#2-claudemd-文件体系显式指令的四层架构">2. CLAUDE.md 文件体系：显式指令的四层架构</a>
+          <ul>
+            <li><a href="#21-四级-claudemd-层级">2.1 四级 CLAUDE.md 层级</a></li>
+            <li><a href="#22-clauderules-目录路径级规则">2.2 <code>.claude/rules/</code> 目录：路径级规则</a></li>
+            <li><a href="#23-agentsmd-兼容层">2.3 AGENTS.md 兼容层</a></li>
+            <li><a href="#24-大团队管理">2.4 大团队管理</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-auto-memory隐式学习的机制与边界">3. Auto Memory：隐式学习的机制与边界</a>
+          <ul>
+            <li><a href="#31-工作原理">3.1 工作原理</a></li>
+            <li><a href="#32-存储位置">3.2 存储位置</a></li>
+            <li><a href="#33-记忆检索机制">3.3 记忆检索机制</a></li>
+            <li><a href="#34-启用禁用与信任轨迹">3.4 启用、禁用与信任轨迹</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-记忆的生命周期从写入到生效的完整链路">4. 记忆的生命周期：从写入到生效的完整链路</a>
+          <ul>
+            <li><a href="#41-写入阶段">4.1 写入阶段</a></li>
+            <li><a href="#42-加载阶段9-个有序上下文来源">4.2 加载阶段：9 个有序上下文来源</a></li>
+            <li><a href="#43-生效阶段与-prompt-caching-的配合">4.3 生效阶段：与 Prompt Caching 的配合</a></li>
+            <li><a href="#44-维护阶段5-层压缩机制">4.4 维护阶段：5 层压缩机制</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-记忆系统的工程挑战">5. 记忆系统的工程挑战</a>
+          <ul>
+            <li><a href="#51-挑战一概率性遵守-vs-确定性执行">5.1 挑战一：概率性遵守 vs. 确定性执行</a></li>
+            <li><a href="#52-挑战二记忆膨胀">5.2 挑战二：记忆膨胀</a></li>
+            <li><a href="#53-挑战三记忆冲突">5.3 挑战三：记忆冲突</a></li>
+            <li><a href="#54-挑战四记忆丢失">5.4 挑战四：记忆丢失</a></li>
+            <li><a href="#55-挑战五安全边界">5.5 挑战五：安全边界</a></li>
+          </ul>
+        </li>
+        <li><a href="#6-与其他工具的记忆机制横向对比">6. 与其他工具的记忆机制横向对比</a>
+          <ul>
+            <li><a href="#61-对比表格">6.1 对比表格</a></li>
+            <li><a href="#62-claude-code-的独特选择">6.2 Claude Code 的独特选择</a></li>
+          </ul>
+        </li>
+        <li><a href="#7-最佳实践如何为你的项目设计记忆策略">7. 最佳实践：如何为你的项目设计记忆策略</a>
+          <ul>
+            <li><a href="#71-小团队个人项目轻量起步">7.1 小团队/个人项目：轻量起步</a></li>
+            <li><a href="#72-中型团队路径级规则">7.2 中型团队：路径级规则</a></li>
+            <li><a href="#73-大型组织managed-级部署">7.3 大型组织：Managed 级部署</a></li>
+            <li><a href="#74-记忆治理四原则">7.4 记忆治理四原则</a></li>
+            <li><a href="#75-反模式">7.5 反模式</a></li>
+          </ul>
+        </li>
+        <li><a href="#本章总结">本章总结</a>
+          <ul>
+            <li><a href="#核心要点">核心要点</a></li>
+            <li><a href="#读者行动建议">读者行动建议</a></li>
+            <li><a href="#延伸阅读">延伸阅读</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="claude-code-memory-深度解析--项目记忆的两种路径">
+  Claude Code Memory 深度解析 — 项目记忆的两种路径
+  <a class="anchor" href="#claude-code-memory-%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90--%e9%a1%b9%e7%9b%ae%e8%ae%b0%e5%bf%86%e7%9a%84%e4%b8%a4%e7%a7%8d%e8%b7%af%e5%be%84">#</a>
+</h1>
+<blockquote>
+<p>&ldquo;The bitter lesson is based on the historical observations that 1) AI researchers have often tried to build knowledge into their agents, 2) this always helps in the short term, and is personally satisfying to the researcher, but 3) in the long run it always degrades performance, and 4) eventually the methods based on scaling computation and data win.&rdquo;</p>
+<p>— Rich Sutton, <em>The Bitter Lesson</em> [7]</p></blockquote>
+<h2 id="引言ai-编程助手为什么需要跨会话记忆">
+  引言：AI 编程助手为什么需要跨会话记忆？
+  <a class="anchor" href="#%e5%bc%95%e8%a8%80ai-%e7%bc%96%e7%a8%8b%e5%8a%a9%e6%89%8b%e4%b8%ba%e4%bb%80%e4%b9%88%e9%9c%80%e8%a6%81%e8%b7%a8%e4%bc%9a%e8%af%9d%e8%ae%b0%e5%bf%86">#</a>
+</h2>
+<p>想象这样一个场景：你早上花了半小时，在 Claude Code 的对话中详细描述了项目的架构约定——&ldquo;所有 API 响应必须用 Pydantic 模型包装&rdquo;、&ldquo;数据库迁移用 Alembic，不要用 Django migrations&rdquo;、&ldquo;测试文件放在 <code>tests/</code> 下，遵循 <code>test_&lt;module&gt;.py</code> 命名&rdquo;。中午吃完饭回来，开了一个新会话，第一句话就让 Claude 改一个 API endpoint。它反问：&ldquo;请问这个项目的 API 响应格式是什么样的？&rdquo;</p>
+<p>你又要把早上的话再说一遍。</p>
+<p>这不是 Claude 不够聪明，而是 LLM 的本质决定的：<strong>每一次 API 调用都是独立的，模型没有记忆</strong>。上一次会话中积累的上下文、决策、约定，随着会话结束全部消散。这是大语言模型的物理定律，不是 bug，是 feature——无状态保证了可重复性和可伸缩性，但也意味着每次对话都是&quot;初见&quot;。</p>
+<p>然而，人类程序员不是这样的。你不需要每天早上重新告诉同事项目的编码规范。你的大脑会记住：这个项目的惯例是什么、上次踩了什么坑、哪个模块的代码风格特殊。这种记忆是跨天的、跨周的、甚至跨年的。</p>
+<p>Claude Code 的记忆系统就是要解决这个鸿沟。它通过两条互补的路径，让 AI 编程助手从&quot;无状态的对话者&quot;进化为&quot;有经验的协作者&quot;：</p>
+<ul>
+<li><strong>CLAUDE.md</strong>：你主动编写的持久指令文件——相当于给 Claude 一本&quot;项目宪法&quot;</li>
+<li><strong>auto memory</strong>：Claude 自动积累的经验文件——相当于 Claude 自己的&quot;工作日志&quot;</li>
+</ul>
+<p>更有趣的是，Claude Code 的记忆设计做了一个&quot;反直觉&quot;的选择：<strong>完全基于纯文本 Markdown 文件，不使用向量数据库、不使用嵌入模型、不使用语义搜索</strong>。所有记忆都是可读、可编辑、可版本控制的普通文件 [3]。这个选择背后有深刻的工程考量，我们将在本文中逐一拆解。</p>
+<h3 id="多源研究视角">
+  多源研究视角
+  <a class="anchor" href="#%e5%a4%9a%e6%ba%90%e7%a0%94%e7%a9%b6%e8%a7%86%e8%a7%92">#</a>
+</h3>
+<p>本文的分析基于以下参考源的多源三角验证：</p>
+<table>
+  <thead>
+      <tr>
+          <th>视角</th>
+          <th>参考源</th>
+          <th>独特贡献</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>官方规范</td>
+          <td>[1][2] Anthropic 官方文档</td>
+          <td>CLAUDE.md 语法、auto memory 开关、加载规则、故障排查</td>
+      </tr>
+      <tr>
+          <td>源码逆向还原</td>
+          <td>[3][4] Dive-into-Claude-Code + claude-code-rev</td>
+          <td>4 级层级实现细节、5 层压缩机制、LLM 检索逻辑、真实代码路径</td>
+      </tr>
+      <tr>
+          <td>从零构建教学</td>
+          <td>[5] learn-claude-code</td>
+          <td>理解为什么需要记忆系统、最小可行实现、学习路径</td>
+      </tr>
+      <tr>
+          <td>AI 自述解构</td>
+          <td>[6] Claude Reviews Claude</td>
+          <td>第一人称架构视角、上下文装配流程、子系统交互</td>
+      </tr>
+      <tr>
+          <td>学术论文级拆解</td>
+          <td>[3][7][8]</td>
+          <td>设计原则、数据量化、趋势判断</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="1-两种记忆路径claudemd-vs-auto-memory">
+  1. 两种记忆路径：CLAUDE.md vs. auto memory
+  <a class="anchor" href="#1-%e4%b8%a4%e7%a7%8d%e8%ae%b0%e5%bf%86%e8%b7%af%e5%be%84claudemd-vs-auto-memory">#</a>
+</h2>
+<p>Claude Code 的记忆系统不是一整块单一机制，而是两条并行路径，各自解决不同的问题。</p>
+<h3 id="11-claudemd项目宪法">
+  1.1 CLAUDE.md：项目宪法
+  <a class="anchor" href="#11-claudemd%e9%a1%b9%e7%9b%ae%e5%ae%aa%e6%b3%95">#</a>
+</h3>
+<p>CLAUDE.md 是一个（或一组）Markdown 文件，里面写着你希望 Claude 记住的所有持久指令。它可以包含：</p>
+<ul>
+<li>编码规范和命名约定</li>
+<li>架构约束和设计模式</li>
+<li>项目特有的工具和流程</li>
+<li>禁止事项和反模式</li>
+<li>团队约定和协作规则</li>
+</ul>
+<p>CLAUDE.md 的内容会在每次 Claude Code 启动时自动加载，并注入到 Claude 的上下文窗口中。它就像一份&quot;宪法&quot;——你制定了规则，Claude 在每次会话中都会遵守（或者说，尽量遵守——我们稍后讨论&quot;概率性遵守&quot;的问题）。</p>
+<h3 id="12-auto-memory工作日志">
+  1.2 auto memory：工作日志
+  <a class="anchor" href="#12-auto-memory%e5%b7%a5%e4%bd%9c%e6%97%a5%e5%bf%97">#</a>
+</h3>
+<p>auto memory 是 Claude 的自动学习机制。在与你的对话过程中，Claude 会识别出有价值的经验——比如你反复纠正的编码习惯、你偏好的测试策略、你对某个模块的特殊处理方式——并自动将这些经验保存到记忆文件中。</p>
+<p>auto memory 的核心价值在于<strong>不需要你主动维护</strong>。你不需要停下来写文档，Claude 会在对话的间隙自动积累。但它也有明显的局限：你无法精确控制 Claude 记住了什么、忘记了什么。</p>
+<h3 id="13-两种路径的对比">
+  1.3 两种路径的对比
+  <a class="anchor" href="#13-%e4%b8%a4%e7%a7%8d%e8%b7%af%e5%be%84%e7%9a%84%e5%af%b9%e6%af%94">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>CLAUDE.md（显式指令）</th>
+          <th>auto memory（隐式学习）</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>控制权</strong></td>
+          <td>完全在用户手中</td>
+          <td>由 Claude 自主决定</td>
+      </tr>
+      <tr>
+          <td><strong>可审计性</strong></td>
+          <td>100% 透明，随时可查看和编辑</td>
+          <td>可查看但需通过 <code>/memory</code> 命令</td>
+      </tr>
+      <tr>
+          <td><strong>适用场景</strong></td>
+          <td>架构约束、编码规范、禁止事项</td>
+          <td>个人偏好、反复纠正的习惯、隐性知识</td>
+      </tr>
+      <tr>
+          <td><strong>维护成本</strong></td>
+          <td>高：需要主动编写和更新</td>
+          <td>低：自动积累，但需定期审查</td>
+      </tr>
+      <tr>
+          <td><strong>可靠性</strong></td>
+          <td>高：内容确定、格式固定</td>
+          <td>中：Claude 可能记错或遗漏</td>
+      </tr>
+      <tr>
+          <td><strong>生命周期</strong></td>
+          <td>随项目长期存在</td>
+          <td>可能随会话积累而膨胀</td>
+      </tr>
+      <tr>
+          <td><strong>类比</strong></td>
+          <td>项目宪法——你写的规则</td>
+          <td>工作日志——Claude 自己记的笔记</td>
+      </tr>
+  </tbody>
+</table>
+<p>关键区别在于：<strong>CLAUDE.md 的内容作为 user context 注入（概率性遵守），而非 system prompt（确定性执行）</strong>[3]。这意味着 Claude 会&quot;读到&quot;你写的规则，但它不是一个硬编码的约束——它是一个指导性的上下文。相比之下，system prompt 中的指令是模型行为的硬性约束，优先级更高但用户不可修改。</p>
+<p>这个设计选择反映了 Anthropic 的工程哲学：<strong>给用户最大的灵活性，同时保持 AI 的自主判断能力</strong>。你可以通过 CLAUDE.md 告诉 Claude &ldquo;这个项目用 pytest 而不是 unittest&rdquo;，但 Claude 仍然可以在特殊情况下做出合理的例外判断。</p>
+<hr>
+<h2 id="2-claudemd-文件体系显式指令的四层架构">
+  2. CLAUDE.md 文件体系：显式指令的四层架构
+  <a class="anchor" href="#2-claudemd-%e6%96%87%e4%bb%b6%e4%bd%93%e7%b3%bb%e6%98%be%e5%bc%8f%e6%8c%87%e4%bb%a4%e7%9a%84%e5%9b%9b%e5%b1%82%e6%9e%b6%e6%9e%84">#</a>
+</h2>
+<p>CLAUDE.md 最容易被误解的地方是：它不是一个文件，而是一个<strong>层级系统</strong>。Claude Code 在启动时会从四个层级读取 CLAUDE.md 文件，按照优先级合并成一个完整的指令集。</p>
+<h3 id="21-四级-claudemd-层级">
+  2.1 四级 CLAUDE.md 层级
+  <a class="anchor" href="#21-%e5%9b%9b%e7%ba%a7-claudemd-%e5%b1%82%e7%ba%a7">#</a>
+</h3>
+<p>源码分析揭示了 Claude Code 的 4 级 CLAUDE.md 层级 [3]：</p>
+<pre tabindex="0"><code>Managed 级 → User 级 → Project 级 → Local 级
+  /etc/      ~/.claude/   项目根目录    项目根目录
+                           +.claude/    (gitignored)
+                           rules/
+</code></pre><table>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>路径</th>
+          <th>作用域</th>
+          <th>典型内容</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Managed（组织级）</strong></td>
+          <td><code>/etc/claude/CLAUDE.md</code></td>
+          <td>全组织所有项目</td>
+          <td>安全策略、合规要求、公司编码标准</td>
+      </tr>
+      <tr>
+          <td><strong>User（用户级）</strong></td>
+          <td><code>~/.claude/CLAUDE.md</code></td>
+          <td>该用户的所有项目</td>
+          <td>个人编码偏好、常用工具配置</td>
+      </tr>
+      <tr>
+          <td><strong>Project（项目级）</strong></td>
+          <td><code>&lt;project&gt;/CLAUDE.md</code><br><code>&lt;project&gt;/.claude/rules/</code></td>
+          <td>特定项目</td>
+          <td>项目架构、编码规范、工具链</td>
+      </tr>
+      <tr>
+          <td><strong>Local（本地级）</strong></td>
+          <td><code>&lt;project&gt;/CLAUDE.local.md</code></td>
+          <td>个人本地开发环境</td>
+          <td>临时实验配置、个人调试设置</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>加载顺序与优先级</strong>：Claude Code 从 Managed 级开始读取，依次到 Local 级。越靠近 Local 级的规则优先级越高，可以覆盖上层规则。这种设计类似于 Git 的配置系统（<code>/etc/gitconfig</code> → <code>~/.gitconfig</code> → <code>.git/config</code>），让不同层级的规则可以共存而不冲突。</p>
+<h3 id="22-clauderules-目录路径级规则">
+  2.2 <code>.claude/rules/</code> 目录：路径级规则
+  <a class="anchor" href="#22-clauderules-%e7%9b%ae%e5%bd%95%e8%b7%af%e5%be%84%e7%ba%a7%e8%a7%84%e5%88%99">#</a>
+</h3>
+<p>项目级 CLAUDE.md 可以通过 <code>.claude/rules/</code> 目录进一步细化。这个目录允许你为<strong>项目中的不同路径设置不同的规则</strong>：</p>
+<pre tabindex="0"><code>my-project/
+├── CLAUDE.md              # 全局项目规则
+└── .claude/
+    └── rules/
+        ├── frontend.md    # 前端代码规则
+        ├── backend.md     # 后端代码规则
+        └── tests.md       # 测试代码规则
+</code></pre><p>当 Claude 处理 <code>frontend/</code> 目录下的文件时，它会自动加载 <code>frontend.md</code> 中的规则；处理 <code>backend/</code> 时加载 <code>backend.md</code>。这种路径级规则对于大型项目尤其有用——前端和后端可能有完全不同的编码规范、测试策略和架构约束。</p>
+<h3 id="23-agentsmd-兼容层">
+  2.3 AGENTS.md 兼容层
+  <a class="anchor" href="#23-agentsmd-%e5%85%bc%e5%ae%b9%e5%b1%82">#</a>
+</h3>
+<p>Claude Code 还支持读取 <code>AGENTS.md</code> 文件，这是与 OpenAI Codex 等工具的约定文件互通层 [1]。如果你的项目同时使用多个 AI 编程助手，AGENTS.md 可以作为一个通用的指令文件，被不同的工具读取和遵守。这种互操作性反映了 AI 编程工具生态的成熟——从各自为战到逐渐形成共识标准。</p>
+<h3 id="24-大团队管理">
+  2.4 大团队管理
+  <a class="anchor" href="#24-%e5%a4%a7%e5%9b%a2%e9%98%9f%e7%ae%a1%e7%90%86">#</a>
+</h3>
+<p>对于大型组织，CLAUDE.md 支持组织级部署和排除规则：</p>
+<ul>
+<li><strong>组织级 CLAUDE.md</strong>：通过 Managed 级（<code>/etc/</code>）部署全组织统一的规则，如安全策略、合规要求</li>
+<li><strong>排除规则</strong>：在 <code>.claude/settings.json</code> 中可以配置排除特定的 CLAUDE.md 文件，实现精细的规则控制</li>
+<li><strong>符号链接</strong>：可以通过符号链接在不同项目间共享规则文件，避免重复维护</li>
+</ul>
+<hr>
+<h2 id="3-auto-memory隐式学习的机制与边界">
+  3. Auto Memory：隐式学习的机制与边界
+  <a class="anchor" href="#3-auto-memory%e9%9a%90%e5%bc%8f%e5%ad%a6%e4%b9%a0%e7%9a%84%e6%9c%ba%e5%88%b6%e4%b8%8e%e8%be%b9%e7%95%8c">#</a>
+</h2>
+<p>如果说 CLAUDE.md 是你给 Claude 写的&quot;教科书&quot;，那 auto memory 就是 Claude 自己记的&quot;笔记本&quot;。</p>
+<h3 id="31-工作原理">
+  3.1 工作原理
+  <a class="anchor" href="#31-%e5%b7%a5%e4%bd%9c%e5%8e%9f%e7%90%86">#</a>
+</h3>
+<p>auto memory 的运作流程可以概括为三步：</p>
+<ol>
+<li><strong>识别</strong>：在对话过程中，Claude 识别出有价值的经验——比如你反复说&quot;不要用 print 调试，用 logging&quot;</li>
+<li><strong>提取</strong>：Claude 将这条经验抽象为一条通用的规则或偏好</li>
+<li><strong>保存</strong>：将抽象后的规则保存到记忆文件中</li>
+</ol>
+<p>这个过程发生在对话的间隙，不会打断你的工作流程。Claude 会在合适的时机自动执行，你甚至可能没有察觉。</p>
+<h3 id="32-存储位置">
+  3.2 存储位置
+  <a class="anchor" href="#32-%e5%ad%98%e5%82%a8%e4%bd%8d%e7%bd%ae">#</a>
+</h3>
+<p>auto memory 的内容存储在 <code>.claude/</code> 目录下的记忆文件中。具体来说：</p>
+<ul>
+<li>记忆内容保存在 Claude Code 内部管理的记忆文件中（不在用户直接编辑的 CLAUDE.md 中）</li>
+<li>用户可以通过 <code>/memory</code> 命令查看、编辑和删除记忆</li>
+<li>记忆文件是纯文本格式，完全可检查、可编辑、可版本控制 [3]</li>
+</ul>
+<h3 id="33-记忆检索机制">
+  3.3 记忆检索机制
+  <a class="anchor" href="#33-%e8%ae%b0%e5%bf%86%e6%a3%80%e7%b4%a2%e6%9c%ba%e5%88%b6">#</a>
+</h3>
+<p>这是 auto memory 设计中最有趣的部分：<strong>Claude 不使用向量数据库或嵌入模型来检索记忆</strong>。相反，它使用一种&quot;朴素&quot;但有效的方法 [3]：</p>
+<ol>
+<li><strong>LLM 扫描文件头部</strong>：Claude 读取每个记忆文件的头部（headers/metadata）</li>
+<li><strong>选择相关文件</strong>：基于当前任务的上下文，选择最多 5 个最相关的记忆文件</li>
+<li><strong>注入上下文</strong>：将选中文件的内容注入到当前的上下文窗口中</li>
+</ol>
+<p>这种方法的优势显而易见：</p>
+<ul>
+<li><strong>完全可解释</strong>：没有黑盒的向量相似度计算，每一步都是可读的文本匹配</li>
+<li><strong>可调试</strong>：如果 Claude 使用了错误的记忆，你可以直接查看文件内容找到原因</li>
+<li><strong>无依赖</strong>：不需要额外的向量数据库服务、不需要嵌入模型推理</li>
+</ul>
+<p>当然，这种方法也有局限：它依赖于 Claude 自身的判断能力来选择合适的记忆文件，而不是基于数学上的语义相似度。但随着模型智能的提升，这种&quot;LLM 驱动的检索&quot;正在变得越来越可靠。</p>
+<h3 id="34-启用禁用与信任轨迹">
+  3.4 启用、禁用与信任轨迹
+  <a class="anchor" href="#34-%e5%90%af%e7%94%a8%e7%a6%81%e7%94%a8%e4%b8%8e%e4%bf%a1%e4%bb%bb%e8%bd%a8%e8%bf%b9">#</a>
+</h3>
+<p>用户可以完全控制 auto memory 的开关 [1]：</p>
+<ul>
+<li><strong>启用/禁用</strong>：通过设置可以开启或关闭 auto memory</li>
+<li><strong>权限边界</strong>：auto memory 只能访问和修改 Claude Code 管理的记忆文件，不能读取用户的其他文件</li>
+<li><strong>信任轨迹（trust trajectories）</strong>[3]：auto memory 的设计考虑了信任建立的过程——Claude 不会在一开始就积累大量记忆，而是随着交互的深入，逐步建立对项目的理解。这类似于新员工入职的过程：一开始只知道公司名字，随着时间推移，逐渐了解项目细节和团队文化。</li>
+</ul>
+<hr>
+<h2 id="4-记忆的生命周期从写入到生效的完整链路">
+  4. 记忆的生命周期：从写入到生效的完整链路
+  <a class="anchor" href="#4-%e8%ae%b0%e5%bf%86%e7%9a%84%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f%e4%bb%8e%e5%86%99%e5%85%a5%e5%88%b0%e7%94%9f%e6%95%88%e7%9a%84%e5%ae%8c%e6%95%b4%e9%93%be%e8%b7%af">#</a>
+</h2>
+<p>理解 Claude Code 的记忆系统，最关键的是理解它的<strong>完整生命周期</strong>。记忆不是&quot;写进去就完事了&quot;——从写入到生效，经历了多个阶段，每个阶段都有精心的工程处理。</p>
+<h3 id="41-写入阶段">
+  4.1 写入阶段
+  <a class="anchor" href="#41-%e5%86%99%e5%85%a5%e9%98%b6%e6%ae%b5">#</a>
+</h3>
+<p>记忆的写入有两种方式：</p>
+<ul>
+<li><strong>主动写入</strong>：用户编辑 CLAUDE.md 文件，添加或修改指令</li>
+<li><strong>自动写入</strong>：Claude 在对话过程中自动积累 auto memory</li>
+</ul>
+<p>两种方式各有优劣。主动写入精确但费力，自动写入省力但不可控。最佳实践是两者结合：用 CLAUDE.md 管理核心的、稳定的规则，让 auto memory 捕捉细节和偏好。</p>
+<h3 id="42-加载阶段9-个有序上下文来源">
+  4.2 加载阶段：9 个有序上下文来源
+  <a class="anchor" href="#42-%e5%8a%a0%e8%bd%bd%e9%98%b6%e6%ae%b59-%e4%b8%aa%e6%9c%89%e5%ba%8f%e4%b8%8a%e4%b8%8b%e6%96%87%e6%9d%a5%e6%ba%90">#</a>
+</h3>
+<p>这是 Claude Code 记忆系统最精妙的部分之一。当 Claude Code 启动时，它不是简单地&quot;读取 CLAUDE.md 然后开始工作&quot;——它按照一个精心设计的顺序，从 <strong>9 个不同的来源</strong> 构建上下文窗口 [3]：</p>
+<pre tabindex="0"><code>1. 系统提示（System Prompt）        — Claude 的身份和基本行为
+2. 开发者信息（Developer Info）     — 平台级别的配置
+3. CLAUDE.md 层级                  — 4 级规则文件的合并
+4. 项目文件（Project Files）        — 关键项目文档
+5. 记忆文件（Memory Files）         — auto memory 的内容
+6. 会话历史（Session History）      — 当前对话的历史
+7. 工具结果（Tool Results）         — 之前工具调用的结果
+8. 工作区状态（Workspace State）    — 文件系统快照
+9. 用户输入（User Input）           — 当前的问题/指令
+</code></pre><p>这个加载顺序不是随意的——它反映了 Claude Code 的设计哲学：<strong>确定性最高的信息优先级最高</strong>。系统提示是最确定性的（硬编码），用户输入是最即时的（当前会话），中间的层级则按照稳定性和相关性排列。</p>
+<h3 id="43-生效阶段与-prompt-caching-的配合">
+  4.3 生效阶段：与 Prompt Caching 的配合
+  <a class="anchor" href="#43-%e7%94%9f%e6%95%88%e9%98%b6%e6%ae%b5%e4%b8%8e-prompt-caching-%e7%9a%84%e9%85%8d%e5%90%88">#</a>
+</h3>
+<p>Claude Code 利用 Anthropic 的 prompt caching 技术来优化记忆加载的性能 [8]。CLAUDE.md 等持久指令文件的内容通常变化频率低，非常适合缓存。当 Claude 启动新会话时，缓存的上下文可以直接复用，显著减少了 token 消耗和延迟。</p>
+<h3 id="44-维护阶段5-层压缩机制">
+  4.4 维护阶段：5 层压缩机制
+  <a class="anchor" href="#44-%e7%bb%b4%e6%8a%a4%e9%98%b6%e6%ae%b55-%e5%b1%82%e5%8e%8b%e7%bc%a9%e6%9c%ba%e5%88%b6">#</a>
+</h3>
+<p>长时程任务经常超出 Claude 的上下文窗口长度。Claude Code 设计了一个<strong>5 层渐进式压缩机制</strong>（graduated lazy-degradation）来应对这个问题 [3]：</p>
+<table>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>机制</th>
+          <th>触发条件</th>
+          <th>效果</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>1. Budget reduction</strong></td>
+          <td>减少分配给非关键内容的 token 预算</td>
+          <td>上下文接近上限</td>
+          <td>最小影响，仅减少详细度</td>
+      </tr>
+      <tr>
+          <td><strong>2. Snip</strong></td>
+          <td>截断旧的工具结果和思考块</td>
+          <td>Budget reduction 不够</td>
+          <td>丢失旧的中间数据</td>
+      </tr>
+      <tr>
+          <td><strong>3. Microcompact</strong></td>
+          <td>小范围的上下文摘要</td>
+          <td>Snip 不够</td>
+          <td>部分历史被压缩成摘要</td>
+      </tr>
+      <tr>
+          <td><strong>4. Context Collapse</strong></td>
+          <td>读取时重建项目上下文</td>
+          <td>Microcompact 不够</td>
+          <td>从 CLAUDE.md 和记忆文件重建</td>
+      </tr>
+      <tr>
+          <td><strong>5. Auto-Compact</strong></td>
+          <td>全模型摘要（最后手段）</td>
+          <td>所有其他手段都不够</td>
+          <td>整个会话被压缩成摘要</td>
+      </tr>
+  </tbody>
+</table>
+<p>这个 5 层机制的设计精妙之处在于：<strong>它渐进地降级，而不是突然崩溃</strong>。每一层都试图在前一层不够时补充，只有到了第 5 层才会做出不可逆的摘要决策。而且，第 4 层（Context Collapse）利用了 CLAUDE.md 和记忆文件作为&quot;重建源&quot;——这意味着即使上下文窗口被清空，Claude 仍然可以通过重新读取持久记忆文件来恢复项目知识。</p>
+<p>这正是持久记忆的价值所在：<strong>它是上下文窗口的&quot;备份盘&quot;</strong>。当临时上下文被压缩或清空时，持久记忆可以确保关键的项目知识不会丢失。</p>
+<hr>
+<h2 id="5-记忆系统的工程挑战">
+  5. 记忆系统的工程挑战
+  <a class="anchor" href="#5-%e8%ae%b0%e5%bf%86%e7%b3%bb%e7%bb%9f%e7%9a%84%e5%b7%a5%e7%a8%8b%e6%8c%91%e6%88%98">#</a>
+</h2>
+<p>Claude Code 的记忆系统设计面临五个核心工程挑战，每个都有独特的解决方案。</p>
+<h3 id="51-挑战一概率性遵守-vs-确定性执行">
+  5.1 挑战一：概率性遵守 vs. 确定性执行
+  <a class="anchor" href="#51-%e6%8c%91%e6%88%98%e4%b8%80%e6%a6%82%e7%8e%87%e6%80%a7%e9%81%b5%e5%ae%88-vs-%e7%a1%ae%e5%ae%9a%e6%80%a7%e6%89%a7%e8%a1%8c">#</a>
+</h3>
+<p>CLAUDE.md 的内容作为 user context 注入，这意味着 Claude &ldquo;读到&quot;了规则，但它不是一个硬编码的约束。Claude 可能会在某些情况下选择忽略 CLAUDE.md 中的规则 [3]。</p>
+<p><strong>何时用 CLAUDE.md，何时用其他方式？</strong></p>
+<ul>
+<li>用 CLAUDE.md 管理<strong>指导性规则</strong>（&ldquo;优先使用 X&rdquo;、&ldquo;倾向于 Y&rdquo;）</li>
+<li>用 hooks 或权限模式管理<strong>强制性约束</strong>（&ldquo;绝对不要做 Z&rdquo;）</li>
+<li>用代码审查工具验证 Claude 是否遵守了 CLAUDE.md</li>
+</ul>
+<h3 id="52-挑战二记忆膨胀">
+  5.2 挑战二：记忆膨胀
+  <a class="anchor" href="#52-%e6%8c%91%e6%88%98%e4%ba%8c%e8%ae%b0%e5%bf%86%e8%86%a8%e8%83%80">#</a>
+</h3>
+<p>随着 auto memory 的不断积累，记忆文件可能变得越来越大，影响 Claude 的性能和响应速度。</p>
+<p><strong>应对策略</strong>：</p>
+<ul>
+<li>定期审查 auto memory 内容（通过 <code>/memory</code> 命令）</li>
+<li>删除过时或不准确的记忆</li>
+<li>将稳定、重要的规则从 auto memory 迁移到 CLAUDE.md（从隐式转为显式）</li>
+<li>利用 5 层压缩机制控制上下文窗口中的记忆内容</li>
+</ul>
+<h3 id="53-挑战三记忆冲突">
+  5.3 挑战三：记忆冲突
+  <a class="anchor" href="#53-%e6%8c%91%e6%88%98%e4%b8%89%e8%ae%b0%e5%bf%86%e5%86%b2%e7%aa%81">#</a>
+</h3>
+<p>4 级 CLAUDE.md 层级可能导致规则冲突。比如，User 级规则说&quot;用 4 空格缩进&rdquo;，Project 级规则说&quot;用 2 空格缩进&quot;。</p>
+<p><strong>解决机制</strong>：</p>
+<ul>
+<li>优先级规则：越靠近 Local 级的规则优先级越高</li>
+<li>冲突检测：Claude 会尝试检测明显冲突的规则，并在遇到冲突时优先使用更具体的规则</li>
+<li>用户主动管理：通过 <code>settings.json</code> 的排除规则，可以禁用特定层级的 CLAUDE.md</li>
+</ul>
+<h3 id="54-挑战四记忆丢失">
+  5.4 挑战四：记忆丢失
+  <a class="anchor" href="#54-%e6%8c%91%e6%88%98%e5%9b%9b%e8%ae%b0%e5%bf%86%e4%b8%a2%e5%a4%b1">#</a>
+</h3>
+<p><code>/compact</code> 命令会压缩上下文窗口，可能导致 CLAUDE.md 中的某些指令被截断。</p>
+<p><strong>保障措施</strong>：</p>
+<ul>
+<li>CLAUDE.md 的内容在每次新会话启动时重新加载，不依赖 <code>/compact</code> 之前的上下文</li>
+<li>Context Collapse 机制会从持久记忆文件重建项目上下文</li>
+<li>重要规则应放在 CLAUDE.md 的靠前位置（加载时优先保留）</li>
+</ul>
+<h3 id="55-挑战五安全边界">
+  5.5 挑战五：安全边界
+  <a class="anchor" href="#55-%e6%8c%91%e6%88%98%e4%ba%94%e5%ae%89%e5%85%a8%e8%be%b9%e7%95%8c">#</a>
+</h3>
+<p>auto memory 是否会泄露敏感信息？如果 Claude 记住了某个 API 密钥或内部架构细节，这些信息是否会被不当地传播？</p>
+<p><strong>安全设计</strong>：</p>
+<ul>
+<li>auto memory 只能访问 Claude Code 管理的记忆文件，不能读取用户的其他文件</li>
+<li>记忆文件存储在 <code>.claude/</code> 目录下，受项目版本控制管理（可以选择 gitignore）</li>
+<li>Claude 的记忆积累受权限模式约束，不能自主访问受保护的资源</li>
+</ul>
+<hr>
+<h2 id="6-与其他工具的记忆机制横向对比">
+  6. 与其他工具的记忆机制横向对比
+  <a class="anchor" href="#6-%e4%b8%8e%e5%85%b6%e4%bb%96%e5%b7%a5%e5%85%b7%e7%9a%84%e8%ae%b0%e5%bf%86%e6%9c%ba%e5%88%b6%e6%a8%aa%e5%90%91%e5%af%b9%e6%af%94">#</a>
+</h2>
+<p>Claude Code 不是唯一一个有记忆系统的 AI 编程助手。让我们横向对比主流工具的记忆设计。</p>
+<h3 id="61-对比表格">
+  6.1 对比表格
+  <a class="anchor" href="#61-%e5%af%b9%e6%af%94%e8%a1%a8%e6%a0%bc">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>工具</th>
+          <th>记忆机制</th>
+          <th>存储格式</th>
+          <th>向量搜索</th>
+          <th>自动学习</th>
+          <th>层级结构</th>
+          <th>开源</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Claude Code</strong></td>
+          <td>CLAUDE.md + auto memory</td>
+          <td>纯文本 Markdown</td>
+          <td>❌</td>
+          <td>✅</td>
+          <td>4 级层级</td>
+          <td>❌</td>
+      </tr>
+      <tr>
+          <td><strong>Cursor</strong></td>
+          <td>.cursor/rules + .cursorindex</td>
+          <td>纯文本 + 索引文件</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>单层</td>
+          <td>❌</td>
+      </tr>
+      <tr>
+          <td><strong>GitHub Copilot</strong></td>
+          <td>.github/copilot-instructions.md</td>
+          <td>纯文本 Markdown</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>单层</td>
+          <td>❌</td>
+      </tr>
+      <tr>
+          <td><strong>OpenAI Codex</strong></td>
+          <td>AGENTS.md + SOUL.md + IDENTITY.md</td>
+          <td>纯文本 Markdown</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>多文件</td>
+          <td>✅*</td>
+      </tr>
+      <tr>
+          <td><strong>Cline</strong></td>
+          <td>CLINE.md + custom instructions</td>
+          <td>纯文本 Markdown</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>单层</td>
+          <td>✅</td>
+      </tr>
+      <tr>
+          <td><strong>Aider</strong></td>
+          <td>.aider.input.history + .aider.conf</td>
+          <td>纯文本 + YAML</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>单层</td>
+          <td>✅</td>
+      </tr>
+  </tbody>
+</table>
+<p>* OpenAI Codex 的 AGENTS.md 规范是开放的，但 Codex 本体不开源。</p>
+<h3 id="62-claude-code-的独特选择">
+  6.2 Claude Code 的独特选择
+  <a class="anchor" href="#62-claude-code-%e7%9a%84%e7%8b%ac%e7%89%b9%e9%80%89%e6%8b%a9">#</a>
+</h3>
+<p>Claude Code 在记忆系统设计上有两个突出的独特选择：</p>
+<p><strong>选择一：纯文件，无向量 DB。</strong> 大多数 AI 项目的记忆系统都会引入向量数据库来实现语义搜索。Claude Code 反其道而行——完全基于纯文本文件，用 LLM 自身的能力来检索记忆。这个选择看似&quot;落后&quot;，实则深思熟虑：</p>
+<ul>
+<li>可调试性：每个决策都是可读的文本，不需要解释向量相似度</li>
+<li>零依赖：不需要额外的数据库服务</li>
+<li>版本控制友好：纯文本文件天然适合 Git 管理</li>
+<li>成本效益：不需要嵌入模型的推理成本</li>
+</ul>
+<p><strong>选择二：4 级层级结构。</strong> 大多数工具只有一层记忆文件（如 <code>.cursor/rules</code>）。Claude Code 的 4 级层级（Managed → User → Project → Local）借鉴了 Unix 配置文件的传统（<code>/etc/</code> → <code>~/.</code> → 项目级 → 本地级），让不同范围的规则可以自然地共存。</p>
+<hr>
+<h2 id="7-最佳实践如何为你的项目设计记忆策略">
+  7. 最佳实践：如何为你的项目设计记忆策略
+  <a class="anchor" href="#7-%e6%9c%80%e4%bd%b3%e5%ae%9e%e8%b7%b5%e5%a6%82%e4%bd%95%e4%b8%ba%e4%bd%a0%e7%9a%84%e9%a1%b9%e7%9b%ae%e8%ae%be%e8%ae%a1%e8%ae%b0%e5%bf%86%e7%ad%96%e7%95%a5">#</a>
+</h2>
+<h3 id="71-小团队个人项目轻量起步">
+  7.1 小团队/个人项目：轻量起步
+  <a class="anchor" href="#71-%e5%b0%8f%e5%9b%a2%e9%98%9f%e4%b8%aa%e4%ba%ba%e9%a1%b9%e7%9b%ae%e8%bd%bb%e9%87%8f%e8%b5%b7%e6%ad%a5">#</a>
+</h3>
+<pre tabindex="0"><code>my-project/
+├── CLAUDE.md              # 核心项目规则
+└── .claude/
+    └── settings.json      # auto memory 开关
+</code></pre><p>CLAUDE.md 模板（建议不超过 50 行）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-markdown" data-lang="markdown"><span style="display:flex;"><span># My Project
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">## 技术栈
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">-</span> Python 3.12 + FastAPI
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">-</span> PostgreSQL + SQLAlchemy
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">-</span> pytest 测试
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">## 编码规范
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">-</span> 类型注解是强制的
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">-</span> 所有公共函数必须有 docstring
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">-</span> 使用 ruff 格式化
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">## 架构约定
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">-</span> API 响应统一用 Pydantic 模型
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">-</span> 数据库迁移用 Alembic
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">-</span> 错误处理用自定义异常类
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">## 禁止事项
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">-</span> 不要在代码中硬编码密钥
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">-</span> 不要用 print 调试，用 logging
+</span></span></code></pre></div><h3 id="72-中型团队路径级规则">
+  7.2 中型团队：路径级规则
+  <a class="anchor" href="#72-%e4%b8%ad%e5%9e%8b%e5%9b%a2%e9%98%9f%e8%b7%af%e5%be%84%e7%ba%a7%e8%a7%84%e5%88%99">#</a>
+</h3>
+<pre tabindex="0"><code>my-project/
+├── CLAUDE.md              # 全局项目规则
+└── .claude/
+    └── rules/
+        ├── frontend.md    # React + TypeScript 规则
+        ├── backend.md     # FastAPI + SQLAlchemy 规则
+        └── tests.md       # 测试编写规范
+</code></pre><p>关键原则：</p>
+<ul>
+<li>全局 CLAUDE.md 只放<strong>所有代码都适用</strong>的规则</li>
+<li>具体技术栈的规则放到对应的路径级文件中</li>
+<li>定期审查 auto memory，将稳定的经验迁移到 CLAUDE.md</li>
+</ul>
+<h3 id="73-大型组织managed-级部署">
+  7.3 大型组织：Managed 级部署
+  <a class="anchor" href="#73-%e5%a4%a7%e5%9e%8b%e7%bb%84%e7%bb%87managed-%e7%ba%a7%e9%83%a8%e7%bd%b2">#</a>
+</h3>
+<pre tabindex="0"><code>/etc/claude/CLAUDE.md      # 组织级安全策略
+├── 禁止在代码中存储密钥
+├── 必须使用公司批准的依赖库
+└── 所有 API 必须经过认证
+
+~/.claude/CLAUDE.md        # 用户级偏好
+├── 编辑器配置偏好
+└── 个人编码习惯
+
+project/CLAUDE.md          # 项目级规则
+├── 技术栈和架构
+└── 项目特定约定
+</code></pre><p>关键原则：</p>
+<ul>
+<li>Managed 级规则应最小化——只放安全策略和合规要求</li>
+<li>排除规则（<code>.claude/settings.json</code>）用于管理不需要加载的 CLAUDE.md</li>
+<li>定期审计各层级的规则一致性</li>
+</ul>
+<h3 id="74-记忆治理四原则">
+  7.4 记忆治理四原则
+  <a class="anchor" href="#74-%e8%ae%b0%e5%bf%86%e6%b2%bb%e7%90%86%e5%9b%9b%e5%8e%9f%e5%88%99">#</a>
+</h3>
+<ol>
+<li><strong>定期审查</strong>：每月至少审查一次 auto memory 和 CLAUDE.md</li>
+<li><strong>清理过期记忆</strong>：删除不再适用的规则和过时的偏好</li>
+<li><strong>避免记忆污染</strong>：不要让 auto memory 积累太多低质量的记忆</li>
+<li><strong>保持精简</strong>：CLAUDE.md 应该在 50-200 行之间，超过这个范围考虑拆分</li>
+</ol>
+<h3 id="75-反模式">
+  7.5 反模式
+  <a class="anchor" href="#75-%e5%8f%8d%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>反模式</th>
+          <th>问题</th>
+          <th>正确做法</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>百科全书式 CLAUDE.md</td>
+          <td>文件过长，加载慢，Claude 难以关注重点</td>
+          <td>只写核心规则，详细内容放到单独文件并用 import 引用</td>
+      </tr>
+      <tr>
+          <td>auto memory 不受控增长</td>
+          <td>积累大量过时或冲突的记忆</td>
+          <td>定期审查，将稳定的经验迁移到 CLAUDE.md</td>
+      </tr>
+      <tr>
+          <td>层级冲突不解决</td>
+          <td>4 级规则相互矛盾，Claude 无所适从</td>
+          <td>明确每层级的职责边界，避免重复定义</td>
+      </tr>
+      <tr>
+          <td>把密钥写进 CLAUDE.md</td>
+          <td>安全风险，可能提交到版本控制</td>
+          <td>使用环境变量或密钥管理服务</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="本章总结">
+  本章总结
+  <a class="anchor" href="#%e6%9c%ac%e7%ab%a0%e6%80%bb%e7%bb%93">#</a>
+</h2>
+<h3 id="核心要点">
+  核心要点
+  <a class="anchor" href="#%e6%a0%b8%e5%bf%83%e8%a6%81%e7%82%b9">#</a>
+</h3>
+<ol>
+<li>
+<p><strong>Claude Code 的记忆系统由两条互补路径组成</strong>：显式的 CLAUDE.md（项目宪法）和隐式的 auto memory（工作日志），前者精确可控，后者自动积累但需定期审查。</p>
+</li>
+<li>
+<p><strong>4 级 CLAUDE.md 层级是核心设计</strong>：Managed（<code>/etc/</code>）→ User（<code>~/.claude/</code>）→ Project（项目根目录）→ Local（gitignored），借鉴 Unix 配置传统，让不同范围的规则自然共存。</p>
+</li>
+<li>
+<p><strong>基于纯文本文件的记忆设计是深思熟虑的选择</strong>：不用向量 DB、不用嵌入模型，完全基于可读可编辑的 Markdown 文件，确保可调试性、零依赖和版本控制友好。</p>
+</li>
+<li>
+<p><strong>CLAUDE.md 作为 user context 注入，是概率性遵守而非确定性执行</strong>：Claude 会&quot;读到&quot;规则但不保证严格遵守，需要配合 hooks 和权限模式管理强制性约束。</p>
+</li>
+<li>
+<p><strong>5 层渐进式压缩机制保障记忆的可靠性</strong>：从 Budget reduction 到 Auto-Compact，逐层降级，只有到最后一层才会做出不可逆的摘要决策。</p>
+</li>
+<li>
+<p><strong>LLM 驱动的记忆检索替代了传统的向量搜索</strong>：Claude 通过扫描记忆文件头部选择最多 5 个相关文件，随着模型智能提升，这种方法正在变得越来越可靠。</p>
+</li>
+<li>
+<p><strong>记忆治理需要主动管理</strong>：定期审查、清理过期记忆、避免记忆污染、保持精简——记忆不是&quot;设置后就忘了&quot;，而是需要持续维护的系统。</p>
+</li>
+</ol>
+<h3 id="读者行动建议">
+  读者行动建议
+  <a class="anchor" href="#%e8%af%bb%e8%80%85%e8%a1%8c%e5%8a%a8%e5%bb%ba%e8%ae%ae">#</a>
+</h3>
+<ul>
+<li><strong>如果你刚开始使用 Claude Code</strong>：先写一个 50 行以内的 CLAUDE.md，覆盖技术栈、编码规范和禁止事项</li>
+<li><strong>如果你已经用了一段时间</strong>：运行 <code>/memory</code> 检查 auto memory 积累的内容，将稳定的经验迁移到 CLAUDE.md</li>
+<li><strong>如果你在管理团队</strong>：建立 CLAUDE.md 模板和审查流程，确保规则的一致性和及时更新</li>
+<li><strong>如果你在评估 AI 编程工具</strong>：关注各工具的记忆设计差异——文件存储 vs. 向量搜索、显式 vs. 隐式、单层 vs. 层级</li>
+</ul>
+<h3 id="延伸阅读">
+  延伸阅读
+  <a class="anchor" href="#%e5%bb%b6%e4%bc%b8%e9%98%85%e8%af%bb">#</a>
+</h3>
+<ul>
+<li>[1] <a href="https://code.claude.com/docs/en/memory">Anthropic 官方文档 — How Claude remembers your project</a></li>
+<li>[2] <a href="https://code.claude.com/docs/en/claude-directory">Anthropic 官方文档 — Explore the .claude directory</a></li>
+<li>[3] <a href="https://github.com/VILA-Lab/Dive-into-Claude-Code">VILA-Lab — Dive into Claude Code</a>（源码级架构分析论文）</li>
+<li>[5] <a href="https://github.com/shareAI-lab/learn-claude-code">shareAI-lab — learn-claude-code</a>（从零构建 agent harness）</li>
+<li>[7] <a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents">Anthropic — Effective Context Engineering for AI Agents</a></li>
+<li>[8] <a href="https://www.anthropic.com/engineering/harness-design-long-running-apps">Anthropic — Harness Design for Long-Running Apps</a></li>
+</ul>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#claude-code-memory-深度解析--项目记忆的两种路径">Claude Code Memory 深度解析 — 项目记忆的两种路径</a>
+      <ul>
+        <li><a href="#引言ai-编程助手为什么需要跨会话记忆">引言：AI 编程助手为什么需要跨会话记忆？</a>
+          <ul>
+            <li><a href="#多源研究视角">多源研究视角</a></li>
+          </ul>
+        </li>
+        <li><a href="#1-两种记忆路径claudemd-vs-auto-memory">1. 两种记忆路径：CLAUDE.md vs. auto memory</a>
+          <ul>
+            <li><a href="#11-claudemd项目宪法">1.1 CLAUDE.md：项目宪法</a></li>
+            <li><a href="#12-auto-memory工作日志">1.2 auto memory：工作日志</a></li>
+            <li><a href="#13-两种路径的对比">1.3 两种路径的对比</a></li>
+          </ul>
+        </li>
+        <li><a href="#2-claudemd-文件体系显式指令的四层架构">2. CLAUDE.md 文件体系：显式指令的四层架构</a>
+          <ul>
+            <li><a href="#21-四级-claudemd-层级">2.1 四级 CLAUDE.md 层级</a></li>
+            <li><a href="#22-clauderules-目录路径级规则">2.2 <code>.claude/rules/</code> 目录：路径级规则</a></li>
+            <li><a href="#23-agentsmd-兼容层">2.3 AGENTS.md 兼容层</a></li>
+            <li><a href="#24-大团队管理">2.4 大团队管理</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-auto-memory隐式学习的机制与边界">3. Auto Memory：隐式学习的机制与边界</a>
+          <ul>
+            <li><a href="#31-工作原理">3.1 工作原理</a></li>
+            <li><a href="#32-存储位置">3.2 存储位置</a></li>
+            <li><a href="#33-记忆检索机制">3.3 记忆检索机制</a></li>
+            <li><a href="#34-启用禁用与信任轨迹">3.4 启用、禁用与信任轨迹</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-记忆的生命周期从写入到生效的完整链路">4. 记忆的生命周期：从写入到生效的完整链路</a>
+          <ul>
+            <li><a href="#41-写入阶段">4.1 写入阶段</a></li>
+            <li><a href="#42-加载阶段9-个有序上下文来源">4.2 加载阶段：9 个有序上下文来源</a></li>
+            <li><a href="#43-生效阶段与-prompt-caching-的配合">4.3 生效阶段：与 Prompt Caching 的配合</a></li>
+            <li><a href="#44-维护阶段5-层压缩机制">4.4 维护阶段：5 层压缩机制</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-记忆系统的工程挑战">5. 记忆系统的工程挑战</a>
+          <ul>
+            <li><a href="#51-挑战一概率性遵守-vs-确定性执行">5.1 挑战一：概率性遵守 vs. 确定性执行</a></li>
+            <li><a href="#52-挑战二记忆膨胀">5.2 挑战二：记忆膨胀</a></li>
+            <li><a href="#53-挑战三记忆冲突">5.3 挑战三：记忆冲突</a></li>
+            <li><a href="#54-挑战四记忆丢失">5.4 挑战四：记忆丢失</a></li>
+            <li><a href="#55-挑战五安全边界">5.5 挑战五：安全边界</a></li>
+          </ul>
+        </li>
+        <li><a href="#6-与其他工具的记忆机制横向对比">6. 与其他工具的记忆机制横向对比</a>
+          <ul>
+            <li><a href="#61-对比表格">6.1 对比表格</a></li>
+            <li><a href="#62-claude-code-的独特选择">6.2 Claude Code 的独特选择</a></li>
+          </ul>
+        </li>
+        <li><a href="#7-最佳实践如何为你的项目设计记忆策略">7. 最佳实践：如何为你的项目设计记忆策略</a>
+          <ul>
+            <li><a href="#71-小团队个人项目轻量起步">7.1 小团队/个人项目：轻量起步</a></li>
+            <li><a href="#72-中型团队路径级规则">7.2 中型团队：路径级规则</a></li>
+            <li><a href="#73-大型组织managed-级部署">7.3 大型组织：Managed 级部署</a></li>
+            <li><a href="#74-记忆治理四原则">7.4 记忆治理四原则</a></li>
+            <li><a href="#75-反模式">7.5 反模式</a></li>
+          </ul>
+        </li>
+        <li><a href="#本章总结">本章总结</a>
+          <ul>
+            <li><a href="#核心要点">核心要点</a></li>
+            <li><a href="#读者行动建议">读者行动建议</a></li>
+            <li><a href="#延伸阅读">延伸阅读</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
