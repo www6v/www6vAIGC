@@ -1,0 +1,4770 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  Hermes Agent Kanban 深度解析：原理、实现与竞品分析
+  #
+
+
+&ldquo;A task board is not a UI — it&rsquo;s the shared memory of a multi-agent system.&rdquo;
+Hermes Agent 的 Kanban 不是一个简单的任务管理界面，而是一个基于 SQLite 的多 Agent 协调内核。它通过原子任务声明、DAG 依赖门控、进程级隔离和结构化交接，让多个 Agent 实例（Profile）在一台机器上安全协作。本文从源码出发，深入解析其设计原理、实现细节，并与 Claude Code 的 Dynamic Workflow 进行系统性对比。
+
+
+  §1 引言：为什么是 Kanban？
+  #
+
+假设你需要一个团队完成以下工作：
+
+研究员 A 分析 vLLM、SGLang、TensorRT-LLM 的性能对比
+研究员 B 分析三者的许可证和社区活跃度
+分析师 C 综合 A 和 B 的发现，给出推荐
+写作者 D 把推荐写成决策备忘录
+
+用 delegate_task 可以并行 A 和 B，但 C 必须等 A 和 B 都完成。如果 A 失败了需要重试怎么办？如果 C 发现 A 的输出不完整需要打回怎么办？如果整个流程需要跨越数小时甚至数天，父 Agent 的对话上下文早就溢出了怎么办？">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/orchestrate/Hermes-Kanban/">
+  <meta property="og:site_name" content="基于LLM的系统设计与实现">
+  <meta property="og:title" content="基于LLM的系统设计与实现">
+  <meta property="og:description" content="Hermes Agent Kanban 深度解析：原理、实现与竞品分析 # “A task board is not a UI — it’s the shared memory of a multi-agent system.”
+Hermes Agent 的 Kanban 不是一个简单的任务管理界面，而是一个基于 SQLite 的多 Agent 协调内核。它通过原子任务声明、DAG 依赖门控、进程级隔离和结构化交接，让多个 Agent 实例（Profile）在一台机器上安全协作。本文从源码出发，深入解析其设计原理、实现细节，并与 Claude Code 的 Dynamic Workflow 进行系统性对比。
+§1 引言：为什么是 Kanban？ # 假设你需要一个团队完成以下工作：
+研究员 A 分析 vLLM、SGLang、TensorRT-LLM 的性能对比 研究员 B 分析三者的许可证和社区活跃度 分析师 C 综合 A 和 B 的发现，给出推荐 写作者 D 把推荐写成决策备忘录 用 delegate_task 可以并行 A 和 B，但 C 必须等 A 和 B 都完成。如果 A 失败了需要重试怎么办？如果 C 发现 A 的输出不完整需要打回怎么办？如果整个流程需要跨越数小时甚至数天，父 Agent 的对话上下文早就溢出了怎么办？">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>Hermes Kanban | 基于LLM的系统设计与实现</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/orchestrate/Hermes-Kanban/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.e3cbfae03f133ebf84d2aa7df09fa1dbff6baf38778fde13fae8322c02a49069.js" integrity="sha256-48v64D8TPr&#43;E0qp98J&#43;h2/9rrzh3j94T&#43;ugyLAKkkGk=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/orchestrate/Hermes-Kanban/index.xml" title="基于LLM的系统设计与实现" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>基于LLM的系统设计与实现</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b757002e9620728c23883bffd127cb72" class="toggle"  />
+    <label for="section-b757002e9620728c23883bffd127cb72" class="flex justify-between">
+      <a role="button" class="">Platform *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0b800a1752a4e836473ce3e89db51e41" class="toggle"  />
+    <label for="section-0b800a1752a4e836473ce3e89db51e41" class="flex justify-between">
+      <a role="button" class="">Multi-agent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="toggle"  />
+    <label for="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="flex justify-between">
+      <a role="button" class="">Communication *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Agent Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Reflection</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Planning</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Sandbox</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Tool use</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle" checked />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a4616e3a8c8187b439a091c2fc1c3f29" class="toggle" checked />
+    <label for="section-a4616e3a8c8187b439a091c2fc1c3f29" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/orchestrate/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/orchestrate/Hermes-Kanban/" class="active">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code-arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6db2f1703f556e0dbe0a7ff92bcfc2b5" class="toggle"  />
+    <label for="section-6db2f1703f556e0dbe0a7ff92bcfc2b5" class="flex justify-between">
+      <a role="button" class="">Claude Code Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code-Memory/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code-Memory/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code-Memory/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0a4f54793a95f042d99660667b3f1c3f" class="toggle"  />
+    <label for="section-0a4f54793a95f042d99660667b3f1c3f" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/managed-agent/managed-agent/" class="">Managed Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle"  />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/openclaw-sandbox-security/" class="">Openclaw Sandbox Security</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/" class="">Openclaw Conversation State Management</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/" class="">Openclaw Tool Invocation Flow</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-2a6aa8fb2d00697ce540b0c02f7975a7" class="toggle"  />
+    <label for="section-2a6aa8fb2d00697ce540b0c02f7975a7" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/long-process/Claude-code-stability/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/long-process/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/long-process/hermes-agent-goal/" class="">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/long-process/long-running-tasks/" class="">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/long-process/stability/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle"  />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">(Manus)context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Hermes Kanban</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#hermes-agent-kanban-深度解析原理实现与竞品分析">Hermes Agent Kanban 深度解析：原理、实现与竞品分析</a>
+      <ul>
+        <li><a href="#1-引言为什么是-kanban">§1 引言：为什么是 Kanban？</a></li>
+        <li><a href="#2-架构全景">§2 架构全景</a>
+          <ul>
+            <li><a href="#关键文件映射">关键文件映射</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-数据库设计5-张表的协调原语">§3 数据库设计：5 张表的协调原语</a>
+          <ul>
+            <li><a href="#31-核心-schema">3.1 核心 Schema</a></li>
+            <li><a href="#32-设计权衡">3.2 设计权衡</a></li>
+            <li><a href="#33-幂等性设计">3.3 幂等性设计</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-状态机7-种状态的精确语义">§4 状态机：7 种状态的精确语义</a>
+          <ul>
+            <li><a href="#41-状态转移的原子性">4.1 状态转移的原子性</a></li>
+            <li><a href="#42-task_runs-表从任务到尝试的范式转换">4.2 <code>task_runs</code> 表：从&quot;任务&quot;到&quot;尝试&quot;的范式转换</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-调度器四步调度循环">§5 调度器：四步调度循环</a>
+          <ul>
+            <li><a href="#51-step-1-声明锁回收">5.1 Step 1: 声明锁回收</a></li>
+            <li><a href="#52-step-2-崩溃检测">5.2 Step 2: 崩溃检测</a></li>
+            <li><a href="#53-step-3-依赖推进">5.3 Step 3: 依赖推进</a></li>
+            <li><a href="#54-step-4-派生-worker">5.4 Step 4: 派生 Worker</a></li>
+            <li><a href="#55-派生失败熔断">5.5 派生失败熔断</a></li>
+          </ul>
+        </li>
+        <li><a href="#6-kanban-toolsagent-的结构化交接面">§6 Kanban Tools：Agent 的结构化交接面</a>
+          <ul>
+            <li><a href="#61-环境门控">6.1 环境门控</a></li>
+            <li><a href="#62-七种工具">6.2 七种工具</a></li>
+            <li><a href="#63-结构化交接">6.3 结构化交接</a></li>
+          </ul>
+        </li>
+        <li><a href="#7-依赖图dag-构建与循环检测">§7 依赖图：DAG 构建与循环检测</a>
+          <ul>
+            <li><a href="#71-创建时的依赖检查">7.1 创建时的依赖检查</a></li>
+            <li><a href="#72-循环检测bfs">7.2 循环检测（BFS）</a></li>
+            <li><a href="#73-后置链接的自动降级">7.3 后置链接的自动降级</a></li>
+          </ul>
+        </li>
+        <li><a href="#8-worker-上下文构建prompt-的预算管理">§8 Worker 上下文构建：Prompt 的预算管理</a></li>
+        <li><a href="#9-工作区隔离三种-workspace-模式">§9 工作区隔离：三种 Workspace 模式</a></li>
+        <li><a href="#10-通知系统gateway-集成的-human-in-the-loop">§10 通知系统：Gateway 集成的 Human-in-the-Loop</a></li>
+        <li><a href="#11-竞品对比hermes-kanban-vs-claude-code-dynamic-workflow">§11 竞品对比：Hermes Kanban vs Claude Code Dynamic Workflow</a>
+          <ul>
+            <li><a href="#111-claude-code-多任务体系概览">11.1 Claude Code 多任务体系概览</a></li>
+            <li><a href="#112-深度对比">11.2 深度对比</a></li>
+            <li><a href="#113-架构差异的根本原因">11.3 架构差异的根本原因</a></li>
+            <li><a href="#114-各自的优势场景">11.4 各自的优势场景</a></li>
+            <li><a href="#115-对比总结">11.5 对比总结</a></li>
+          </ul>
+        </li>
+        <li><a href="#12-总结">§12 总结</a>
+          <ul>
+            <li><a href="#核心要点">核心要点</a></li>
+            <li><a href="#hermes-kanban-的独特优势">Hermes Kanban 的独特优势</a></li>
+            <li><a href="#局限">局限</a></li>
+            <li><a href="#行动建议">行动建议</a></li>
+            <li><a href="#延伸阅读">延伸阅读</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="hermes-agent-kanban-深度解析原理实现与竞品分析">
+  Hermes Agent Kanban 深度解析：原理、实现与竞品分析
+  <a class="anchor" href="#hermes-agent-kanban-%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90%e5%8e%9f%e7%90%86%e5%ae%9e%e7%8e%b0%e4%b8%8e%e7%ab%9e%e5%93%81%e5%88%86%e6%9e%90">#</a>
+</h1>
+<blockquote>
+<p>&ldquo;A task board is not a UI — it&rsquo;s the shared memory of a multi-agent system.&rdquo;</p></blockquote>
+<p>Hermes Agent 的 Kanban 不是一个简单的任务管理界面，而是一个<strong>基于 SQLite 的多 Agent 协调内核</strong>。它通过原子任务声明、DAG 依赖门控、进程级隔离和结构化交接，让多个 Agent 实例（Profile）在一台机器上安全协作。本文从源码出发，深入解析其设计原理、实现细节，并与 Claude Code 的 Dynamic Workflow 进行系统性对比。</p>
+<hr>
+<h2 id="1-引言为什么是-kanban">
+  §1 引言：为什么是 Kanban？
+  <a class="anchor" href="#1-%e5%bc%95%e8%a8%80%e4%b8%ba%e4%bb%80%e4%b9%88%e6%98%af-kanban">#</a>
+</h2>
+<p>假设你需要一个团队完成以下工作：</p>
+<ol>
+<li>研究员 A 分析 vLLM、SGLang、TensorRT-LLM 的性能对比</li>
+<li>研究员 B 分析三者的许可证和社区活跃度</li>
+<li>分析师 C 综合 A 和 B 的发现，给出推荐</li>
+<li>写作者 D 把推荐写成决策备忘录</li>
+</ol>
+<p>用 <code>delegate_task</code> 可以并行 A 和 B，但 C 必须等 A 和 B 都完成。如果 A 失败了需要重试怎么办？如果 C 发现 A 的输出不完整需要打回怎么办？如果整个流程需要跨越数小时甚至数天，父 Agent 的对话上下文早就溢出了怎么办？</p>
+<p>这正是 Kanban 要解决的问题：<strong>跨 Agent 的持久化、可重试、可审计的协作</strong>。</p>
+<hr>
+<h2 id="2-架构全景">
+  §2 架构全景
+  <a class="anchor" href="#2-%e6%9e%b6%e6%9e%84%e5%85%a8%e6%99%af">#</a>
+</h2>
+<p>Hermes Kanban 的核心架构可以概括为四层：</p>
+<pre tabindex="0"><code>┌──────────────────────────────────────────────────┐
+│                  人类交互层                        │
+│  CLI (hermes kanban ...)  /  Dashboard  /  Gateway │
+├──────────────────────────────────────────────────┤
+│              Kanban Tools (7 个)                  │
+│  kanban_show / create / complete / block /        │
+│  comment / heartbeat / link                        │
+├──────────────────────────────────────────────────┤
+│              数据库层 (SQLite)                     │
+│  tasks / task_links / task_runs /                 │
+│  task_comments / task_events / kanban_notify_subs │
+├──────────────────────────────────────────────────┤
+│              调度器 (Dispatcher)                   │
+│  dispatch_once(): 回收 → 检测崩溃 → 依赖推进 → 派生│
+│  _default_spawn(): hermes -p &lt;profile&gt; chat -q    │
+└──────────────────────────────────────────────────┘
+</code></pre><h3 id="关键文件映射">
+  关键文件映射
+  <a class="anchor" href="#%e5%85%b3%e9%94%ae%e6%96%87%e4%bb%b6%e6%98%a0%e5%b0%84">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>文件</th>
+          <th>职责</th>
+          <th>行数</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>hermes_cli/kanban_db.py</code></td>
+          <td>数据库 Schema、CRUD、调度器、工作上下文构建</td>
+          <td>~2765</td>
+      </tr>
+      <tr>
+          <td><code>hermes_cli/kanban.py</code></td>
+          <td>CLI 子命令（15 个 verb）、参数解析、输出格式化</td>
+          <td>~1393</td>
+      </tr>
+      <tr>
+          <td><code>tools/kanban_tools.py</code></td>
+          <td>Agent 工具注册（7 个）、环境门控</td>
+          <td>~726</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="3-数据库设计5-张表的协调原语">
+  §3 数据库设计：5 张表的协调原语
+  <a class="anchor" href="#3-%e6%95%b0%e6%8d%ae%e5%ba%93%e8%ae%be%e8%ae%a15-%e5%bc%a0%e8%a1%a8%e7%9a%84%e5%8d%8f%e8%b0%83%e5%8e%9f%e8%af%ad">#</a>
+</h2>
+<p>Kanban 的数据模型极度精简——只有 5 张核心表，却承载了整个多 Agent 协调语义。</p>
+<h3 id="31-核心-schema">
+  3.1 核心 Schema
+  <a class="anchor" href="#31-%e6%a0%b8%e5%bf%83-schema">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sql" data-lang="sql"><span style="display:flex;"><span><span style="color:#75715e">-- 任务表：状态机 + 声明锁 + 工作区
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">CREATE</span> <span style="color:#66d9ef">TABLE</span> tasks (
+</span></span><span style="display:flex;"><span>    id                   TEXT <span style="color:#66d9ef">PRIMARY</span> <span style="color:#66d9ef">KEY</span>,       <span style="color:#75715e">-- t_ + 4 hex bytes (~4.3B 空间)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    title                TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    body                 TEXT,
+</span></span><span style="display:flex;"><span>    assignee             TEXT,                   <span style="color:#75715e">-- Profile 名称
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    status               TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,           <span style="color:#75715e">-- triage|todo|ready|running|blocked|done|archived
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    priority             INTEGER <span style="color:#66d9ef">DEFAULT</span> <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>    workspace_kind       TEXT <span style="color:#66d9ef">DEFAULT</span> <span style="color:#e6db74">&#39;scratch&#39;</span>,  <span style="color:#75715e">-- scratch | worktree | dir
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    workspace_path       TEXT,
+</span></span><span style="display:flex;"><span>    claim_lock           TEXT,                    <span style="color:#75715e">-- host:pid 格式的声明锁
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    claim_expires        INTEGER,                 <span style="color:#75715e">-- 过期时间戳 (默认 15 分钟)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    tenant               TEXT,                    <span style="color:#75715e">-- 租户隔离
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    current_run_id       INTEGER,                 <span style="color:#75715e">-- 指向 task_runs 的当前活跃行
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    max_runtime_seconds  INTEGER,                 <span style="color:#75715e">-- 每任务运行时限
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    spawn_failures       INTEGER <span style="color:#66d9ef">DEFAULT</span> <span style="color:#ae81ff">0</span>,       <span style="color:#75715e">-- 连续派生失败计数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    last_spawn_error     TEXT,
+</span></span><span style="display:flex;"><span>    worker_pid           INTEGER,                 <span style="color:#75715e">-- 当前 Worker 进程 PID
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    last_heartbeat_at    INTEGER,                 <span style="color:#75715e">-- 最后心跳时间
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    skills               TEXT                     <span style="color:#75715e">-- JSON: 强制加载的技能列表
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">-- 依赖图：DAG 边
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">CREATE</span> <span style="color:#66d9ef">TABLE</span> task_links (
+</span></span><span style="display:flex;"><span>    parent_id  TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    child_id   TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">PRIMARY</span> <span style="color:#66d9ef">KEY</span> (parent_id, child_id)
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">-- 尝试历史：每次执行都是独立的 run
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">CREATE</span> <span style="color:#66d9ef">TABLE</span> task_runs (
+</span></span><span style="display:flex;"><span>    id                  INTEGER <span style="color:#66d9ef">PRIMARY</span> <span style="color:#66d9ef">KEY</span> AUTOINCREMENT,
+</span></span><span style="display:flex;"><span>    task_id             TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    profile             TEXT,
+</span></span><span style="display:flex;"><span>    status              TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,     <span style="color:#75715e">-- running|done|blocked|crashed|timed_out|failed|reclaimed
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    claim_lock          TEXT,
+</span></span><span style="display:flex;"><span>    claim_expires       INTEGER,
+</span></span><span style="display:flex;"><span>    worker_pid          INTEGER,
+</span></span><span style="display:flex;"><span>    max_runtime_seconds INTEGER,
+</span></span><span style="display:flex;"><span>    last_heartbeat_at   INTEGER,
+</span></span><span style="display:flex;"><span>    started_at          INTEGER <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    ended_at            INTEGER,
+</span></span><span style="display:flex;"><span>    outcome             TEXT,              <span style="color:#75715e">-- completed|blocked|crashed|timed_out|spawn_failed|gave_up|reclaimed
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    summary             TEXT,              <span style="color:#75715e">-- 人类可读的交接摘要
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    metadata            TEXT,              <span style="color:#75715e">-- JSON: 结构化事实
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    error               TEXT
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">-- 评论线程：跨 Agent 通信
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">CREATE</span> <span style="color:#66d9ef">TABLE</span> task_comments (
+</span></span><span style="display:flex;"><span>    id INTEGER <span style="color:#66d9ef">PRIMARY</span> <span style="color:#66d9ef">KEY</span> AUTOINCREMENT,
+</span></span><span style="display:flex;"><span>    task_id TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>, author TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    body TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>, created_at INTEGER <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">-- 事件日志：状态变迁的审计追踪
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">CREATE</span> <span style="color:#66d9ef">TABLE</span> task_events (
+</span></span><span style="display:flex;"><span>    id INTEGER <span style="color:#66d9ef">PRIMARY</span> <span style="color:#66d9ef">KEY</span> AUTOINCREMENT,
+</span></span><span style="display:flex;"><span>    task_id TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>, run_id INTEGER,
+</span></span><span style="display:flex;"><span>    kind TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>, payload TEXT, created_at INTEGER <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>
+</span></span><span style="display:flex;"><span>);
+</span></span></code></pre></div><h3 id="32-设计权衡">
+  3.2 设计权衡
+  <a class="anchor" href="#32-%e8%ae%be%e8%ae%a1%e6%9d%83%e8%a1%a1">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>设计决策</th>
+          <th>选择</th>
+          <th>理由</th>
+          <th>代价</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>数据库</td>
+          <td>SQLite (WAL 模式)</td>
+          <td>零配置、单文件、内置并发控制</td>
+          <td>不支持多机分布式部署</td>
+      </tr>
+      <tr>
+          <td>并发控制</td>
+          <td><code>BEGIN IMMEDIATE</code> + CAS</td>
+          <td>SQLite 的 WAL 锁天然序列化写者</td>
+          <td>写吞吐量受限</td>
+      </tr>
+      <tr>
+          <td>ID 生成</td>
+          <td><code>secrets.token_hex(4)</code></td>
+          <td>短 ID，人类可读</td>
+          <td>生日悖论冲突率（4.3B 空间可接受）</td>
+      </tr>
+      <tr>
+          <td>状态字段</td>
+          <td>单列 <code>status</code></td>
+          <td>简单直观</td>
+          <td>需要额外的 <code>claim_lock</code>/<code>claim_expires</code> 辅助列</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>为什么不用 PostgreSQL/Redis？</strong> 因为 Kanban 的设计假设是<strong>单机多 Profile</strong> 场景——所有 Agent 实例运行在同一台机器上，通过 Profile 隔离。SQLite 的 WAL 模式 + <code>BEGIN IMMEDIATE</code> 已经提供了足够的并发保障：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># kanban_db.py: write_txn()</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">@contextlib.contextmanager</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">write_txn</span>(conn: sqlite3<span style="color:#f92672">.</span>Connection):
+</span></span><span style="display:flex;"><span>    conn<span style="color:#f92672">.</span>execute(<span style="color:#e6db74">&#34;BEGIN IMMEDIATE&#34;</span>)  <span style="color:#75715e"># 立即获取写锁</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">yield</span> conn
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span>:
+</span></span><span style="display:flex;"><span>        conn<span style="color:#f92672">.</span>execute(<span style="color:#e6db74">&#34;ROLLBACK&#34;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">raise</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>        conn<span style="color:#f92672">.</span>execute(<span style="color:#e6db74">&#34;COMMIT&#34;</span>)
+</span></span></code></pre></div><p><code>BEGIN IMMEDIATE</code> 确保事务开始时立即获取写锁——如果有另一个写者在持有锁，当前事务会阻塞等待而非立即失败。这与 Redis 的乐观锁（WATCH/MULTI/EXEC）不同，后者在冲突时需要客户端重试。</p>
+<h3 id="33-幂等性设计">
+  3.3 幂等性设计
+  <a class="anchor" href="#33-%e5%b9%82%e7%ad%89%e6%80%a7%e8%ae%be%e8%ae%a1">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># kanban_db.py: create_task()</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> idempotency_key:
+</span></span><span style="display:flex;"><span>    row <span style="color:#f92672">=</span> conn<span style="color:#f92672">.</span>execute(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;SELECT id FROM tasks WHERE idempotency_key = ? AND status != &#39;archived&#39; &#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;ORDER BY created_at DESC LIMIT 1&#34;</span>,
+</span></span><span style="display:flex;"><span>        (idempotency_key,),
+</span></span><span style="display:flex;"><span>    )<span style="color:#f92672">.</span>fetchone()
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> row:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> row[<span style="color:#e6db74">&#34;id&#34;</span>]  <span style="color:#75715e"># 返回已存在的任务 ID</span>
+</span></span></code></pre></div><p>这对于 Webhook 驱动的自动化场景至关重要——重试的 Webhook 不会创建重复任务。</p>
+<hr>
+<h2 id="4-状态机7-种状态的精确语义">
+  §4 状态机：7 种状态的精确语义
+  <a class="anchor" href="#4-%e7%8a%b6%e6%80%81%e6%9c%ba7-%e7%a7%8d%e7%8a%b6%e6%80%81%e7%9a%84%e7%b2%be%e7%a1%ae%e8%af%ad%e4%b9%89">#</a>
+</h2>
+<p>Kanban 任务的生命周期不是简单的 TODO → DONE，而是一个精心设计的 7 状态机：</p>
+<pre tabindex="0"><code>                    ┌─────────┐
+                    │ triage  │ ◄── 待整理的需求
+                    └────┬────┘
+                         │ 人工推进
+                    ┌────▼────┐
+               ┌─── │  todo   │ ◄── 有未完成的前置依赖
+               │    └────┬────┘
+               │         │ 所有 parents done
+               │    ┌────▼────┐
+               │    │  ready  │ ◄── 可被调度器认领
+               │    └────┬────┘
+               │         │ claim_task() CAS
+               │    ┌────▼────┐
+               ├───►│ running │ ──┐
+               │    └────┬────┘   │
+               │         │        │
+          ┌────▼────┐ ┌──▼───┐ ┌──▼─────┐
+          │  done   │ │blocked│ │crashed │
+          └────┬────┘ └───┬───┘ └───┬────┘
+               │           │         │
+               │      unblock│  reclaim│
+               │           │         │
+               │    ┌──────▼─────────▼────┐
+               │    │     ready           │
+               │    └─────────────────────┘
+               │
+          ┌────▼────┐
+          │archived │ ◄── 生命周期终结
+          └─────────┘
+</code></pre><h3 id="41-状态转移的原子性">
+  4.1 状态转移的原子性
+  <a class="anchor" href="#41-%e7%8a%b6%e6%80%81%e8%bd%ac%e7%a7%bb%e7%9a%84%e5%8e%9f%e5%ad%90%e6%80%a7">#</a>
+</h3>
+<p>每个状态转移都在 <code>write_txn</code> 中通过 CAS（Compare-And-Swap）保证原子性：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># kanban_db.py: claim_task()</span>
+</span></span><span style="display:flex;"><span>cur <span style="color:#f92672">=</span> conn<span style="color:#f92672">.</span>execute(
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    UPDATE tasks
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">       SET status        = &#39;running&#39;,
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">           claim_lock    = ?,       -- &#34;hostname:pid&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">           claim_expires = ?,       -- now + 900 (15分钟)
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">           started_at    = COALESCE(started_at, ?)
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">     WHERE id = ?
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">       AND status = &#39;ready&#39;         -- 前置条件：必须是 ready
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">       AND claim_lock IS NULL       -- 前置条件：没有其他人在 claim
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;&#34;&#34;</span>,
+</span></span><span style="display:flex;"><span>    (lock, expires, now, task_id),
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> cur<span style="color:#f92672">.</span>rowcount <span style="color:#f92672">!=</span> <span style="color:#ae81ff">1</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">None</span>  <span style="color:#75715e"># 被其他人抢先了，返回 None</span>
+</span></span></code></pre></div><p><strong>为什么需要 <code>claim_lock IS NULL</code> 这个条件？</strong> 因为 <code>status = 'ready'</code> 可能被多个并发调度器同时看到。SQLite 的 WAL 锁会序列化写操作，但第一个成功写的事务会把 <code>claim_lock</code> 设为非 NULL，后续事务的 <code>UPDATE</code> 就会匹配 0 行——这就是 CAS 的本质。</p>
+<h3 id="42-task_runs-表从任务到尝试的范式转换">
+  4.2 <code>task_runs</code> 表：从&quot;任务&quot;到&quot;尝试&quot;的范式转换
+  <a class="anchor" href="#42-task_runs-%e8%a1%a8%e4%bb%8e%e4%bb%bb%e5%8a%a1%e5%88%b0%e5%b0%9d%e8%af%95%e7%9a%84%e8%8c%83%e5%bc%8f%e8%bd%ac%e6%8d%a2">#</a>
+</h3>
+<p>v1 版本的 Kanban 没有 <code>task_runs</code> 表——任务状态直接写在 <code>tasks</code> 表上。后来引入了 <code>task_runs</code>，这是一个重要的范式转变：</p>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>仅有 tasks 表</th>
+          <th>引入 task_runs 后</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>重试语义</td>
+          <td>无法区分&quot;第一次失败&quot;和&quot;重试中&quot;</td>
+          <td>每次尝试都有独立行</td>
+      </tr>
+      <tr>
+          <td>交接数据</td>
+          <td>summary 覆盖写入</td>
+          <td>每次尝试有自己的 summary/metadata</td>
+      </tr>
+      <tr>
+          <td>调试</td>
+          <td>只知道&quot;失败了&quot;</td>
+          <td>知道第几次失败、什么 outcome、什么 error</td>
+      </tr>
+      <tr>
+          <td>统计</td>
+          <td>无法计算平均执行时间</td>
+          <td>每个 run 有 started_at/ended_at</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>当前运行指针</strong>（<code>tasks.current_run_id</code>）是一个巧妙的设计——它把任务表和运行表关联起来，让读取当前状态只需查一行，同时保留完整的历史记录。</p>
+<hr>
+<h2 id="5-调度器四步调度循环">
+  §5 调度器：四步调度循环
+  <a class="anchor" href="#5-%e8%b0%83%e5%ba%a6%e5%99%a8%e5%9b%9b%e6%ad%a5%e8%b0%83%e5%ba%a6%e5%be%aa%e7%8e%af">#</a>
+</h2>
+<p>调度器是 Kanban 的心脏，嵌入在 Gateway 进程中运行（旧版是独立 daemon，已废弃）。每次 tick 执行四步：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># kanban_db.py: dispatch_once()</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">dispatch_once</span>(conn, <span style="color:#f92672">*</span>, spawn_fn<span style="color:#f92672">=</span><span style="color:#66d9ef">None</span>, <span style="color:#f92672">...</span>) <span style="color:#f92672">-&gt;</span> DispatchResult:
+</span></span><span style="display:flex;"><span>    result <span style="color:#f92672">=</span> DispatchResult()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Step 1: 回收过期的声明锁（TTL 超时）</span>
+</span></span><span style="display:flex;"><span>    result<span style="color:#f92672">.</span>reclaimed <span style="color:#f92672">=</span> release_stale_claims(conn)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Step 2: 检测崩溃的 Worker（PID 不再存活）</span>
+</span></span><span style="display:flex;"><span>    result<span style="color:#f92672">.</span>crashed <span style="color:#f92672">=</span> detect_crashed_workers(conn)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Step 3: 提升依赖已满足的任务 (todo → ready)</span>
+</span></span><span style="display:flex;"><span>    result<span style="color:#f92672">.</span>promoted <span style="color:#f92672">=</span> recompute_ready(conn)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Step 4: 派生 ready 任务的 Worker 进程</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> row <span style="color:#f92672">in</span> ready_rows:
+</span></span><span style="display:flex;"><span>        claimed <span style="color:#f92672">=</span> claim_task(conn, row[<span style="color:#e6db74">&#34;id&#34;</span>], ttl_seconds<span style="color:#f92672">=</span>ttl_seconds)
+</span></span><span style="display:flex;"><span>        workspace <span style="color:#f92672">=</span> resolve_workspace(claimed)
+</span></span><span style="display:flex;"><span>        pid <span style="color:#f92672">=</span> spawn_fn(claimed, str(workspace))  <span style="color:#75715e"># → hermes -p &lt;profile&gt; chat -q</span>
+</span></span><span style="display:flex;"><span>        _set_worker_pid(conn, claimed<span style="color:#f92672">.</span>id, pid)
+</span></span></code></pre></div><h3 id="51-step-1-声明锁回收">
+  5.1 Step 1: 声明锁回收
+  <a class="anchor" href="#51-step-1-%e5%a3%b0%e6%98%8e%e9%94%81%e5%9b%9e%e6%94%b6">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 找到所有 claim_expires &lt; now 的 running 任务</span>
+</span></span><span style="display:flex;"><span>stale <span style="color:#f92672">=</span> conn<span style="color:#f92672">.</span>execute(
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;SELECT id, claim_lock FROM tasks &#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;WHERE status = &#39;running&#39; AND claim_expires &lt; ?&#34;</span>,
+</span></span><span style="display:flex;"><span>    (now,),
+</span></span><span style="display:flex;"><span>)<span style="color:#f92672">.</span>fetchall()
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> row <span style="color:#f92672">in</span> stale:
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 回滚到 ready，关闭当前 run</span>
+</span></span><span style="display:flex;"><span>    conn<span style="color:#f92672">.</span>execute(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;UPDATE tasks SET status = &#39;ready&#39;, claim_lock = NULL, &#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;claim_expires = NULL, worker_pid = NULL WHERE id = ?&#34;</span>,
+</span></span><span style="display:flex;"><span>        (row[<span style="color:#e6db74">&#34;id&#34;</span>],),
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>    _end_run(conn, row[<span style="color:#e6db74">&#34;id&#34;</span>], outcome<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;reclaimed&#34;</span>, <span style="color:#f92672">...</span>)
+</span></span></code></pre></div><p>默认 TTL 是 <strong>15 分钟</strong>。Worker 可以通过 <code>heartbeat_claim()</code> 续期。</p>
+<h3 id="52-step-2-崩溃检测">
+  5.2 Step 2: 崩溃检测
+  <a class="anchor" href="#52-step-2-%e5%b4%a9%e6%ba%83%e6%a3%80%e6%b5%8b">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_pid_alive</span>(pid: Optional[int]) <span style="color:#f92672">-&gt;</span> bool:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>        os<span style="color:#f92672">.</span>kill(int(pid), <span style="color:#ae81ff">0</span>)  <span style="color:#75715e"># signal 0 = 检查进程是否存在</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">ProcessLookupError</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">False</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">PermissionError</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">True</span>  <span style="color:#75715e"># 存在但无权 signal</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Linux 额外检查 zombie 状态</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> sys<span style="color:#f92672">.</span>platform <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;linux&#34;</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;/proc/</span><span style="color:#e6db74">{</span>pid<span style="color:#e6db74">}</span><span style="color:#e6db74">/status&#34;</span>, <span style="color:#e6db74">&#34;r&#34;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">for</span> line <span style="color:#f92672">in</span> f:
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">if</span> line<span style="color:#f92672">.</span>startswith(<span style="color:#e6db74">&#34;State:&#34;</span>) <span style="color:#f92672">and</span> <span style="color:#e6db74">&#34;Z&#34;</span> <span style="color:#f92672">in</span> line:
+</span></span><span style="display:flex;"><span>                    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">False</span>  <span style="color:#75715e"># zombie = 已退出但未 reap</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">True</span>
+</span></span></code></pre></div><p><strong>Zombie 处理是一个精妙细节</strong>。<code>os.kill(pid, 0)</code> 对 zombie 进程返回成功（因为进程表项还在），但 zombie 实际上已经死了。Hermes 通过检查 <code>/proc/&lt;pid&gt;/status</code> 的 <code>State:</code> 行来识别 zombie。</p>
+<h3 id="53-step-3-依赖推进">
+  5.3 Step 3: 依赖推进
+  <a class="anchor" href="#53-step-3-%e4%be%9d%e8%b5%96%e6%8e%a8%e8%bf%9b">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">recompute_ready</span>(conn: sqlite3<span style="color:#f92672">.</span>Connection) <span style="color:#f92672">-&gt;</span> int:
+</span></span><span style="display:flex;"><span>    promoted <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> write_txn(conn):
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> row <span style="color:#f92672">in</span> conn<span style="color:#f92672">.</span>execute(<span style="color:#e6db74">&#34;SELECT id FROM tasks WHERE status = &#39;todo&#39;&#34;</span>):
+</span></span><span style="display:flex;"><span>            task_id <span style="color:#f92672">=</span> row[<span style="color:#e6db74">&#34;id&#34;</span>]
+</span></span><span style="display:flex;"><span>            parents <span style="color:#f92672">=</span> conn<span style="color:#f92672">.</span>execute(
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;SELECT t.status FROM tasks t JOIN task_links l &#34;</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;ON l.parent_id = t.id WHERE l.child_id = ?&#34;</span>,
+</span></span><span style="display:flex;"><span>                (task_id,),
+</span></span><span style="display:flex;"><span>            )<span style="color:#f92672">.</span>fetchall()
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> all(p[<span style="color:#e6db74">&#34;status&#34;</span>] <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;done&#34;</span> <span style="color:#66d9ef">for</span> p <span style="color:#f92672">in</span> parents):
+</span></span><span style="display:flex;"><span>                conn<span style="color:#f92672">.</span>execute(
+</span></span><span style="display:flex;"><span>                    <span style="color:#e6db74">&#34;UPDATE tasks SET status = &#39;ready&#39; &#34;</span>
+</span></span><span style="display:flex;"><span>                    <span style="color:#e6db74">&#34;WHERE id = ? AND status = &#39;todo&#39;&#34;</span>,
+</span></span><span style="display:flex;"><span>                    (task_id,),
+</span></span><span style="display:flex;"><span>                )
+</span></span><span style="display:flex;"><span>                promoted <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> promoted
+</span></span></code></pre></div><p>这个算法的时间复杂度是 <strong>O(T × P)</strong>，其中 T 是 todo 任务数，P 是平均父任务数。在典型场景下（几十个任务，每个任务 1-3 个父任务），这个开销几乎可以忽略。</p>
+<h3 id="54-step-4-派生-worker">
+  5.4 Step 4: 派生 Worker
+  <a class="anchor" href="#54-step-4-%e6%b4%be%e7%94%9f-worker">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_default_spawn</span>(task: Task, workspace: str) <span style="color:#f92672">-&gt;</span> Optional[int]:
+</span></span><span style="display:flex;"><span>    cmd <span style="color:#f92672">=</span> [
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;hermes&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;-p&#34;</span>, task<span style="color:#f92672">.</span>assignee,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;--skills&#34;</span>, <span style="color:#e6db74">&#34;kanban-worker&#34;</span>,  <span style="color:#75715e"># 自动加载 worker 技能</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;chat&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;-q&#34;</span>, <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;work kanban task </span><span style="color:#e6db74">{</span>task<span style="color:#f92672">.</span>id<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>,
+</span></span><span style="display:flex;"><span>    ]
+</span></span><span style="display:flex;"><span>    env <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;HERMES_KANBAN_TASK&#34;</span>: task<span style="color:#f92672">.</span>id,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;HERMES_KANBAN_WORKSPACE&#34;</span>: workspace,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;HERMES_PROFILE&#34;</span>: task<span style="color:#f92672">.</span>assignee,
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    proc <span style="color:#f92672">=</span> subprocess<span style="color:#f92672">.</span>Popen(
+</span></span><span style="display:flex;"><span>        cmd,
+</span></span><span style="display:flex;"><span>        cwd<span style="color:#f92672">=</span>workspace,
+</span></span><span style="display:flex;"><span>        stdin<span style="color:#f92672">=</span>subprocess<span style="color:#f92672">.</span>DEVNULL,
+</span></span><span style="display:flex;"><span>        stdout<span style="color:#f92672">=</span>log_f,          <span style="color:#75715e"># 输出重定向到日志</span>
+</span></span><span style="display:flex;"><span>        stderr<span style="color:#f92672">=</span>subprocess<span style="color:#f92672">.</span>STDOUT,
+</span></span><span style="display:flex;"><span>        env<span style="color:#f92672">=</span>env,
+</span></span><span style="display:flex;"><span>        start_new_session<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>, <span style="color:#75715e"># 独立进程组</span>
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> proc<span style="color:#f92672">.</span>pid
+</span></span></code></pre></div><p><strong>关键设计决策</strong>：</p>
+<ul>
+<li><code>start_new_session=True</code> 创建新的进程组——父进程退出后 Worker 不会收到 SIGHUP</li>
+<li>输出重定向到 <code>$HERMES_HOME/kanban/logs/&lt;task_id&gt;.log</code>——单代轮换，2MB 上限</li>
+<li><code>stdin=DEVNULL</code>——Worker 不接收终端输入（fire-and-forget 模式）</li>
+</ul>
+<h3 id="55-派生失败熔断">
+  5.5 派生失败熔断
+  <a class="anchor" href="#55-%e6%b4%be%e7%94%9f%e5%a4%b1%e8%b4%a5%e7%86%94%e6%96%ad">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_record_spawn_failure</span>(conn, task_id, error, failure_limit<span style="color:#f92672">=</span><span style="color:#ae81ff">5</span>):
+</span></span><span style="display:flex;"><span>    failures <span style="color:#f92672">=</span> row[<span style="color:#e6db74">&#34;spawn_failures&#34;</span>] <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> failures <span style="color:#f92672">&gt;=</span> failure_limit:
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># 超过限制 → 自动 block</span>
+</span></span><span style="display:flex;"><span>        conn<span style="color:#f92672">.</span>execute(
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;UPDATE tasks SET status = &#39;blocked&#39;, &#34;</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;spawn_failures = ?, last_spawn_error = ? WHERE id = ?&#34;</span>,
+</span></span><span style="display:flex;"><span>            (failures, error[:<span style="color:#ae81ff">500</span>], task_id),
+</span></span><span style="display:flex;"><span>        )
+</span></span><span style="display:flex;"><span>        _append_event(conn, task_id, <span style="color:#e6db74">&#34;gave_up&#34;</span>, {<span style="color:#f92672">...</span>})
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># 重置为 ready，下次 tick 重试</span>
+</span></span><span style="display:flex;"><span>        conn<span style="color:#f92672">.</span>execute(
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;UPDATE tasks SET status = &#39;ready&#39;, spawn_failures = ?&#34;</span>,
+</span></span><span style="display:flex;"><span>            (failures, task_id),
+</span></span><span style="display:flex;"><span>        )
+</span></span></code></pre></div><p>默认 <strong>5 次连续失败后自动 block</strong>，防止调度器对无法修复的任务无限重试。</p>
+<hr>
+<h2 id="6-kanban-toolsagent-的结构化交接面">
+  §6 Kanban Tools：Agent 的结构化交接面
+  <a class="anchor" href="#6-kanban-toolsagent-%e7%9a%84%e7%bb%93%e6%9e%84%e5%8c%96%e4%ba%a4%e6%8e%a5%e9%9d%a2">#</a>
+</h2>
+<p>Kanban 工具<strong>只在被调度器派生的 Worker 进程中可用</strong>。普通 <code>hermes chat</code> 会话看不到这些工具。</p>
+<h3 id="61-环境门控">
+  6.1 环境门控
+  <a class="anchor" href="#61-%e7%8e%af%e5%a2%83%e9%97%a8%e6%8e%a7">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># kanban_tools.py</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_check_kanban_mode</span>() <span style="color:#f92672">-&gt;</span> bool:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> bool(os<span style="color:#f92672">.</span>environ<span style="color:#f92672">.</span>get(<span style="color:#e6db74">&#34;HERMES_KANBAN_TASK&#34;</span>))
+</span></span></code></pre></div><p>只有环境变量 <code>HERMES_KANBAN_TASK</code> 存在时（由 <code>_default_spawn</code> 设置），工具才会注册到模型的工具 schema 中。这是<strong>最小权限原则</strong>的体现——普通会话不需要也不应该看到 Kanban 工具。</p>
+<h3 id="62-七种工具">
+  6.2 七种工具
+  <a class="anchor" href="#62-%e4%b8%83%e7%a7%8d%e5%b7%a5%e5%85%b7">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>工具</th>
+          <th>用途</th>
+          <th>必需参数</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>kanban_show</code></td>
+          <td>读取任务完整状态</td>
+          <td><code>task_id</code>（可选，默认取 env）</td>
+      </tr>
+      <tr>
+          <td><code>kanban_create</code></td>
+          <td>创建子任务（Orchestrator 用）</td>
+          <td><code>title</code>, <code>assignee</code></td>
+      </tr>
+      <tr>
+          <td><code>kanban_complete</code></td>
+          <td>标记任务完成</td>
+          <td><code>summary</code> 或 <code>result</code></td>
+      </tr>
+      <tr>
+          <td><code>kanban_block</code></td>
+          <td>阻塞任务等待人工输入</td>
+          <td><code>reason</code></td>
+      </tr>
+      <tr>
+          <td><code>kanban_comment</code></td>
+          <td>添加评论到线程</td>
+          <td><code>body</code></td>
+      </tr>
+      <tr>
+          <td><code>kanban_heartbeat</code></td>
+          <td>发送存活信号</td>
+          <td>无</td>
+      </tr>
+      <tr>
+          <td><code>kanban_link</code></td>
+          <td>添加依赖边</td>
+          <td><code>parent_id</code>, <code>child_id</code></td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="63-结构化交接">
+  6.3 结构化交接
+  <a class="anchor" href="#63-%e7%bb%93%e6%9e%84%e5%8c%96%e4%ba%a4%e6%8e%a5">#</a>
+</h3>
+<p><code>kanban_complete</code> 的设计特别值得注意——它区分了人类可读的 <code>summary</code> 和机器可读的 <code>metadata</code>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>kanban_complete(
+</span></span><span style="display:flex;"><span>    summary<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;shipped rate limiter — token bucket, keys on user_id with IP fallback, 14 tests pass&#34;</span>,
+</span></span><span style="display:flex;"><span>    metadata<span style="color:#f92672">=</span>{
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;changed_files&#34;</span>: [<span style="color:#e6db74">&#34;rate_limiter.py&#34;</span>, <span style="color:#e6db74">&#34;tests/test_rate_limiter.py&#34;</span>],
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;tests_run&#34;</span>: <span style="color:#ae81ff">14</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;tests_passed&#34;</span>: <span style="color:#ae81ff">14</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;decisions&#34;</span>: [<span style="color:#e6db74">&#34;user_id primary, IP fallback for unauthenticated requests&#34;</span>],
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>)
+</span></span></code></pre></div><p>下游 Agent 通过 <code>build_worker_context()</code> 读取这些交接数据：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 父任务的 run.summary 和 run.metadata 会被注入到子任务的 prompt 中</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">## Parent task results</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">### t_a3f2b1c7</span>
+</span></span><span style="display:flex;"><span>shipped rate limiter <span style="color:#960050;background-color:#1e0010">—</span> token bucket<span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span>_metadata_: <span style="color:#960050;background-color:#1e0010">`</span>{<span style="color:#e6db74">&#34;changed_files&#34;</span>: [<span style="color:#f92672">...</span>], <span style="color:#e6db74">&#34;tests_run&#34;</span>: <span style="color:#ae81ff">14</span>, <span style="color:#f92672">...</span>}<span style="color:#960050;background-color:#1e0010">`</span>
+</span></span></code></pre></div><hr>
+<h2 id="7-依赖图dag-构建与循环检测">
+  §7 依赖图：DAG 构建与循环检测
+  <a class="anchor" href="#7-%e4%be%9d%e8%b5%96%e5%9b%bedag-%e6%9e%84%e5%bb%ba%e4%b8%8e%e5%be%aa%e7%8e%af%e6%a3%80%e6%b5%8b">#</a>
+</h2>
+<h3 id="71-创建时的依赖检查">
+  7.1 创建时的依赖检查
+  <a class="anchor" href="#71-%e5%88%9b%e5%bb%ba%e6%97%b6%e7%9a%84%e4%be%9d%e8%b5%96%e6%a3%80%e6%9f%a5">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">create_task</span>(conn, <span style="color:#f92672">*</span>, title, parents<span style="color:#f92672">=</span>(), <span style="color:#f92672">...</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> write_txn(conn):
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># 检查父任务是否存在</span>
+</span></span><span style="display:flex;"><span>        missing <span style="color:#f92672">=</span> _find_missing_parents(conn, parents)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> missing:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">raise</span> <span style="color:#a6e22e">ValueError</span>(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;unknown parent task(s): </span><span style="color:#e6db74">{</span><span style="color:#e6db74">&#39;, &#39;</span><span style="color:#f92672">.</span>join(missing)<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># 判断初始状态</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> parents:
+</span></span><span style="display:flex;"><span>            rows <span style="color:#f92672">=</span> conn<span style="color:#f92672">.</span>execute(
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;SELECT status FROM tasks WHERE id IN (...) &#34;</span>, parents
+</span></span><span style="display:flex;"><span>            )<span style="color:#f92672">.</span>fetchall()
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> any(r[<span style="color:#e6db74">&#34;status&#34;</span>] <span style="color:#f92672">!=</span> <span style="color:#e6db74">&#34;done&#34;</span> <span style="color:#66d9ef">for</span> r <span style="color:#f92672">in</span> rows):
+</span></span><span style="display:flex;"><span>                initial_status <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;todo&#34;</span>  <span style="color:#75715e"># 有未完成的父任务</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>                initial_status <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;ready&#34;</span>  <span style="color:#75715e"># 所有父任务都已完成</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>            initial_status <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;ready&#34;</span>
+</span></span></code></pre></div><h3 id="72-循环检测bfs">
+  7.2 循环检测（BFS）
+  <a class="anchor" href="#72-%e5%be%aa%e7%8e%af%e6%a3%80%e6%b5%8bbfs">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_would_cycle</span>(conn, parent_id, child_id) <span style="color:#f92672">-&gt;</span> bool:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;如果 parent_id 已经是 child_id 的后代，则形成环&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    seen <span style="color:#f92672">=</span> set()
+</span></span><span style="display:flex;"><span>    stack <span style="color:#f92672">=</span> [child_id]
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> stack:
+</span></span><span style="display:flex;"><span>        node <span style="color:#f92672">=</span> stack<span style="color:#f92672">.</span>pop()
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> node <span style="color:#f92672">==</span> parent_id:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">True</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> node <span style="color:#f92672">in</span> seen:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">continue</span>
+</span></span><span style="display:flex;"><span>        seen<span style="color:#f92672">.</span>add(node)
+</span></span><span style="display:flex;"><span>        rows <span style="color:#f92672">=</span> conn<span style="color:#f92672">.</span>execute(
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;SELECT child_id FROM task_links WHERE parent_id = ?&#34;</span>, (node,)
+</span></span><span style="display:flex;"><span>        )<span style="color:#f92672">.</span>fetchall()
+</span></span><span style="display:flex;"><span>        stack<span style="color:#f92672">.</span>extend(r[<span style="color:#e6db74">&#34;child_id&#34;</span>] <span style="color:#66d9ef">for</span> r <span style="color:#f92672">in</span> rows)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">False</span>
+</span></span></code></pre></div><p>这是一个标准的 <strong>BFS 可达性检查</strong>，时间复杂度 O(V+E)。在典型场景下（每个任务 1-3 个依赖），这个检查几乎瞬时完成。</p>
+<h3 id="73-后置链接的自动降级">
+  7.3 后置链接的自动降级
+  <a class="anchor" href="#73-%e5%90%8e%e7%bd%ae%e9%93%be%e6%8e%a5%e7%9a%84%e8%87%aa%e5%8a%a8%e9%99%8d%e7%ba%a7">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">link_tasks</span>(conn, parent_id, child_id):
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 检查循环...</span>
+</span></span><span style="display:flex;"><span>    conn<span style="color:#f92672">.</span>execute(<span style="color:#e6db74">&#34;INSERT OR IGNORE INTO task_links ...&#34;</span>, (parent_id, child_id))
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 如果父任务未完成，子任务从 ready 降级到 todo</span>
+</span></span><span style="display:flex;"><span>    parent_status <span style="color:#f92672">=</span> conn<span style="color:#f92672">.</span>execute(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;SELECT status FROM tasks WHERE id = ?&#34;</span>, (parent_id,)
+</span></span><span style="display:flex;"><span>    )<span style="color:#f92672">.</span>fetchone()[<span style="color:#e6db74">&#34;status&#34;</span>]
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> parent_status <span style="color:#f92672">!=</span> <span style="color:#e6db74">&#34;done&#34;</span>:
+</span></span><span style="display:flex;"><span>        conn<span style="color:#f92672">.</span>execute(
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;UPDATE tasks SET status = &#39;todo&#39; WHERE id = ? AND status = &#39;ready&#39;&#34;</span>,
+</span></span><span style="display:flex;"><span>            (child_id,),
+</span></span><span style="display:flex;"><span>        )
+</span></span></code></pre></div><p>这个设计允许<strong>动态构建 DAG</strong>——你可以在任务已经 <code>ready</code> 后再添加依赖，系统会自动将其降级为 <code>todo</code>。</p>
+<hr>
+<h2 id="8-worker-上下文构建prompt-的预算管理">
+  §8 Worker 上下文构建：Prompt 的预算管理
+  <a class="anchor" href="#8-worker-%e4%b8%8a%e4%b8%8b%e6%96%87%e6%9e%84%e5%bb%baprompt-%e7%9a%84%e9%a2%84%e7%ae%97%e7%ae%a1%e7%90%86">#</a>
+</h2>
+<p><code>build_worker_context()</code> 是 Kanban 最精巧的部分之一——它把任务状态、历史、父任务结果、评论等组装成 Worker Agent 的 prompt，同时有严格的字节上限：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>_CTX_MAX_PRIOR_ATTEMPTS <span style="color:#f92672">=</span> <span style="color:#ae81ff">10</span>      <span style="color:#75715e"># 最多显示 10 次先前尝试</span>
+</span></span><span style="display:flex;"><span>_CTX_MAX_COMMENTS       <span style="color:#f92672">=</span> <span style="color:#ae81ff">30</span>      <span style="color:#75715e"># 最多显示 30 条评论</span>
+</span></span><span style="display:flex;"><span>_CTX_MAX_FIELD_BYTES    <span style="color:#f92672">=</span> <span style="color:#ae81ff">4</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">1024</span>   <span style="color:#75715e"># 每个字段 4KB</span>
+</span></span><span style="display:flex;"><span>_CTX_MAX_BODY_BYTES     <span style="color:#f92672">=</span> <span style="color:#ae81ff">8</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">1024</span>   <span style="color:#75715e"># task.body 8KB</span>
+</span></span><span style="display:flex;"><span>_CTX_MAX_COMMENT_BYTES  <span style="color:#f92672">=</span> <span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">1024</span>   <span style="color:#75715e"># 每条评论 2KB</span>
+</span></span></code></pre></div><p><strong>上下文组装顺序</strong>：</p>
+<ol>
+<li>任务标题 + 元数据（assignee、status、workspace）</li>
+<li>task.body（需求描述）</li>
+<li>本任务的先前尝试（最近的 N 次完整展示，更早的折叠为一行标记）</li>
+<li>已完成父任务的交接结果（优先取 run.summary/metadata，回退到 task.result）</li>
+<li>该 assignee 的跨任务角色历史（最近 5 次完成的 run）</li>
+<li>评论线程（最近的 N 条完整展示，更早的折叠）</li>
+</ol>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 跨任务角色历史：给 Worker 隐式的连续性</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">## Recent work by @reviewer</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">-</span> t_x1y2z3 <span style="color:#960050;background-color:#1e0010">—</span> Review PR <span style="color:#75715e">#456 (2026-06-08): found 2 SQL injection issues</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">-</span> t_a4b5c6 <span style="color:#960050;background-color:#1e0010">—</span> Review PR <span style="color:#75715e">#789 (2026-06-07): approved with minor suggestions</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">-</span> t_d7e8f9 <span style="color:#960050;background-color:#1e0010">—</span> Review auth module (<span style="color:#ae81ff">2026</span><span style="color:#f92672">-</span><span style="color:#ae81ff">06</span><span style="color:#f92672">-</span><span style="color:#ae81ff">06</span>): blocked on missing CSRF
+</span></span></code></pre></div><p>这种设计让 Agent <strong>无需显式记忆配置</strong>就能获得工作连续性——它能看到自己（或同 profile 的 Agent）最近做了什么。</p>
+<hr>
+<h2 id="9-工作区隔离三种-workspace-模式">
+  §9 工作区隔离：三种 Workspace 模式
+  <a class="anchor" href="#9-%e5%b7%a5%e4%bd%9c%e5%8c%ba%e9%9a%94%e7%a6%bb%e4%b8%89%e7%a7%8d-workspace-%e6%a8%a1%e5%bc%8f">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>路径</th>
+          <th>生命周期</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>scratch</code></td>
+          <td><code>$HERMES_HOME/kanban/workspaces/&lt;id&gt;/</code></td>
+          <td>任务归档时 GC</td>
+          <td>研究、分析、一次性脚本</td>
+      </tr>
+      <tr>
+          <td><code>dir:&lt;path&gt;</code></td>
+          <td>用户指定的绝对路径</td>
+          <td>持久化</td>
+          <td>需要跨任务共享数据的场景</td>
+      </tr>
+      <tr>
+          <td><code>worktree</code></td>
+          <td><code>.worktrees/&lt;id&gt;/</code> 或指定路径</td>
+          <td>随 git 生命周期</td>
+          <td>并行代码开发</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>安全约束</strong>：<code>dir:</code> 和 <code>worktree</code> 模式强制要求<strong>绝对路径</strong>——相对路径被拒绝，防止 confused-deputy 攻击（<code>../../../tmp/attacker</code> 相对于调度器的 CWD 解析）。</p>
+<hr>
+<h2 id="10-通知系统gateway-集成的-human-in-the-loop">
+  §10 通知系统：Gateway 集成的 Human-in-the-Loop
+  <a class="anchor" href="#10-%e9%80%9a%e7%9f%a5%e7%b3%bb%e7%bb%9fgateway-%e9%9b%86%e6%88%90%e7%9a%84-human-in-the-loop">#</a>
+</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sql" data-lang="sql"><span style="display:flex;"><span><span style="color:#66d9ef">CREATE</span> <span style="color:#66d9ef">TABLE</span> kanban_notify_subs (
+</span></span><span style="display:flex;"><span>    task_id       TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    platform      TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,          <span style="color:#75715e">-- telegram, discord, dingtalk...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    chat_id       TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    thread_id     TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span> <span style="color:#66d9ef">DEFAULT</span> <span style="color:#e6db74">&#39;&#39;</span>,
+</span></span><span style="display:flex;"><span>    user_id       TEXT,
+</span></span><span style="display:flex;"><span>    last_event_id INTEGER <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span> <span style="color:#66d9ef">DEFAULT</span> <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">PRIMARY</span> <span style="color:#66d9ef">KEY</span> (task_id, platform, chat_id, thread_id)
+</span></span><span style="display:flex;"><span>);
+</span></span></code></pre></div><p>Gateway 的 kanban-notifier watcher 轮询 <code>task_events</code> 表，将 <code>completed</code>/<code>blocked</code> 事件推送到原始的请求者——实现了<strong>跨平台的人工介入闭环</strong>。</p>
+<hr>
+<h2 id="11-竞品对比hermes-kanban-vs-claude-code-dynamic-workflow">
+  §11 竞品对比：Hermes Kanban vs Claude Code Dynamic Workflow
+  <a class="anchor" href="#11-%e7%ab%9e%e5%93%81%e5%af%b9%e6%af%94hermes-kanban-vs-claude-code-dynamic-workflow">#</a>
+</h2>
+<h3 id="111-claude-code-多任务体系概览">
+  11.1 Claude Code 多任务体系概览
+  <a class="anchor" href="#111-claude-code-%e5%a4%9a%e4%bb%bb%e5%8a%a1%e4%bd%93%e7%b3%bb%e6%a6%82%e8%a7%88">#</a>
+</h3>
+<p>Claude Code（131,154⭐）提供了四种多任务处理方式，Dynamic Workflow 是其中最复杂的一种：</p>
+<table>
+  <thead>
+      <tr>
+          <th>方式</th>
+          <th>抽象级别</th>
+          <th>适合场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Subagents</strong></td>
+          <td>单个子任务</td>
+          <td>并行执行独立子任务（代码审查、研究）</td>
+      </tr>
+      <tr>
+          <td><strong>Agent View</strong></td>
+          <td>集中监控面板</td>
+          <td>从一个屏幕管理多个 Claude Code 会话</td>
+      </tr>
+      <tr>
+          <td><strong>Agent Teams</strong></td>
+          <td>团队协调</td>
+          <td>多个 Claude Code 实例作为&quot;团队&quot;协作，共享任务、跨 Agent 消息传递、集中管理</td>
+      </tr>
+      <tr>
+          <td><strong>Dynamic Workflows</strong></td>
+          <td>脚本化编排</td>
+          <td>大规模子 Agent 编排——Claude 编写脚本，用户可以重复运行</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>Dynamic Workflow 的核心特征</strong>（来自 Claude Code 官方文档）：</p>
+<blockquote>
+<p>&ldquo;Dynamic workflows orchestrate many subagents from a script Claude writes and you can rerun. Use them for codebase audits, large migrations, and cross-checked research.&rdquo;</p></blockquote>
+<p>关键机制：</p>
+<ol>
+<li><strong>Claude 编写脚本</strong>：用户描述目标，Claude 生成编排脚本</li>
+<li><strong>脚本派生子 Agent</strong>：脚本通过 Claude Agent SDK 或 subagent API 派生多个子 Agent</li>
+<li><strong>可重复运行</strong>：脚本可以保存并在未来重新执行</li>
+<li><strong>跨检查研究</strong>：多个子 Agent 独立分析同一问题，结果交叉验证</li>
+</ol>
+<h3 id="112-深度对比">
+  11.2 深度对比
+  <a class="anchor" href="#112-%e6%b7%b1%e5%ba%a6%e5%af%b9%e6%af%94">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>Hermes Kanban</th>
+          <th>Claude Code Dynamic Workflow</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>协调范式</strong></td>
+          <td>任务板 + DAG 调度器</td>
+          <td>Claude 编写的编排脚本</td>
+      </tr>
+      <tr>
+          <td><strong>核心抽象</strong></td>
+          <td>Task（有状态、有依赖、有历史）</td>
+          <td>Script（一次性执行的编排逻辑）</td>
+      </tr>
+      <tr>
+          <td><strong>持久化</strong></td>
+          <td>SQLite（永久，5 张表）</td>
+          <td>脚本文件（可重复运行，无内置状态存储）</td>
+      </tr>
+      <tr>
+          <td><strong>依赖管理</strong></td>
+          <td>DAG + 自动门控（<code>parents=[]</code>）</td>
+          <td>脚本内手动编排（由 Claude 在脚本中定义顺序）</td>
+      </tr>
+      <tr>
+          <td><strong>任务隔离</strong></td>
+          <td>Profile + Workspace + 独立进程</td>
+          <td>Subagent（共享上下文，SDK 级隔离）</td>
+      </tr>
+      <tr>
+          <td><strong>重试机制</strong></td>
+          <td>自动重试 + 熔断（5 次失败自动 block）</td>
+          <td>取决于脚本实现</td>
+      </tr>
+      <tr>
+          <td><strong>崩溃恢复</strong></td>
+          <td>PID 检测 + TTL 过期自动回收</td>
+          <td>取决于脚本实现</td>
+      </tr>
+      <tr>
+          <td><strong>人工介入</strong></td>
+          <td><code>kanban_block()</code> + Gateway 实时推送</td>
+          <td>Claude 请求输入 + 终端交互</td>
+      </tr>
+      <tr>
+          <td><strong>审计追踪</strong></td>
+          <td><code>task_events</code> 永久事件日志</td>
+          <td>终端输出/日志文件</td>
+      </tr>
+      <tr>
+          <td><strong>运行时</strong></td>
+          <td>进程级（<code>subprocess.Popen</code>）</td>
+          <td>SDK 级（Python/TypeScript 进程内）</td>
+      </tr>
+      <tr>
+          <td><strong>动态 DAG</strong></td>
+          <td>运行时创建任务、添加依赖</td>
+          <td>脚本运行时可动态派生，但无显式依赖图</td>
+      </tr>
+      <tr>
+          <td><strong>结构化交接</strong></td>
+          <td><code>summary</code>（人类）+ <code>metadata</code>（机器）</td>
+          <td>取决于脚本约定</td>
+      </tr>
+      <tr>
+          <td><strong>跨平台通知</strong></td>
+          <td>Telegram/Discord/DingTalk 实时推送</td>
+          <td>无内置跨平台通知</td>
+      </tr>
+      <tr>
+          <td><strong>运行时长</strong></td>
+          <td>小时/天（进程隔离）</td>
+          <td>分钟（SDK 进程内，受上下文限制）</td>
+      </tr>
+      <tr>
+          <td><strong>编程接口</strong></td>
+          <td>CLI + 7 个工具调用</td>
+          <td>Agent SDK (Python/TypeScript)</td>
+      </tr>
+      <tr>
+          <td><strong>开源</strong></td>
+          <td>MIT</td>
+          <td>Claude Code 闭源（SDK 开源）</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="113-架构差异的根本原因">
+  11.3 架构差异的根本原因
+  <a class="anchor" href="#113-%e6%9e%b6%e6%9e%84%e5%b7%ae%e5%bc%82%e7%9a%84%e6%a0%b9%e6%9c%ac%e5%8e%9f%e5%9b%a0">#</a>
+</h3>
+<p><strong>Hermes Kanban 的设计哲学</strong>：</p>
+<pre tabindex="0"><code>任务板 = 共享记忆体（Shared Memory）
+调度器 = 自动协调内核（Coordination Kernel）
+Profile = Agent 身份（Agent Identity）
+</code></pre><p>Kanban 把<strong>任务状态</strong>和<strong>Agent 执行</strong>完全解耦——调度器不知道 Agent 在做什么，只关心任务的状态变迁。Agent 通过 <code>kanban_complete</code> 报告完成，通过 <code>kanban_show</code> 读取上下文。这种设计使得：</p>
+<ul>
+<li>一个 Agent 崩溃不影响其他 Agent</li>
+<li>调度器重启后可以从数据库恢复状态</li>
+<li>任务历史永久保存</li>
+</ul>
+<p><strong>Claude Dynamic Workflow 的设计哲学</strong>：</p>
+<pre tabindex="0"><code>脚本 = 编排逻辑（Orchestration Logic）
+Subagent = 执行单元（Execution Unit）
+SDK = 运行环境（Runtime Environment）
+</code></pre><p>Dynamic Workflow 把编排逻辑交给<strong>脚本</strong>——Claude 编写一个 Python/TypeScript 脚本来派生和管理子 Agent。这更接近<strong>编程式编排</strong>（Programmatic Orchestration），而非声明式任务板。</p>
+<h3 id="114-各自的优势场景">
+  11.4 各自的优势场景
+  <a class="anchor" href="#114-%e5%90%84%e8%87%aa%e7%9a%84%e4%bc%98%e5%8a%bf%e5%9c%ba%e6%99%af">#</a>
+</h3>
+<p><strong>Hermes Kanban 更适合</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>为什么</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>需要任务持久化和审计</td>
+          <td>SQLite 永久存储 + 事件日志</td>
+      </tr>
+      <tr>
+          <td>需要自动重试和崩溃恢复</td>
+          <td>PID 检测 + TTL + 熔断</td>
+      </tr>
+      <tr>
+          <td>需要动态依赖图</td>
+          <td>运行时创建任务、DAG 自动推进</td>
+      </tr>
+      <tr>
+          <td>需要人工介入</td>
+          <td><code>kanban_block</code> + 跨平台实时通知</td>
+      </tr>
+      <tr>
+          <td>需要跨天/跨周的长周期工作</td>
+          <td>进程隔离 + 数据库持久化</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>Claude Dynamic Workflow 更适合</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>为什么</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>一次性大规模代码审计</td>
+          <td>Claude 编写脚本，运行一次即可</td>
+      </tr>
+      <tr>
+          <td>需要快速原型的编排</td>
+          <td>自然语言描述 → Claude 生成脚本</td>
+      </tr>
+      <tr>
+          <td>需要精细的 SDK 级控制</td>
+          <td>Python/TypeScript SDK 完全可编程</td>
+      </tr>
+      <tr>
+          <td>在 Claude Code 生态内闭环</td>
+          <td>与 CLAUDE.md、Skills、MCP 无缝集成</td>
+      </tr>
+      <tr>
+          <td>需要可重复运行的编排脚本</td>
+          <td>脚本可保存、版本控制、重复执行</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="115-对比总结">
+  11.5 对比总结
+  <a class="anchor" href="#115-%e5%af%b9%e6%af%94%e6%80%bb%e7%bb%93">#</a>
+</h3>
+<pre tabindex="0"><code>                    持久化 ◄────────────────────► 临时性
+                       │                              │
+Hermes Kanban ─────────┤                              ├──── Dynamic Workflow
+(任务板 = 数据库)       │                              │ (脚本 = 代码)
+                       │                              │
+                    声明式 ◄────────────────────► 编程式
+                 (定义任务 + 依赖)                (编写编排逻辑)
+                       │                              │
+                    自动协调                         手动编排
+                  (调度器驱动)                      (脚本驱动)
+</code></pre><p>Hermes Kanban 是<strong>声明式</strong>的——你定义任务和依赖，调度器自动协调。Claude Dynamic Workflow 是<strong>编程式</strong>的——你（或 Claude）编写脚本，脚本负责一切。</p>
+<hr>
+<h2 id="12-总结">
+  §12 总结
+  <a class="anchor" href="#12-%e6%80%bb%e7%bb%93">#</a>
+</h2>
+<h3 id="核心要点">
+  核心要点
+  <a class="anchor" href="#%e6%a0%b8%e5%bf%83%e8%a6%81%e7%82%b9">#</a>
+</h3>
+<ul>
+<li><strong>Hermes Kanban 是一个 SQLite-backed 的多 Agent 协调内核</strong>，不是 UI 层</li>
+<li><strong>5 张表承载所有协调语义</strong>：tasks（状态机）、task_links（DAG）、task_runs（尝试历史）、task_comments（通信）、task_events（审计）</li>
+<li><strong>四步调度循环</strong>：回收过期锁 → 检测崩溃 → 依赖推进 → 派生 Worker</li>
+<li><strong>CAS 原子性</strong>：通过 <code>BEGIN IMMEDIATE</code> + <code>WHERE status = 'ready' AND claim_lock IS NULL</code> 保证并发安全</li>
+<li><strong>进程级隔离</strong>：每个 Worker 是独立的 <code>hermes -p &lt;profile&gt;</code> 子进程，崩溃不影响其他任务</li>
+<li><strong>结构化交接</strong>：<code>summary</code>（人类可读）+ <code>metadata</code>（机器可读）区分</li>
+<li><strong>动态 DAG</strong>：运行时可创建任务、添加依赖，系统自动处理状态推进</li>
+<li><strong>派生熔断</strong>：5 次连续失败后自动 block，防止无限重试</li>
+</ul>
+<h3 id="hermes-kanban-的独特优势">
+  Hermes Kanban 的独特优势
+  <a class="anchor" href="#hermes-kanban-%e7%9a%84%e7%8b%ac%e7%89%b9%e4%bc%98%e5%8a%bf">#</a>
+</h3>
+<ol>
+<li><strong>持久化即默认</strong>——SQLite 永久存储，不是可选插件</li>
+<li><strong>进程隔离</strong>——每个任务独立进程，崩溃自动重试</li>
+<li><strong>完整的审计追踪</strong>——<code>task_events</code> 记录每个状态变迁</li>
+<li><strong>声明式 DAG</strong>——定义任务和依赖，调度器自动协调</li>
+<li><strong>跨平台人工介入</strong>——通过 Gateway 推送通知到 Telegram/Discord/DingTalk</li>
+</ol>
+<h3 id="局限">
+  局限
+  <a class="anchor" href="#%e5%b1%80%e9%99%90">#</a>
+</h3>
+<ol>
+<li><strong>单机设计</strong>——SQLite 不支持多机分布式部署（但可以通过 NFS 共享文件系统解决）</li>
+<li><strong>轮询调度</strong>——Dispatcher 每 60 秒 tick 一次，不是事件驱动（低延迟场景不够理想）</li>
+<li><strong>无内置负载均衡</strong>——所有任务在同一台机器上派生</li>
+</ol>
+<h3 id="行动建议">
+  行动建议
+  <a class="anchor" href="#%e8%a1%8c%e5%8a%a8%e5%bb%ba%e8%ae%ae">#</a>
+</h3>
+<ul>
+<li><strong>需要持久化、审计、自动重试的长周期多 Agent 协作</strong> → Hermes Kanban</li>
+<li><strong>需要快速原型、一次性大规模编排、SDK 级精细控制</strong> → Claude Dynamic Workflow</li>
+<li><strong>混合使用</strong>：Claude 编写编排脚本（Dynamic Workflow）+ Hermes Kanban 作为持久化任务板</li>
+</ul>
+<h3 id="延伸阅读">
+  延伸阅读
+  <a class="anchor" href="#%e5%bb%b6%e4%bc%b8%e9%98%85%e8%af%bb">#</a>
+</h3>
+<ul>
+<li>Hermes Kanban 设计文档: <code>docs/hermes-kanban-v1-spec.pdf</code></li>
+<li>Kanban 教程: <a href="https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban-tutorial">https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban-tutorial</a></li>
+<li><code>kanban-orchestrator</code> 技能: <code>~/.hermes/skills/devops/kanban-orchestrator/SKILL.md</code></li>
+<li><code>kanban-worker</code> 技能: <code>~/.hermes/skills/devops/kanban-worker/SKILL.md</code></li>
+<li>Claude Code Dynamic Workflow: <a href="https://code.claude.com/docs/en/dynamic_workflow">https://code.claude.com/docs/en/dynamic_workflow</a></li>
+<li>Claude Code Subagents: <a href="https://code.claude.com/docs/en/subagents">https://code.claude.com/docs/en/subagents</a></li>
+<li>Claude Agent SDK: <a href="https://code.claude.com/docs/en/agent-sdk">https://code.claude.com/docs/en/agent-sdk</a></li>
+</ul>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#hermes-agent-kanban-深度解析原理实现与竞品分析">Hermes Agent Kanban 深度解析：原理、实现与竞品分析</a>
+      <ul>
+        <li><a href="#1-引言为什么是-kanban">§1 引言：为什么是 Kanban？</a></li>
+        <li><a href="#2-架构全景">§2 架构全景</a>
+          <ul>
+            <li><a href="#关键文件映射">关键文件映射</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-数据库设计5-张表的协调原语">§3 数据库设计：5 张表的协调原语</a>
+          <ul>
+            <li><a href="#31-核心-schema">3.1 核心 Schema</a></li>
+            <li><a href="#32-设计权衡">3.2 设计权衡</a></li>
+            <li><a href="#33-幂等性设计">3.3 幂等性设计</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-状态机7-种状态的精确语义">§4 状态机：7 种状态的精确语义</a>
+          <ul>
+            <li><a href="#41-状态转移的原子性">4.1 状态转移的原子性</a></li>
+            <li><a href="#42-task_runs-表从任务到尝试的范式转换">4.2 <code>task_runs</code> 表：从&quot;任务&quot;到&quot;尝试&quot;的范式转换</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-调度器四步调度循环">§5 调度器：四步调度循环</a>
+          <ul>
+            <li><a href="#51-step-1-声明锁回收">5.1 Step 1: 声明锁回收</a></li>
+            <li><a href="#52-step-2-崩溃检测">5.2 Step 2: 崩溃检测</a></li>
+            <li><a href="#53-step-3-依赖推进">5.3 Step 3: 依赖推进</a></li>
+            <li><a href="#54-step-4-派生-worker">5.4 Step 4: 派生 Worker</a></li>
+            <li><a href="#55-派生失败熔断">5.5 派生失败熔断</a></li>
+          </ul>
+        </li>
+        <li><a href="#6-kanban-toolsagent-的结构化交接面">§6 Kanban Tools：Agent 的结构化交接面</a>
+          <ul>
+            <li><a href="#61-环境门控">6.1 环境门控</a></li>
+            <li><a href="#62-七种工具">6.2 七种工具</a></li>
+            <li><a href="#63-结构化交接">6.3 结构化交接</a></li>
+          </ul>
+        </li>
+        <li><a href="#7-依赖图dag-构建与循环检测">§7 依赖图：DAG 构建与循环检测</a>
+          <ul>
+            <li><a href="#71-创建时的依赖检查">7.1 创建时的依赖检查</a></li>
+            <li><a href="#72-循环检测bfs">7.2 循环检测（BFS）</a></li>
+            <li><a href="#73-后置链接的自动降级">7.3 后置链接的自动降级</a></li>
+          </ul>
+        </li>
+        <li><a href="#8-worker-上下文构建prompt-的预算管理">§8 Worker 上下文构建：Prompt 的预算管理</a></li>
+        <li><a href="#9-工作区隔离三种-workspace-模式">§9 工作区隔离：三种 Workspace 模式</a></li>
+        <li><a href="#10-通知系统gateway-集成的-human-in-the-loop">§10 通知系统：Gateway 集成的 Human-in-the-Loop</a></li>
+        <li><a href="#11-竞品对比hermes-kanban-vs-claude-code-dynamic-workflow">§11 竞品对比：Hermes Kanban vs Claude Code Dynamic Workflow</a>
+          <ul>
+            <li><a href="#111-claude-code-多任务体系概览">11.1 Claude Code 多任务体系概览</a></li>
+            <li><a href="#112-深度对比">11.2 深度对比</a></li>
+            <li><a href="#113-架构差异的根本原因">11.3 架构差异的根本原因</a></li>
+            <li><a href="#114-各自的优势场景">11.4 各自的优势场景</a></li>
+            <li><a href="#115-对比总结">11.5 对比总结</a></li>
+          </ul>
+        </li>
+        <li><a href="#12-总结">§12 总结</a>
+          <ul>
+            <li><a href="#核心要点">核心要点</a></li>
+            <li><a href="#hermes-kanban-的独特优势">Hermes Kanban 的独特优势</a></li>
+            <li><a href="#局限">局限</a></li>
+            <li><a href="#行动建议">行动建议</a></li>
+            <li><a href="#延伸阅读">延伸阅读</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
