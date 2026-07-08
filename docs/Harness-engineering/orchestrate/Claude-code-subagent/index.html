@@ -1,0 +1,5149 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  Claude Code Subagent 原理与设计实现深度解析
+  #
+
+
+&ldquo;Fork yourself when the intermediate tool output isn&rsquo;t worth keeping in your context.&rdquo; — Claude Code source code comments, src/tools/AgentTool/prompt.ts
+作为 AI 编码代理领域的标杆产品，Claude Code（Anthropic）的 Subagent 系统代表了一种对 上下文隔离、并行执行和专业化分工 的精妙工程实践。本文深入源码与官方文档，逐层拆解其设计哲学与实现细节。
+
+
+  一、引言：为什么需要 Subagent？
+  #
+
+大语言模型面临一个根本矛盾：上下文窗口是有限的，而代码库是无限的。
+当代理需要同时完成以下工作时，单一会话必然陷入困境：
+
+搜索某个 API 调用模式出现在哪些文件中（探索型）
+修改 3 个相关文件（实现型）
+阅读 2000 行日志分析错误原因（研究型）
+
+如果这些工作都在同一个会话中进行，探索产生的大量中间结果会迅速污染上下文窗口，挤占实现所需的上下文空间。Anthropic 的解决方案是 Subagent —— 将探索、研究和实现委派到独立的上下文窗口中，主会话只接收精炼的摘要。
+这与 Designing Data-Intensive Applications（DDIA）中 &ldquo;分离关注点&rdquo; 的设计原则一致：将上下文敏感的工作（探索）与上下文无关的工作（实现）解耦，使系统各部分可以独立扩展。
+
+
+  二、系统总览：四层 Agent 架构
+  #
+
+Claude Code 并非只有一个 &ldquo;子代理&rdquo; 概念，而是构建了 四层递进的代理体系：">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/orchestrate/Claude-code-subagent/">
+  <meta property="og:site_name" content="基于LLM的系统设计与实现">
+  <meta property="og:title" content="基于LLM的系统设计与实现">
+  <meta property="og:description" content="Claude Code Subagent 原理与设计实现深度解析 # “Fork yourself when the intermediate tool output isn’t worth keeping in your context.” — Claude Code source code comments, src/tools/AgentTool/prompt.ts
+作为 AI 编码代理领域的标杆产品，Claude Code（Anthropic）的 Subagent 系统代表了一种对 上下文隔离、并行执行和专业化分工 的精妙工程实践。本文深入源码与官方文档，逐层拆解其设计哲学与实现细节。
+一、引言：为什么需要 Subagent？ # 大语言模型面临一个根本矛盾：上下文窗口是有限的，而代码库是无限的。
+当代理需要同时完成以下工作时，单一会话必然陷入困境：
+搜索某个 API 调用模式出现在哪些文件中（探索型） 修改 3 个相关文件（实现型） 阅读 2000 行日志分析错误原因（研究型） 如果这些工作都在同一个会话中进行，探索产生的大量中间结果会迅速污染上下文窗口，挤占实现所需的上下文空间。Anthropic 的解决方案是 Subagent —— 将探索、研究和实现委派到独立的上下文窗口中，主会话只接收精炼的摘要。
+这与 Designing Data-Intensive Applications（DDIA）中 “分离关注点” 的设计原则一致：将上下文敏感的工作（探索）与上下文无关的工作（实现）解耦，使系统各部分可以独立扩展。
+二、系统总览：四层 Agent 架构 # Claude Code 并非只有一个 “子代理” 概念，而是构建了 四层递进的代理体系：">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>Claude Code Subagent | 基于LLM的系统设计与实现</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/orchestrate/Claude-code-subagent/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.0f1fb2b674c606d8a94a0e093648bdde2260b72442d6decdf4e373dc7ae165f7.js" integrity="sha256-Dx&#43;ytnTGBtipSg4JNki93iJgtyRC1t7N9ONz3HrhZfc=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/orchestrate/Claude-code-subagent/index.xml" title="基于LLM的系统设计与实现" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>基于LLM的系统设计与实现</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b757002e9620728c23883bffd127cb72" class="toggle"  />
+    <label for="section-b757002e9620728c23883bffd127cb72" class="flex justify-between">
+      <a role="button" class="">Platform *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Platform/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0b800a1752a4e836473ce3e89db51e41" class="toggle"  />
+    <label for="section-0b800a1752a4e836473ce3e89db51e41" class="flex justify-between">
+      <a role="button" class="">Multi-agent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="toggle"  />
+    <label for="section-5f9213ddeaf6f028a8744dae5ff54e6c" class="flex justify-between">
+      <a role="button" class="">Communication *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Communication/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Agent Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Memory</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Memory/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Reflection</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Planning</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Sandbox</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>Tool use</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Tool-use/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle" checked />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a4616e3a8c8187b439a091c2fc1c3f29" class="toggle" checked />
+    <label for="section-a4616e3a8c8187b439a091c2fc1c3f29" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/orchestrate/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/orchestrate/Claude-code-subagent/" class="active">Claude Code Subagent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/orchestrate/Claude-code-Teams/" class="">Claude Code Teams</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/orchestrate/Hermes-Kanban/" class="">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code-arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6db2f1703f556e0dbe0a7ff92bcfc2b5" class="toggle"  />
+    <label for="section-6db2f1703f556e0dbe0a7ff92bcfc2b5" class="flex justify-between">
+      <a role="button" class="">Claude Code Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code-Memory/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code-Memory/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code-Memory/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0a4f54793a95f042d99660667b3f1c3f" class="toggle"  />
+    <label for="section-0a4f54793a95f042d99660667b3f1c3f" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/managed-agent/managed-agent/" class="">Managed Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle"  />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/openclaw-sandbox-security/" class="">Openclaw Sandbox Security</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/" class="">Openclaw Conversation State Management</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/" class="">Openclaw Tool Invocation Flow</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-2a6aa8fb2d00697ce540b0c02f7975a7" class="toggle"  />
+    <label for="section-2a6aa8fb2d00697ce540b0c02f7975a7" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/long-process/Claude-code-stability/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/long-process/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/long-process/hermes-agent-goal/" class="">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/long-process/long-running-tasks/" class="">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/long-process/stability/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle"  />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">(Manus)context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Claude Code Subagent</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#claude-code-subagent-原理与设计实现深度解析">Claude Code Subagent 原理与设计实现深度解析</a>
+      <ul>
+        <li><a href="#一引言为什么需要-subagent">一、引言：为什么需要 Subagent？</a></li>
+        <li><a href="#二系统总览四层-agent-架构">二、系统总览：四层 Agent 架构</a></li>
+        <li><a href="#三subagent-定义系统">三、Subagent 定义系统</a>
+          <ul>
+            <li><a href="#31-定义来源与五级优先级">3.1 定义来源与五级优先级</a></li>
+            <li><a href="#32-定义格式markdown--yaml-frontmatter">3.2 定义格式：Markdown + YAML frontmatter</a></li>
+            <li><a href="#33-核心字段全解析">3.3 核心字段全解析</a></li>
+            <li><a href="#34-加载与热重载机制">3.4 加载与热重载机制</a></li>
+          </ul>
+        </li>
+        <li><a href="#四subagent-执行引擎">四、Subagent 执行引擎</a>
+          <ul>
+            <li><a href="#41-agenttool-核心架构">4.1 AgentTool 核心架构</a></li>
+            <li><a href="#42-完整生命周期">4.2 完整生命周期</a></li>
+            <li><a href="#43-模型解析链">4.3 模型解析链</a></li>
+            <li><a href="#44-内置-subagent">4.4 内置 Subagent</a></li>
+            <li><a href="#45-上下文注入什么到达-subagent">4.5 上下文注入：什么到达 Subagent？</a></li>
+          </ul>
+        </li>
+        <li><a href="#五fork-机制隐式派生子代理">五、Fork 机制：隐式派生子代理</a>
+          <ul>
+            <li><a href="#51-设计哲学">5.1 设计哲学</a></li>
+            <li><a href="#52-实现原理">5.2 实现原理</a></li>
+            <li><a href="#53-防递归机制">5.3 防递归机制</a></li>
+            <li><a href="#54-互斥关系">5.4 互斥关系</a></li>
+          </ul>
+        </li>
+        <li><a href="#六工具与权限控制">六、工具与权限控制</a>
+          <ul>
+            <li><a href="#61-工具过滤链resolveagenttools">6.1 工具过滤链（resolveAgentTools）</a></li>
+            <li><a href="#62-agent-工具的-allowlist-语法">6.2 Agent 工具的 Allowlist 语法</a></li>
+            <li><a href="#63-权限模式继承规则">6.3 权限模式继承规则</a></li>
+          </ul>
+        </li>
+        <li><a href="#七mcp-服务器隔离">七、MCP 服务器隔离</a>
+          <ul>
+            <li><a href="#71-两种引用方式">7.1 两种引用方式</a></li>
+            <li><a href="#72-安全策略">7.2 安全策略</a></li>
+          </ul>
+        </li>
+        <li><a href="#八持久记忆系统agent-memory">八、持久记忆系统（Agent Memory）</a>
+          <ul>
+            <li><a href="#81-三级存储范围">8.1 三级存储范围</a></li>
+            <li><a href="#82-自动能力注入">8.2 自动能力注入</a></li>
+            <li><a href="#83-安全路径检测">8.3 安全路径检测</a></li>
+          </ul>
+        </li>
+        <li><a href="#九钩子系统hooks">九、钩子系统（Hooks）</a>
+          <ul>
+            <li><a href="#91-frontmatter-钩子">9.1 Frontmatter 钩子</a></li>
+            <li><a href="#92-项目级钩子">9.2 项目级钩子</a></li>
+          </ul>
+        </li>
+        <li><a href="#十agent-teams超越-subagent-的协作">十、Agent Teams：超越 Subagent 的协作</a>
+          <ul>
+            <li><a href="#101-架构对比">10.1 架构对比</a></li>
+            <li><a href="#102-核心组件">10.2 核心组件</a></li>
+            <li><a href="#103-子代理定义在-team-中的复用">10.3 子代理定义在 Team 中的复用</a></li>
+          </ul>
+        </li>
+        <li><a href="#十一性能优化策略">十一、性能优化策略</a>
+          <ul>
+            <li><a href="#111-prompt-cache-优化">11.1 Prompt Cache 优化</a></li>
+            <li><a href="#112-后台执行模式">11.2 后台执行模式</a></li>
+            <li><a href="#113-扩展思考extended-thinking继承">11.3 扩展思考（Extended Thinking）继承</a></li>
+          </ul>
+        </li>
+        <li><a href="#十二安全设计">十二、安全设计</a>
+          <ul>
+            <li><a href="#121-权限边界">12.1 权限边界</a></li>
+            <li><a href="#122-工具沙箱">12.2 工具沙箱</a></li>
+            <li><a href="#123-插件子代理的额外限制">12.3 插件子代理的额外限制</a></li>
+          </ul>
+        </li>
+        <li><a href="#十三sdk-层面的-subagent">十三、SDK 层面的 Subagent</a></li>
+        <li><a href="#十四总结与设计哲学">十四、总结与设计哲学</a>
+          <ul>
+            <li><a href="#1-上下文隔离context-isolation">1. 上下文隔离（Context Isolation）</a></li>
+            <li><a href="#2-渐进式复杂性progressive-complexity">2. 渐进式复杂性（Progressive Complexity）</a></li>
+            <li><a href="#3-prompt-cache-优先cache-first-design">3. Prompt Cache 优先（Cache-First Design）</a></li>
+            <li><a href="#4-安全默认secure-by-default">4. 安全默认（Secure by Default）</a></li>
+            <li><a href="#5-可扩展性extensibility">5. 可扩展性（Extensibility）</a></li>
+            <li><a href="#参考文件索引">参考文件索引</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="claude-code-subagent-原理与设计实现深度解析">
+  Claude Code Subagent 原理与设计实现深度解析
+  <a class="anchor" href="#claude-code-subagent-%e5%8e%9f%e7%90%86%e4%b8%8e%e8%ae%be%e8%ae%a1%e5%ae%9e%e7%8e%b0%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90">#</a>
+</h1>
+<blockquote>
+<p>&ldquo;Fork yourself when the intermediate tool output isn&rsquo;t worth keeping in your context.&rdquo; — Claude Code source code comments, <code>src/tools/AgentTool/prompt.ts</code></p></blockquote>
+<p>作为 AI 编码代理领域的标杆产品，Claude Code（Anthropic）的 Subagent 系统代表了一种对 <strong>上下文隔离、并行执行和专业化分工</strong> 的精妙工程实践。本文深入源码与官方文档，逐层拆解其设计哲学与实现细节。</p>
+<hr>
+<h2 id="一引言为什么需要-subagent">
+  一、引言：为什么需要 Subagent？
+  <a class="anchor" href="#%e4%b8%80%e5%bc%95%e8%a8%80%e4%b8%ba%e4%bb%80%e4%b9%88%e9%9c%80%e8%a6%81-subagent">#</a>
+</h2>
+<p>大语言模型面临一个根本矛盾：<strong>上下文窗口是有限的，而代码库是无限的</strong>。</p>
+<p>当代理需要同时完成以下工作时，单一会话必然陷入困境：</p>
+<ul>
+<li>搜索某个 API 调用模式出现在哪些文件中（探索型）</li>
+<li>修改 3 个相关文件（实现型）</li>
+<li>阅读 2000 行日志分析错误原因（研究型）</li>
+</ul>
+<p>如果这些工作都在同一个会话中进行，探索产生的大量中间结果会迅速污染上下文窗口，挤占实现所需的上下文空间。Anthropic 的解决方案是 <strong>Subagent</strong> —— 将探索、研究和实现委派到独立的上下文窗口中，主会话只接收精炼的摘要。</p>
+<p>这与 Designing Data-Intensive Applications（DDIA）中 &ldquo;分离关注点&rdquo; 的设计原则一致：将上下文敏感的工作（探索）与上下文无关的工作（实现）解耦，使系统各部分可以独立扩展。</p>
+<hr>
+<h2 id="二系统总览四层-agent-架构">
+  二、系统总览：四层 Agent 架构
+  <a class="anchor" href="#%e4%ba%8c%e7%b3%bb%e7%bb%9f%e6%80%bb%e8%a7%88%e5%9b%9b%e5%b1%82-agent-%e6%9e%b6%e6%9e%84">#</a>
+</h2>
+<p>Claude Code 并非只有一个 &ldquo;子代理&rdquo; 概念，而是构建了 <strong>四层递进的代理体系</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>层次</th>
+          <th>实现方式</th>
+          <th>通信模式</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>主会话（Lead）</strong></td>
+          <td>Claude Code REPL</td>
+          <td>用户交互</td>
+          <td>日常编码、协调工作</td>
+      </tr>
+      <tr>
+          <td><strong>Subagent</strong></td>
+          <td><code>Agent</code> tool，同一进程内独立 API 调用</td>
+          <td>单向：结果回传父会话</td>
+          <td>探索、研究、代码审查</td>
+      </tr>
+      <tr>
+          <td><strong>Fork（派生）</strong></td>
+          <td>隐式 fork，共享父会话 prompt cache</td>
+          <td>异步通知，不拉取中间结果</td>
+          <td>&ldquo;中间输出不值得保留&quot;的任务</td>
+      </tr>
+      <tr>
+          <td><strong>Agent Teams</strong></td>
+          <td>独立 Claude Code 进程 + tmux/进程内</td>
+          <td>双向：共享 TaskList + Mailbox</td>
+          <td>需要相互协作的并行工作</td>
+      </tr>
+  </tbody>
+</table>
+<pre tabindex="0"><code>┌─────────────────────────────────────────────────────────────┐
+│                     主会话（Lead）                            │
+│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────┐  │
+│  │  Subagent    │  │   Fork       │  │  Agent Teammate   │  │
+│  │  (独立API)   │  │  (共享cache) │  │  (独立进程)       │  │
+│  │  结果回传    │  │  异步通知    │  │  双向通信         │  │
+│  └──────────────┘  └──────────────┘  └───────────────────┘  │
+│                                                             │
+│  Agent tool ──────────────────────────────► 调度层            │
+│  spawnMultiAgent.ts ─────────────────────► 团队协调           │
+└─────────────────────────────────────────────────────────────┘
+</code></pre><p><strong>源码参考</strong>：</p>
+<ul>
+<li>Agent tool 核心：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/AgentTool.tsx"><code>src/tools/AgentTool/AgentTool.tsx</code></a></li>
+<li>Fork 机制：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/forkSubagent.ts"><code>src/tools/AgentTool/forkSubagent.ts</code></a></li>
+<li>团队调度：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/shared/spawnMultiAgent.ts"><code>src/tools/shared/spawnMultiAgent.ts</code></a></li>
+<li>官方文档：<a href="https://code.claude.com/docs/en/sub-agents.md">Create custom subagents</a>、<a href="https://code.claude.com/docs/en/agent-teams.md">Agent teams</a></li>
+</ul>
+<hr>
+<h2 id="三subagent-定义系统">
+  三、Subagent 定义系统
+  <a class="anchor" href="#%e4%b8%89subagent-%e5%ae%9a%e4%b9%89%e7%b3%bb%e7%bb%9f">#</a>
+</h2>
+<h3 id="31-定义来源与五级优先级">
+  3.1 定义来源与五级优先级
+  <a class="anchor" href="#31-%e5%ae%9a%e4%b9%89%e6%9d%a5%e6%ba%90%e4%b8%8e%e4%ba%94%e7%ba%a7%e4%bc%98%e5%85%88%e7%ba%a7">#</a>
+</h3>
+<p>Subagent 并非只能手工创建，而是来自 <strong>五个层次</strong> 的定义源，按优先级从高到低排列：</p>
+<table>
+  <thead>
+      <tr>
+          <th>优先级</th>
+          <th>来源</th>
+          <th>范围</th>
+          <th>存储位置</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1（最高）</td>
+          <td>Managed settings</td>
+          <td>组织级</td>
+          <td>管理设置目录（企业部署）</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td><code>--agents</code> CLI flag</td>
+          <td>当前会话</td>
+          <td>内存（不持久化）</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td><code>.claude/agents/</code></td>
+          <td>当前项目</td>
+          <td>Git 追踪，团队共享</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td><code>~/.claude/agents/</code></td>
+          <td>用户全局</td>
+          <td>本地，跨项目复用</td>
+      </tr>
+      <tr>
+          <td>5（最低）</td>
+          <td>Plugin <code>agents/</code></td>
+          <td>插件范围</td>
+          <td>插件安装目录</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>设计解读</strong>：优先级从窄到宽排列 —— 最具体的定义覆盖最通用的定义。这与 CSS 的层叠规则、Linux 的配置加载顺序（<code>/etc</code> → <code>~/.config</code> → CLI flags）一脉相承。</p>
+<p><strong>源码参考</strong>：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/loadAgentsDir.ts"><code>src/tools/AgentTool/loadAgentsDir.ts</code></a> — 递归扫描代理目录，同名冲突时最近工作目录优先（v2.1.178+）。</p>
+<h3 id="32-定义格式markdown--yaml-frontmatter">
+  3.2 定义格式：Markdown + YAML frontmatter
+  <a class="anchor" href="#32-%e5%ae%9a%e4%b9%89%e6%a0%bc%e5%bc%8fmarkdown--yaml-frontmatter">#</a>
+</h3>
+<p>每个 Subagent 是一个 Markdown 文件，YAML frontmatter 定义元数据，正文即系统提示：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-markdown" data-lang="markdown"><span style="display:flex;"><span>---
+</span></span><span style="display:flex;"><span>name: code-reviewer
+</span></span><span style="display:flex;"><span>description: Reviews code for quality and best practices. Use proactively after code changes.
+</span></span><span style="display:flex;"><span>tools: Read, Grep, Glob, Bash
+</span></span><span style="display:flex;"><span>model: sonnet
+</span></span><span style="display:flex;"><span>permissionMode: default
+</span></span><span style="display:flex;"><span>maxTurns: 50
+</span></span><span style="display:flex;"><span>skills: [api-conventions, error-handling-patterns]
+</span></span><span style="display:flex;"><span>mcpServers: [github, {playwright: {type: stdio, command: npx, args: [&#34;-y&#34;, &#34;@playwright/mcp@latest&#34;]}}]
+</span></span><span style="display:flex;"><span>hooks:
+</span></span><span style="display:flex;"><span>  PreToolUse:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">-</span> matcher: &#34;Bash&#34;
+</span></span><span style="display:flex;"><span>      hooks:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">-</span> type: command
+</span></span><span style="display:flex;"><span>          command: &#34;./scripts/validate-command.sh&#34;
+</span></span><span style="display:flex;"><span>  PostToolUse:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">-</span> matcher: &#34;Edit|Write&#34;
+</span></span><span style="display:flex;"><span>      hooks:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">-</span> type: command
+</span></span><span style="display:flex;"><span>          command: &#34;./scripts/run-linter.sh&#34;
+</span></span><span style="display:flex;"><span>memory: project
+</span></span><span style="display:flex;"><span>effort: high
+</span></span><span style="display:flex;"><span>isolation: worktree
+</span></span><span style="display:flex;"><span>color: blue
+</span></span><span style="display:flex;"><span>---
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>You are a code reviewer. When invoked, analyze the code and provide
+</span></span><span style="display:flex;"><span>specific, actionable feedback on quality, security, and best practices.
+</span></span><span style="display:flex;"><span>For each issue found, explain the problem, show the current code,
+</span></span><span style="display:flex;"><span>and provide an improved version.
+</span></span></code></pre></div><h3 id="33-核心字段全解析">
+  3.3 核心字段全解析
+  <a class="anchor" href="#33-%e6%a0%b8%e5%bf%83%e5%ad%97%e6%ae%b5%e5%85%a8%e8%a7%a3%e6%9e%90">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>字段</th>
+          <th>类型</th>
+          <th>必需</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>name</code></td>
+          <td>string</td>
+          <td>✅</td>
+          <td>唯一标识符，小写字母+连字符</td>
+      </tr>
+      <tr>
+          <td><code>description</code></td>
+          <td>string</td>
+          <td>✅</td>
+          <td><strong>Claude 决定何时委派的关键</strong></td>
+      </tr>
+      <tr>
+          <td><code>tools</code></td>
+          <td>string[]</td>
+          <td>否</td>
+          <td>工具白名单，默认继承全部</td>
+      </tr>
+      <tr>
+          <td><code>disallowedTools</code></td>
+          <td>string[]</td>
+          <td>否</td>
+          <td>工具黑名单</td>
+      </tr>
+      <tr>
+          <td><code>model</code></td>
+          <td>string</td>
+          <td>否</td>
+          <td><code>sonnet</code>/<code>opus</code>/<code>haiku</code>/<code>fable</code>/完整ID/<code>inherit</code></td>
+      </tr>
+      <tr>
+          <td><code>permissionMode</code></td>
+          <td>string</td>
+          <td>否</td>
+          <td>6 种权限模式</td>
+      </tr>
+      <tr>
+          <td><code>maxTurns</code></td>
+          <td>number</td>
+          <td>否</td>
+          <td>最大代理轮次</td>
+      </tr>
+      <tr>
+          <td><code>skills</code></td>
+          <td>string[]</td>
+          <td>否</td>
+          <td>启动时预加载的技能内容</td>
+      </tr>
+      <tr>
+          <td><code>mcpServers</code></td>
+          <td>array</td>
+          <td>否</td>
+          <td>MCP 服务器（内联或引用）</td>
+      </tr>
+      <tr>
+          <td><code>hooks</code></td>
+          <td>object</td>
+          <td>否</td>
+          <td>生命周期钩子</td>
+      </tr>
+      <tr>
+          <td><code>memory</code></td>
+          <td>string</td>
+          <td>否</td>
+          <td><code>user</code>/<code>project</code>/<code>local</code></td>
+      </tr>
+      <tr>
+          <td><code>effort</code></td>
+          <td>string</td>
+          <td>否</td>
+          <td><code>low</code>/<code>medium</code>/<code>high</code>/<code>xhigh</code>/<code>max</code></td>
+      </tr>
+      <tr>
+          <td><code>isolation</code></td>
+          <td>string</td>
+          <td>否</td>
+          <td><code>worktree</code>（Git 隔离）</td>
+      </tr>
+      <tr>
+          <td><code>color</code></td>
+          <td>string</td>
+          <td>否</td>
+          <td>UI 显示颜色</td>
+      </tr>
+      <tr>
+          <td><code>initialPrompt</code></td>
+          <td>string</td>
+          <td>否</td>
+          <td>首条自动提交的用户消息</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>关键设计点</strong>：</p>
+<ul>
+<li><code>description</code> 是唯一触发自动委派的条件，因此需要写得足够精确。建议加入 &ldquo;Use proactively&rdquo; 字样鼓励主动委派。</li>
+<li><code>tools</code> 和 <code>disallowedTools</code> 可共存：先应用黑名单，再在剩余池中解析白名单。</li>
+<li>MCP 支持模式匹配：<code>mcp__github</code> 移除整个 GitHub MCP 服务器的所有工具。</li>
+</ul>
+<p><strong>源码参考</strong>：</p>
+<ul>
+<li>Zod Schema 定义：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/loadAgentsDir.ts"><code>src/tools/AgentTool/loadAgentsDir.ts</code></a> (<code>AgentJsonSchema</code>)</li>
+<li>字段解析与验证：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/utils/markdownConfigLoader.ts"><code>src/utils/markdownConfigLoader.ts</code></a></li>
+</ul>
+<h3 id="34-加载与热重载机制">
+  3.4 加载与热重载机制
+  <a class="anchor" href="#34-%e5%8a%a0%e8%bd%bd%e4%b8%8e%e7%83%ad%e9%87%8d%e8%bd%bd%e6%9c%ba%e5%88%b6">#</a>
+</h3>
+<p>Claude Code 对代理目录使用文件系统 watcher：</p>
+<ul>
+<li><strong>热重载</strong>：文件变更后几秒内自动生效，无需重启</li>
+<li><strong>例外</strong>：新创建的 <code>agents/</code> 目录需要重启（watcher 只监视已存在的目录）</li>
+<li><strong>去重报告</strong>：<code>/doctor</code> 命令可检测并报告同作用域内的重复代理名（v2.1.196+）</li>
+</ul>
+<p><strong>源码参考</strong>：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/loadAgentsDir.ts"><code>src/tools/AgentTool/loadAgentsDir.ts</code></a> — <code>loadMarkdownFilesForSubdir()</code> 递归扫描，<code>memoize</code> 缓存结果。</p>
+<hr>
+<h2 id="四subagent-执行引擎">
+  四、Subagent 执行引擎
+  <a class="anchor" href="#%e5%9b%9bsubagent-%e6%89%a7%e8%a1%8c%e5%bc%95%e6%93%8e">#</a>
+</h2>
+<h3 id="41-agenttool-核心架构">
+  4.1 AgentTool 核心架构
+  <a class="anchor" href="#41-agenttool-%e6%a0%b8%e5%bf%83%e6%9e%b6%e6%9e%84">#</a>
+</h3>
+<p>Agent tool 是 Claude Code 代理系统的 <strong>单一调度入口</strong>（<code>src/tools/AgentTool/AgentTool.tsx</code>），统一处理所有子代理类型：</p>
+<pre tabindex="0"><code>Agent tool input
+    ↓
+┌─────────────────────────────────────────────────────────┐
+│  AgentTool.tsx（调度器）                                  │
+│                                                         │
+│  1. 解析 subagent_type → loadAgentsDir() 查找定义        │
+│  2. 过滤工具池 → resolveAgentTools()                     │
+│  3. 构建系统提示 → buildEffectiveSystemPrompt()          │
+│  4. 初始化 MCP → initializeAgentMcpServers()             │
+│  5. 注册钩子 → registerFrontmatterHooks()                │
+│  6. 创建任务状态 → createProgressTracker()               │
+│  7. 执行 → runAgent.ts (query loop)                     │
+│  8. 进度更新 → updateAgentProgress()                     │
+│  9. 完成/失败 → completeAgentTask() / failAgentTask()    │
+│  10. 清理 → disconnectMCP, clearHooks, releaseColor     │
+└─────────────────────────────────────────────────────────┘
+    ↓
+Agent result (summary only)
+</code></pre><p><strong>输入 Schema</strong>（<code>src/tools/AgentTool/AgentTool.tsx</code>）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">baseInputSchema</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">z</span>.<span style="color:#66d9ef">object</span>({
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">description</span>: <span style="color:#66d9ef">z.string</span>(),        <span style="color:#75715e">// 3-5 字任务描述
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">prompt</span>: <span style="color:#66d9ef">z.string</span>(),             <span style="color:#75715e">// 任务内容
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">subagent_type</span>: <span style="color:#66d9ef">z.string</span>().<span style="color:#a6e22e">optional</span>(),
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">model</span>: <span style="color:#66d9ef">z.enum</span>([<span style="color:#e6db74">&#39;sonnet&#39;</span>, <span style="color:#e6db74">&#39;opus&#39;</span>, <span style="color:#e6db74">&#39;haiku&#39;</span>]).<span style="color:#a6e22e">optional</span>(),
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">run_in_background</span>: <span style="color:#66d9ef">z.boolean</span>().<span style="color:#a6e22e">optional</span>(),
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 多代理参数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">name</span>: <span style="color:#66d9ef">z.string</span>().<span style="color:#a6e22e">optional</span>(),
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">team_name</span>: <span style="color:#66d9ef">z.string</span>().<span style="color:#a6e22e">optional</span>(),
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">mode</span>: <span style="color:#66d9ef">permissionModeSchema</span>().<span style="color:#a6e22e">optional</span>(),
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 隔离
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">isolation</span>: <span style="color:#66d9ef">z.enum</span>([<span style="color:#e6db74">&#39;worktree&#39;</span>]).<span style="color:#a6e22e">optional</span>(),
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">cwd</span>: <span style="color:#66d9ef">z.string</span>().<span style="color:#a6e22e">optional</span>(),
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><p><strong>源码参考</strong>：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/AgentTool.tsx"><code>src/tools/AgentTool/AgentTool.tsx</code></a> — 完整工具定义，含 lazySchema 按需加载。</p>
+<h3 id="42-完整生命周期">
+  4.2 完整生命周期
+  <a class="anchor" href="#42-%e5%ae%8c%e6%95%b4%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f">#</a>
+</h3>
+<pre tabindex="0"><code>┌──────────────────────────────────────────────────────────────┐
+│                     Subagent 生命周期                         │
+│                                                              │
+│  [spawn]                                                     │
+│    │                                                         │
+│    ├─ 1. resolveAgentTools() → 计算可用工具集                 │
+│    │                                                         │
+│    ├─ 2. initializeAgentMcpServers() → 连接代理专属 MCP       │
+│    │                                                         │
+│    ├─ 3. buildEffectiveSystemPrompt() → 渲染系统提示           │
+│    │    ├─ 加载 CLAUDE.md（Explore/Plan 除外）                │
+│    │    ├─ 加载代理 memory prompt（如启用）                   │
+│    │    └─ 加载代理 skills 内容                               │
+│    │                                                         │
+│    ├─ 4. registerFrontmatterHooks() → 注册代理专属钩子        │
+│    │                                                         │
+│    ├─ 5. createAgentId() + createProgressTracker()            │
+│    │                                                         │
+│    ├─ 6. runAgent() → API 调用循环                            │
+│    │    ├─ query() → Anthropic API                           │
+│    │    ├─ handle tool calls                                 │
+│    │    ├─ updateProgress() → 实时更新进度                    │
+│    │    └─ 直到完成 / maxTurns / 中断                         │
+│    │                                                         │
+│    ├─ 7. completeAgentTask() / failAgentTask()               │
+│    │                                                         │
+│    └─ 8. cleanup()                                           │
+│         ├─ disconnectMcpServers()                            │
+│         ├─ clearSessionHooks()                               │
+│         ├─ releaseAgentColor()                               │
+│         └─ recordSidechainTranscript()                       │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+</code></pre><p><strong>源码参考</strong>：</p>
+<ul>
+<li>执行入口：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/runAgent.ts"><code>src/tools/AgentTool/runAgent.ts</code></a></li>
+<li>进度追踪：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tasks/LocalAgentTask/LocalAgentTask.tsx"><code>src/tasks/LocalAgentTask/LocalAgentTask.tsx</code></a></li>
+</ul>
+<h3 id="43-模型解析链">
+  4.3 模型解析链
+  <a class="anchor" href="#43-%e6%a8%a1%e5%9e%8b%e8%a7%a3%e6%9e%90%e9%93%be">#</a>
+</h3>
+<p>Subagent 的模型选择遵循 <strong>四级优先级</strong>（从高到低）：</p>
+<pre tabindex="0"><code>CLAUDE_CODE_SUBAGENT_MODEL 环境变量
+    ↓（未设置则继续）
+调用时的 model 参数
+    ↓（未指定则继续）
+定义中的 model frontmatter
+    ↓（未定义则继续）
+父会话模型（inherit，默认行为）
+</code></pre><p><strong>重要细节</strong>：</p>
+<ul>
+<li><code>inherit</code> 不是字符串常量，而是语义占位符：<code>resolveTeammateModel()</code> 函数将其替换为父会话的实际模型。</li>
+<li>v2.1.198+ 起，子代理还继承父会话的 <strong>extended thinking</strong> 配置（开→开，关→关），没有独立设置。</li>
+<li>组织管理员可通过 <code>availableModels</code> 策略限制子代理可用的模型。</li>
+</ul>
+<p><strong>源码参考</strong>：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/shared/spawnMultiAgent.ts"><code>src/tools/shared/spawnMultiAgent.ts</code></a> — <code>resolveTeammateModel()</code> 和 <code>getDefaultTeammateModel()</code>。</p>
+<h3 id="44-内置-subagent">
+  4.4 内置 Subagent
+  <a class="anchor" href="#44-%e5%86%85%e7%bd%ae-subagent">#</a>
+</h3>
+<p>Claude Code 自带 5 个内置 Subagent（<code>src/tools/AgentTool/built-in/</code>）：</p>
+<table>
+  <thead>
+      <tr>
+          <th>代理</th>
+          <th>模型</th>
+          <th>工具</th>
+          <th>用途</th>
+          <th>特殊行为</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Explore</strong></td>
+          <td>继承（上限 Opus）</td>
+          <td>只读：Read, Grep, Glob</td>
+          <td>代码探索、搜索</td>
+          <td>跳过 CLAUDE.md 和 git status</td>
+      </tr>
+      <tr>
+          <td><strong>Plan</strong></td>
+          <td>继承</td>
+          <td>只读</td>
+          <td>Plan mode 研究</td>
+          <td>同上</td>
+      </tr>
+      <tr>
+          <td><strong>General-purpose</strong></td>
+          <td>继承</td>
+          <td>全部</td>
+          <td>复杂多步任务</td>
+          <td>—</td>
+      </tr>
+      <tr>
+          <td><strong>statusline-setup</strong></td>
+          <td>Sonnet</td>
+          <td>受限</td>
+          <td>状态栏配置</td>
+          <td>—</td>
+      </tr>
+      <tr>
+          <td><strong>claude-code-guide</strong></td>
+          <td>Haiku</td>
+          <td>受限</td>
+          <td>Claude Code 功能问答</td>
+          <td>—</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>Explore 的模型继承策略</strong>（v2.1.198+）：</p>
+<ul>
+<li>主会话在 Claude API 上 → Explore 继承模型，上限 Opus</li>
+<li>主会话在第三方 API（Bedrock/Foundry）上 → Explore 直接继承</li>
+<li>如果用户定义了同名 Explore 代理 → 覆盖内置，使用自定义 model</li>
+</ul>
+<p><strong>源码参考</strong>：</p>
+<ul>
+<li>通用代理：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/built-in/generalPurposeAgent.ts"><code>src/tools/AgentTool/built-in/generalPurposeAgent.ts</code></a></li>
+<li>注册入口：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/builtInAgents.ts"><code>src/tools/AgentTool/builtInAgents.ts</code></a></li>
+<li>模型继承：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/utils/model/agent.ts"><code>src/utils/model/agent.ts</code></a> — <code>getAgentModel()</code></li>
+</ul>
+<h3 id="45-上下文注入什么到达-subagent">
+  4.5 上下文注入：什么到达 Subagent？
+  <a class="anchor" href="#45-%e4%b8%8a%e4%b8%8b%e6%96%87%e6%b3%a8%e5%85%a5%e4%bb%80%e4%b9%88%e5%88%b0%e8%be%be-subagent">#</a>
+</h3>
+<p>这是理解 Subagent 设计的关键：<strong>子代理不会继承父会话的完整上下文</strong>。</p>
+<table>
+  <thead>
+      <tr>
+          <th>项目</th>
+          <th>Explore</th>
+          <th>Plan</th>
+          <th>其他代理</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>CLAUDE.md</td>
+          <td>❌ 跳过</td>
+          <td>❌ 跳过</td>
+          <td>✅ 加载</td>
+      </tr>
+      <tr>
+          <td>Git status</td>
+          <td>❌ 跳过</td>
+          <td>❌ 跳过</td>
+          <td>✅ 加载</td>
+      </tr>
+      <tr>
+          <td>MCP 服务器</td>
+          <td>✅ 继承</td>
+          <td>✅ 继承</td>
+          <td>✅ 继承（+ 代理专属）</td>
+      </tr>
+      <tr>
+          <td>Skills</td>
+          <td>✅ 可用</td>
+          <td>✅ 可用</td>
+          <td>✅ 可用（+ 预加载）</td>
+      </tr>
+      <tr>
+          <td>父会话对话历史</td>
+          <td>❌ 不携带</td>
+          <td>❌ 不携带</td>
+          <td>❌ 不携带</td>
+      </tr>
+      <tr>
+          <td>代理专属系统提示</td>
+          <td>✅</td>
+          <td>✅</td>
+          <td>✅</td>
+      </tr>
+      <tr>
+          <td>代理 memory</td>
+          <td>✅（如配置）</td>
+          <td>✅（如配置）</td>
+          <td>✅（如配置）</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>设计哲学</strong>：子代理是一个 <strong>干净的 slate（干净的起点）</strong>，只携带项目上下文（CLAUDE.md、MCP、skills）和专属系统提示。这确保了探索结果不会污染主会话上下文。</p>
+<hr>
+<h2 id="五fork-机制隐式派生子代理">
+  五、Fork 机制：隐式派生子代理
+  <a class="anchor" href="#%e4%ba%94fork-%e6%9c%ba%e5%88%b6%e9%9a%90%e5%bc%8f%e6%b4%be%e7%94%9f%e5%ad%90%e4%bb%a3%e7%90%86">#</a>
+</h2>
+<h3 id="51-设计哲学">
+  5.1 设计哲学
+  <a class="anchor" href="#51-%e8%ae%be%e8%ae%a1%e5%93%b2%e5%ad%a6">#</a>
+</h3>
+<blockquote>
+<p>&ldquo;Fork yourself when the intermediate tool output isn&rsquo;t worth keeping in your context. The criterion is qualitative — &lsquo;will I need this output again&rsquo; — not task size.&rdquo;
+— <a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/prompt.ts"><code>src/tools/AgentTool/prompt.ts</code></a></p></blockquote>
+<p>Fork 是 Claude Code 中最精妙的设计之一。它的核心思想是：<strong>如果中间结果不值得保留，就不要让它进入你的上下文窗口</strong>。</p>
+<pre tabindex="0"><code>普通 Subagent          Fork
+──────────────        ──────────────
+独立 prompt cache     共享父 prompt cache
+独立系统提示           继承父系统提示（字节级精确）
+独立工具池             继承父工具池
+结果回到父会话          异步通知，不拉取中间结果
+适合 &#34;探索后总结&#34;      适合 &#34;执行后丢弃&#34;
+</code></pre><p><strong>关键优化</strong>：Fork 子代理共享父会话的 prompt cache，这意味着 <strong>fork 几乎不增加额外的 token 成本</strong> —— API 请求前缀字节完全相同，只有最后的 directive 文本块不同。</p>
+<h3 id="52-实现原理">
+  5.2 实现原理
+  <a class="anchor" href="#52-%e5%ae%9e%e7%8e%b0%e5%8e%9f%e7%90%86">#</a>
+</h3>
+<p><strong>源码参考</strong>：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/forkSubagent.ts"><code>src/tools/AgentTool/forkSubagent.ts</code></a></p>
+<h4 id="核心数据结构">
+  核心数据结构
+  <a class="anchor" href="#%e6%a0%b8%e5%bf%83%e6%95%b0%e6%8d%ae%e7%bb%93%e6%9e%84">#</a>
+</h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">FORK_AGENT</span> <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">agentType</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;fork&#39;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">whenToUse</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;Implicit fork — inherits full conversation context.&#39;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">tools</span><span style="color:#f92672">:</span> [<span style="color:#e6db74">&#39;*&#39;</span>],                    <span style="color:#75715e">// 精确继承父工具池
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">maxTurns</span>: <span style="color:#66d9ef">200</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">model</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;inherit&#39;</span>,                <span style="color:#75715e">// 保持上下文窗口长度一致
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">permissionMode</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;bubble&#39;</span>,        <span style="color:#75715e">// 权限提示冒泡到父终端
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">source</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;built-in&#39;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">getSystemPrompt</span><span style="color:#f92672">:</span> () <span style="color:#f92672">=&gt;</span> <span style="color:#e6db74">&#39;&#39;</span>,       <span style="color:#75715e">// 未使用——直接传递父会话已渲染字节
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>} <span style="color:#a6e22e">satisfies</span> <span style="color:#a6e22e">BuiltInAgentDefinition</span>;
+</span></span></code></pre></div><h4 id="消息构建算法buildforkedmessages">
+  消息构建算法（buildForkedMessages）
+  <a class="anchor" href="#%e6%b6%88%e6%81%af%e6%9e%84%e5%bb%ba%e7%ae%97%e6%b3%95buildforkedmessages">#</a>
+</h4>
+<p>为了实现 prompt cache 最大化共享，Fork 的消息构建遵循严格的字节级精确原则：</p>
+<pre tabindex="0"><code>步骤 1: 保留完整的父 assistant 消息（所有 tool_use 块、thinking、text）
+         ↓
+步骤 2: 为每个 tool_use 块生成完全相同的 placeholder result:
+         &#34;Fork started — processing in background&#34;
+         ↓
+步骤 3: 构建单一 user 消息，末尾追加 per-child directive
+         ↓
+结果: [...history, assistant(all_tool_uses), user(placeholder_results..., directive)]
+       ↑ 所有 fork 子代理的 API 请求前缀完全一致，仅最后 directive 不同
+</code></pre><p><strong>为什么这很重要？</strong> Anthropic 的 prompt caching 按字节前缀匹配。如果所有 fork 子代理的前缀完全相同，只有最后一个文本块不同，那么除了最后一个 block，其余全部命中 cache —— 这意味着 fork 的成本接近于零。</p>
+<h3 id="53-防递归机制">
+  5.3 防递归机制
+  <a class="anchor" href="#53-%e9%98%b2%e9%80%92%e5%bd%92%e6%9c%ba%e5%88%b6">#</a>
+</h3>
+<p>Fork 子代理本身包含 Agent tool，理论上可以继续 fork。但源码通过检测对话历史中的 <code>&lt;fork-boilerplate&gt;</code> 标签来阻止递归 fork：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">isInForkChild</span>(<span style="color:#a6e22e">messages</span>: <span style="color:#66d9ef">MessageType</span>[])<span style="color:#f92672">:</span> <span style="color:#66d9ef">boolean</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">messages</span>.<span style="color:#a6e22e">some</span>(<span style="color:#a6e22e">m</span> <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">m</span>.<span style="color:#66d9ef">type</span> <span style="color:#f92672">!==</span> <span style="color:#e6db74">&#39;user&#39;</span>) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">content</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">m</span>.<span style="color:#a6e22e">message</span>.<span style="color:#a6e22e">content</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>Array.<span style="color:#a6e22e">isArray</span>(<span style="color:#a6e22e">content</span>)) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">content</span>.<span style="color:#a6e22e">some</span>(
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">block</span> <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">block</span>.<span style="color:#66d9ef">type</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#39;text&#39;</span> <span style="color:#f92672">&amp;&amp;</span>
+</span></span><span style="display:flex;"><span>               <span style="color:#a6e22e">block</span>.<span style="color:#a6e22e">text</span>.<span style="color:#a6e22e">includes</span>(<span style="color:#e6db74">`&lt;</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">FORK_BOILERPLATE_TAG</span><span style="color:#e6db74">}</span><span style="color:#e6db74">&gt;`</span>),
+</span></span><span style="display:flex;"><span>    );
+</span></span><span style="display:flex;"><span>  });
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="54-互斥关系">
+  5.4 互斥关系
+  <a class="anchor" href="#54-%e4%ba%92%e6%96%a5%e5%85%b3%e7%b3%bb">#</a>
+</h3>
+<ul>
+<li><strong>Fork ↔ Coordinator mode</strong>：互斥。Coordinator 已有自己的委派模型。</li>
+<li><strong>Fork ↔ 非交互式会话</strong>：不支持。<code>getIsNonInteractiveSession()</code> 返回 true 时禁用。</li>
+</ul>
+<p><strong>源码参考</strong>：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/forkSubagent.ts"><code>src/tools/AgentTool/forkSubagent.ts</code></a> — <code>isForkSubagentEnabled()</code> 门控函数。</p>
+<hr>
+<h2 id="六工具与权限控制">
+  六、工具与权限控制
+  <a class="anchor" href="#%e5%85%ad%e5%b7%a5%e5%85%b7%e4%b8%8e%e6%9d%83%e9%99%90%e6%8e%a7%e5%88%b6">#</a>
+</h2>
+<h3 id="61-工具过滤链resolveagenttools">
+  6.1 工具过滤链（resolveAgentTools）
+  <a class="anchor" href="#61-%e5%b7%a5%e5%85%b7%e8%bf%87%e6%bb%a4%e9%93%beresolveagenttools">#</a>
+</h3>
+<p>Subagent 的工具池通过 <strong>先减后加</strong> 的方式计算：</p>
+<pre tabindex="0"><code>父会话完整工具池
+    ↓
+应用 disallowedTools（移除黑名单）
+    ↓
+如果定义了 tools → 在剩余池上取交集（白名单）
+    ↓
+最终工具池
+</code></pre><p><strong>关键规则</strong>：</p>
+<ul>
+<li>如果 <code>tools</code> 和 <code>disallowedTools</code> 共存，<code>disallowedTools</code> 先执行。</li>
+<li>一个工具同时出现在两个列表中 → 被移除（黑名单优先）。</li>
+<li>MCP 级模式：<code>mcp__github</code> 移除整个 GitHub MCP 服务器的所有工具。</li>
+</ul>
+<h3 id="62-agent-工具的-allowlist-语法">
+  6.2 Agent 工具的 Allowlist 语法
+  <a class="anchor" href="#62-agent-%e5%b7%a5%e5%85%b7%e7%9a%84-allowlist-%e8%af%ad%e6%b3%95">#</a>
+</h3>
+<p>当代理作为主线程运行时（<code>claude --agent</code>），可以通过 <code>Agent(type)</code> 语法限制可派出的子代理类型：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># 仅允许 worker 和 researcher 两种子代理</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">tools</span>: <span style="color:#ae81ff">Agent(worker, researcher), Read, Bash</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 允许所有子代理（无限制）</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">tools</span>: <span style="color:#ae81ff">Agent, Read, Bash</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 不写 Agent → 禁止任何子代理</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">tools</span>: <span style="color:#ae81ff">Read, Bash</span>
+</span></span></code></pre></div><p><strong>注意</strong>：这个语法仅对主线程代理生效。Subagent 定义中写 <code>Agent</code> 表示允许嵌套子代理（括号内的类型列表被忽略）。</p>
+<p><strong>源码参考</strong>：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/agentToolUtils.ts"><code>src/tools/AgentTool/agentToolUtils.ts</code></a> — <code>resolveAgentTools()</code> 实现。</p>
+<h3 id="63-权限模式继承规则">
+  6.3 权限模式继承规则
+  <a class="anchor" href="#63-%e6%9d%83%e9%99%90%e6%a8%a1%e5%bc%8f%e7%bb%a7%e6%89%bf%e8%a7%84%e5%88%99">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>父会话模式</th>
+          <th>子代理能否覆盖？</th>
+          <th>行为</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>bypassPermissions</code></td>
+          <td>❌ 否</td>
+          <td>强制优先，子代理也跳过权限</td>
+      </tr>
+      <tr>
+          <td><code>acceptEdits</code></td>
+          <td>❌ 否</td>
+          <td>强制优先</td>
+      </tr>
+      <tr>
+          <td><code>auto</code></td>
+          <td>❌ 否</td>
+          <td>子代理继承 auto，frontmatter 的 permissionMode 被忽略</td>
+      </tr>
+      <tr>
+          <td><code>default</code> / <code>plan</code> / <code>dontAsk</code></td>
+          <td>✅ 是</td>
+          <td>子代理可覆盖</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>设计解读</strong>：更宽松的权限模式具有强制性，防止子代理意外引入额外的权限检查。</p>
+<hr>
+<h2 id="七mcp-服务器隔离">
+  七、MCP 服务器隔离
+  <a class="anchor" href="#%e4%b8%83mcp-%e6%9c%8d%e5%8a%a1%e5%99%a8%e9%9a%94%e7%a6%bb">#</a>
+</h2>
+<h3 id="71-两种引用方式">
+  7.1 两种引用方式
+  <a class="anchor" href="#71-%e4%b8%a4%e7%a7%8d%e5%bc%95%e7%94%a8%e6%96%b9%e5%bc%8f">#</a>
+</h3>
+<p>Subagent 可以通过两种方式引用 MCP 服务器：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">mcpServers</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 方式 1: 字符串引用 → 共享父会话的 MCP 连接</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#ae81ff">github</span>
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 方式 2: 内联定义 → 子代理启动时连接，结束时断开</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">playwright</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">type</span>: <span style="color:#ae81ff">stdio</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">command</span>: <span style="color:#ae81ff">npx</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">args</span>: [<span style="color:#e6db74">&#34;-y&#34;</span>, <span style="color:#e6db74">&#34;@playwright/mcp@latest&#34;</span>]
+</span></span></code></pre></div><p><strong>关键区别</strong>：</p>
+<ul>
+<li>引用：复用父会话的连接，不增加额外开销</li>
+<li>内联：子代理独占连接，适合那些 <strong>不想出现在父会话上下文中的 MCP 工具</strong></li>
+</ul>
+<p><strong>源码参考</strong>：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/runAgent.ts"><code>src/tools/AgentTool/runAgent.ts</code></a> — <code>initializeAgentMcpServers()</code> 函数。新创建的 MCP 连接在子代理结束时清理，共享连接不关闭。</p>
+<h3 id="72-安全策略">
+  7.2 安全策略
+  <a class="anchor" href="#72-%e5%ae%89%e5%85%a8%e7%ad%96%e7%95%a5">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th>效果</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>插件子代理</td>
+          <td>不支持 <code>mcpServers</code> 和 <code>hooks</code> 字段（安全限制）</td>
+      </tr>
+      <tr>
+          <td><code>--strict-mcp-config</code></td>
+          <td>子代理仅使用指定 MCP 配置</td>
+      </tr>
+      <tr>
+          <td><code>--bare</code></td>
+          <td>跳过所有 MCP 自动发现</td>
+      </tr>
+      <tr>
+          <td>企业 MCP 策略</td>
+          <td>覆盖所有子代理，无论来源</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="八持久记忆系统agent-memory">
+  八、持久记忆系统（Agent Memory）
+  <a class="anchor" href="#%e5%85%ab%e6%8c%81%e4%b9%85%e8%ae%b0%e5%bf%86%e7%b3%bb%e7%bb%9fagent-memory">#</a>
+</h2>
+<h3 id="81-三级存储范围">
+  8.1 三级存储范围
+  <a class="anchor" href="#81-%e4%b8%89%e7%ba%a7%e5%ad%98%e5%82%a8%e8%8c%83%e5%9b%b4">#</a>
+</h3>
+<p>通过 <code>memory</code> 字段启用后，子代理获得一个跨会话持久的记忆目录：</p>
+<table>
+  <thead>
+      <tr>
+          <th>范围</th>
+          <th>路径</th>
+          <th>用途</th>
+          <th>Git 追踪</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>user</code></td>
+          <td><code>~/.claude/agent-memory/&lt;name&gt;/</code></td>
+          <td>跨项目学习</td>
+          <td>❌ 不</td>
+      </tr>
+      <tr>
+          <td><code>project</code></td>
+          <td><code>.claude/agent-memory/&lt;name&gt;/</code></td>
+          <td>项目专属知识</td>
+          <td>✅ 可</td>
+      </tr>
+      <tr>
+          <td><code>local</code></td>
+          <td><code>.claude/agent-memory-local/&lt;name&gt;/</code></td>
+          <td>项目专属，不入库</td>
+          <td>❌ 不</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>源码参考</strong>：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/agentMemory.ts"><code>src/tools/AgentTool/agentMemory.ts</code></a> — <code>getAgentMemoryDir()</code> 和 <code>isAgentMemoryPath()</code>。</p>
+<h3 id="82-自动能力注入">
+  8.2 自动能力注入
+  <a class="anchor" href="#82-%e8%87%aa%e5%8a%a8%e8%83%bd%e5%8a%9b%e6%b3%a8%e5%85%a5">#</a>
+</h3>
+<p>启用 <code>memory</code> 后，系统自动：</p>
+<ol>
+<li>将 Read/Write/Edit 工具添加到子代理的工具池</li>
+<li>在系统提示中注入记忆使用说明（读取和写入 <code>MEMORY.md</code> 的指引）</li>
+<li>自动加载 <code>MEMORY.md</code> 的前 200 行或 25KB（取较小值）</li>
+</ol>
+<h3 id="83-安全路径检测">
+  8.3 安全路径检测
+  <a class="anchor" href="#83-%e5%ae%89%e5%85%a8%e8%b7%af%e5%be%84%e6%a3%80%e6%b5%8b">#</a>
+</h3>
+<p><code>isAgentMemoryPath()</code> 函数通过规范化路径并检测前缀，防止路径穿越攻击：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">isAgentMemoryPath</span>(<span style="color:#a6e22e">absolutePath</span>: <span style="color:#66d9ef">string</span>)<span style="color:#f92672">:</span> <span style="color:#66d9ef">boolean</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">normalizedPath</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">normalize</span>(<span style="color:#a6e22e">absolutePath</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// User scope
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">normalizedPath</span>.<span style="color:#a6e22e">startsWith</span>(<span style="color:#a6e22e">join</span>(<span style="color:#a6e22e">memoryBase</span>, <span style="color:#e6db74">&#39;agent-memory&#39;</span>) <span style="color:#f92672">+</span> <span style="color:#a6e22e">sep</span>))
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// Project scope
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">normalizedPath</span>.<span style="color:#a6e22e">startsWith</span>(<span style="color:#a6e22e">join</span>(<span style="color:#a6e22e">getCwd</span>(), <span style="color:#e6db74">&#39;.claude&#39;</span>, <span style="color:#e6db74">&#39;agent-memory&#39;</span>) <span style="color:#f92672">+</span> <span style="color:#a6e22e">sep</span>))
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// Local scope
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><hr>
+<h2 id="九钩子系统hooks">
+  九、钩子系统（Hooks）
+  <a class="anchor" href="#%e4%b9%9d%e9%92%a9%e5%ad%90%e7%b3%bb%e7%bb%9fhooks">#</a>
+</h2>
+<h3 id="91-frontmatter-钩子">
+  9.1 Frontmatter 钩子
+  <a class="anchor" href="#91-frontmatter-%e9%92%a9%e5%ad%90">#</a>
+</h3>
+<p>子代理可以在 frontmatter 中定义会话级钩子：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">hooks</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">PreToolUse</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">matcher</span>: <span style="color:#e6db74">&#34;Bash&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">hooks</span>:
+</span></span><span style="display:flex;"><span>        - <span style="color:#f92672">type</span>: <span style="color:#ae81ff">command</span>
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">command</span>: <span style="color:#e6db74">&#34;./scripts/validate-command.sh&#34;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">PostToolUse</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">matcher</span>: <span style="color:#e6db74">&#34;Edit|Write&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">hooks</span>:
+</span></span><span style="display:flex;"><span>        - <span style="color:#f92672">type</span>: <span style="color:#ae81ff">command</span>
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">command</span>: <span style="color:#e6db74">&#34;./scripts/run-linter.sh&#34;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">Stop</span>:    <span style="color:#75715e"># 运行时自动转换为 SubagentStop</span>
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">type</span>: <span style="color:#ae81ff">command</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">command</span>: <span style="color:#e6db74">&#34;./scripts/notify-done.sh&#34;</span>
+</span></span></code></pre></div><p><strong>生命周期</strong>：</p>
+<ul>
+<li>钩子在子代理启动时注册（<code>registerFrontmatterHooks()</code>）</li>
+<li>子代理结束时自动清理（<code>clearSessionHooks()</code>）</li>
+<li><code>Stop</code> 事件在运行时自动转换为 <code>SubagentStop</code></li>
+</ul>
+<h3 id="92-项目级钩子">
+  9.2 项目级钩子
+  <a class="anchor" href="#92-%e9%a1%b9%e7%9b%ae%e7%ba%a7%e9%92%a9%e5%ad%90">#</a>
+</h3>
+<p>除了 frontmatter 钩子，还可以在 <code>settings.json</code> 中定义响应子代理事件的项目级钩子：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;hooks&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;SubagentStart&#34;</span>: [{
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;matcher&#34;</span>: <span style="color:#e6db74">&#34;db-agent&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;hooks&#34;</span>: [{ <span style="color:#f92672">&#34;type&#34;</span>: <span style="color:#e6db74">&#34;command&#34;</span>, <span style="color:#f92672">&#34;command&#34;</span>: <span style="color:#e6db74">&#34;./scripts/setup-db.sh&#34;</span> }]
+</span></span><span style="display:flex;"><span>    }],
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;SubagentStop&#34;</span>: [{
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;hooks&#34;</span>: [{ <span style="color:#f92672">&#34;type&#34;</span>: <span style="color:#e6db74">&#34;command&#34;</span>, <span style="color:#f92672">&#34;command&#34;</span>: <span style="color:#e6db74">&#34;./scripts/cleanup-db.sh&#34;</span> }]
+</span></span><span style="display:flex;"><span>    }]
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>源码参考</strong>：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/utils/hooks/registerFrontmatterHooks.ts"><code>src/utils/hooks/registerFrontmatterHooks.ts</code></a>、<a href="https://github.com/oboard/claude-code-rev/blob/main/src/utils/hooks/sessionHooks.ts"><code>src/utils/hooks/sessionHooks.ts</code></a></p>
+<hr>
+<h2 id="十agent-teams超越-subagent-的协作">
+  十、Agent Teams：超越 Subagent 的协作
+  <a class="anchor" href="#%e5%8d%81agent-teams%e8%b6%85%e8%b6%8a-subagent-%e7%9a%84%e5%8d%8f%e4%bd%9c">#</a>
+</h2>
+<h3 id="101-架构对比">
+  10.1 架构对比
+  <a class="anchor" href="#101-%e6%9e%b6%e6%9e%84%e5%af%b9%e6%af%94">#</a>
+</h3>
+<p>当任务不仅需要并行，还需要 <strong>相互通信和协作</strong> 时，Subagent 不再够用。Agent Teams 提供了更强大的协作模型：</p>
+<pre tabindex="0"><code>┌─────────────────────────────────────────────────────────┐
+│                    Subagent 模型                          │
+│                                                         │
+│  Lead ────► Subagent A ────► 结果回传                    │
+│       └───► Subagent B ────► 结果回传                    │
+│                                                         │
+│  ⚠ Subagent A 和 B 不能直接通信                          │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│                   Agent Teams 模型                       │
+│                                                         │
+│         ┌──────── Shared TaskList ────────┐             │
+│         │        (file locking)           │             │
+│         └──────┬──────────────┬───────────┘             │
+│                │              │                         │
+│  Lead ◄────► Teammate A ◄──► Teammate B                │
+│    ↑           │              │                         │
+│    │           └──► Mailbox ◄─┘                         │
+│    │                                                   │
+│    └─── 双向通信，每个 teammate 是独立进程                 │
+└─────────────────────────────────────────────────────────┘
+</code></pre><table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>Subagent</th>
+          <th>Agent Team</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>上下文</td>
+          <td>独立窗口，结果回传</td>
+          <td>完全独立窗口</td>
+      </tr>
+      <tr>
+          <td>通信</td>
+          <td>单向（→ 父会话）</td>
+          <td>双向（Mailbox）</td>
+      </tr>
+      <tr>
+          <td>协调</td>
+          <td>父会话管理所有工作</td>
+          <td>共享 TaskList，自协调</td>
+      </tr>
+      <tr>
+          <td>适用场景</td>
+          <td>结果重要的聚焦任务</td>
+          <td>需要讨论和协作的复杂工作</td>
+      </tr>
+      <tr>
+          <td>Token 成本</td>
+          <td>低（仅摘要回传）</td>
+          <td>高（每个 teammate 独立消耗）</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="102-核心组件">
+  10.2 核心组件
+  <a class="anchor" href="#102-%e6%a0%b8%e5%bf%83%e7%bb%84%e4%bb%b6">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>组件</th>
+          <th>角色</th>
+          <th>源码参考</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Team Lead</strong></td>
+          <td>主会话，负责任务分配</td>
+          <td><code>src/tools/AgentTool/AgentTool.tsx</code></td>
+      </tr>
+      <tr>
+          <td><strong>Teammates</strong></td>
+          <td>独立 Claude Code 进程</td>
+          <td><code>src/tools/shared/spawnMultiAgent.ts</code></td>
+      </tr>
+      <tr>
+          <td><strong>TaskList</strong></td>
+          <td>共享任务列表（文件锁防竞态）</td>
+          <td><code>src/tasks/</code> 目录</td>
+      </tr>
+      <tr>
+          <td><strong>Mailbox</strong></td>
+          <td>代理间消息系统</td>
+          <td><code>src/utils/teammateMailbox.ts</code></td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>存储结构</strong>：</p>
+<pre tabindex="0"><code>~/.claude/teams/{team-name}/config.json  # 运行时状态（会话结束后删除）
+~/.claude/tasks/{team-name}/             # 任务列表（会话间持久）
+</code></pre><p><strong>源码参考</strong>：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/shared/spawnMultiAgent.ts"><code>src/tools/shared/spawnMultiAgent.ts</code></a>、<a href="https://github.com/oboard/claude-code-rev/blob/main/src/utils/teammateMailbox.ts"><code>src/utils/teammateMailbox.ts</code></a></p>
+<h3 id="103-子代理定义在-team-中的复用">
+  10.3 子代理定义在 Team 中的复用
+  <a class="anchor" href="#103-%e5%ad%90%e4%bb%a3%e7%90%86%e5%ae%9a%e4%b9%89%e5%9c%a8-team-%e4%b8%ad%e7%9a%84%e5%a4%8d%e7%94%a8">#</a>
+</h3>
+<p>Agent Teammate 可以引用已有的 Subagent 定义：</p>
+<pre tabindex="0"><code>&#34;Spawn a teammate using the security-reviewer agent type&#34;
+    ↓
+复用 .claude/agents/security-reviewer.md 的 tools 和 model
+    ↓
+定义正文追加到 teammate 系统提示（而非替换）
+    ↓
+协调工具（SendMessage、Task 管理）始终可用
+</code></pre><p><strong>注意</strong>：当 Subagent 定义作为 Teammate 运行时，<code>skills</code> 和 <code>mcpServers</code> 字段 <strong>不被应用</strong> —— Teammate 从项目和用户设置加载这些，和普通会话一样。</p>
+<hr>
+<h2 id="十一性能优化策略">
+  十一、性能优化策略
+  <a class="anchor" href="#%e5%8d%81%e4%b8%80%e6%80%a7%e8%83%bd%e4%bc%98%e5%8c%96%e7%ad%96%e7%95%a5">#</a>
+</h2>
+<h3 id="111-prompt-cache-优化">
+  11.1 Prompt Cache 优化
+  <a class="anchor" href="#111-prompt-cache-%e4%bc%98%e5%8c%96">#</a>
+</h3>
+<p>Claude Code 对 prompt cache 的优化达到了字节级精度：</p>
+<h4 id="agent-列表分离v21199">
+  Agent 列表分离（v2.1.199+）
+  <a class="anchor" href="#agent-%e5%88%97%e8%a1%a8%e5%88%86%e7%a6%bbv21199">#</a>
+</h4>
+<p>动态代理列表曾占 fleet cache_creation tokens 的 ~10.2%。MCP 变化、权限模式变化等都会导致 tool schema 变化，进而使整个 cache 失效。</p>
+<p><strong>解决方案</strong>：将代理列表从 tool description 中分离，作为 attachment message 注入（<code>shouldInjectAgentListInMessages()</code>）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/tools/AgentTool/prompt.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">shouldInjectAgentListInMessages</span>()<span style="color:#f92672">:</span> <span style="color:#66d9ef">boolean</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">getFeatureValue_CACHED_MAY_BE_STALE</span>(<span style="color:#e6db74">&#39;tengu_agent_list_attach&#39;</span>, <span style="color:#66d9ef">false</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h4 id="fork-字节级精确">
+  Fork 字节级精确
+  <a class="anchor" href="#fork-%e5%ad%97%e8%8a%82%e7%ba%a7%e7%b2%be%e7%a1%ae">#</a>
+</h4>
+<p>如前所述，所有 fork 子代理的 API 请求前缀必须字节完全相同。实现方式是：</p>
+<ul>
+<li>Fork 子代理 <strong>不使用</strong> <code>getSystemPrompt()</code> 重建系统提示</li>
+<li>而是直接传递父会话 <strong>已渲染的字节</strong>（<code>toolUseContext.renderedSystemPrompt</code>）</li>
+</ul>
+<p>这避免了 GrowthBook 冷/热启动差异导致的 prompt 不一致。</p>
+<h3 id="112-后台执行模式">
+  11.2 后台执行模式
+  <a class="anchor" href="#112-%e5%90%8e%e5%8f%b0%e6%89%a7%e8%a1%8c%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/tools/AgentTool/AgentTool.tsx
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">PROGRESS_THRESHOLD_MS</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">2000</span>;  <span style="color:#75715e">// 2秒后显示后台提示
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">getAutoBackgroundMs</span>()<span style="color:#f92672">:</span> <span style="color:#66d9ef">number</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">isEnvTruthy</span>(<span style="color:#a6e22e">process</span>.<span style="color:#a6e22e">env</span>.<span style="color:#a6e22e">CLAUDE_AUTO_BACKGROUND_TASKS</span>) <span style="color:#f92672">||</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">getFeatureValue_CACHED_MAY_BE_STALE</span>(<span style="color:#e6db74">&#39;tengu_auto_background_agents&#39;</span>, <span style="color:#66d9ef">false</span>)) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">120</span><span style="color:#a6e22e">_000</span>;  <span style="color:#75715e">// 120秒自动后台
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>v2.1.198 起，Claude 默认将子代理运行为后台任务。子代理运行超过 120 秒自动转为后台，完成后通知。</p>
+<h3 id="113-扩展思考extended-thinking继承">
+  11.3 扩展思考（Extended Thinking）继承
+  <a class="anchor" href="#113-%e6%89%a9%e5%b1%95%e6%80%9d%e8%80%83extended-thinking%e7%bb%a7%e6%89%bf">#</a>
+</h3>
+<p>v2.1.198 起，子代理继承父会话的 extended thinking 配置：</p>
+<ul>
+<li>父会话开启 thinking → 子代理开启</li>
+<li>父会话关闭 thinking → 子代理关闭</li>
+<li><strong>没有独立的子代理 thinking 设置</strong></li>
+</ul>
+<p><strong>源码参考</strong>：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/utils/model/agent.ts"><code>src/utils/model/agent.ts</code></a></p>
+<hr>
+<h2 id="十二安全设计">
+  十二、安全设计
+  <a class="anchor" href="#%e5%8d%81%e4%ba%8c%e5%ae%89%e5%85%a8%e8%ae%be%e8%ae%a1">#</a>
+</h2>
+<h3 id="121-权限边界">
+  12.1 权限边界
+  <a class="anchor" href="#121-%e6%9d%83%e9%99%90%e8%be%b9%e7%95%8c">#</a>
+</h3>
+<p>Subagent 和 Teammate 在安全方面有严格的边界：</p>
+<table>
+  <thead>
+      <tr>
+          <th>规则</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>不能代表用户批准权限</td>
+          <td>Teammate 无法代替用户点击 &ldquo;Approve&rdquo;</td>
+      </tr>
+      <tr>
+          <td>中继声明不可信</td>
+          <td>在 auto 模式下，从其他代理中继的批准声明视为不可信输入</td>
+      </tr>
+      <tr>
+          <td>权限提示冒泡</td>
+          <td>Teammate 的权限提示上推到 Lead 会话，由用户决定</td>
+      </tr>
+      <tr>
+          <td>无法绕过拒绝</td>
+          <td>被拒绝的操作不能通过中继到其他 teammate 来绕过</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="122-工具沙箱">
+  12.2 工具沙箱
+  <a class="anchor" href="#122-%e5%b7%a5%e5%85%b7%e6%b2%99%e7%ae%b1">#</a>
+</h3>
+<p>以下工具对 Subagent 不可用（即使在 <code>tools</code> 列表中列出）：</p>
+<table>
+  <thead>
+      <tr>
+          <th>工具</th>
+          <th>原因</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>AskUserQuestion</code></td>
+          <td>依赖主会话 UI</td>
+      </tr>
+      <tr>
+          <td><code>EnterPlanMode</code></td>
+          <td>依赖主会话状态</td>
+      </tr>
+      <tr>
+          <td><code>ExitPlanMode</code></td>
+          <td>除非子代理的 permissionMode 为 <code>plan</code></td>
+      </tr>
+      <tr>
+          <td><code>ScheduleWakeup</code></td>
+          <td>依赖主会话调度</td>
+      </tr>
+      <tr>
+          <td><code>WaitForMcpServers</code></td>
+          <td>依赖主会话 MCP 状态</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="123-插件子代理的额外限制">
+  12.3 插件子代理的额外限制
+  <a class="anchor" href="#123-%e6%8f%92%e4%bb%b6%e5%ad%90%e4%bb%a3%e7%90%86%e7%9a%84%e9%a2%9d%e5%a4%96%e9%99%90%e5%88%b6">#</a>
+</h3>
+<p>通过插件安装的子代理不支持以下字段（安全原因）：</p>
+<ul>
+<li><code>hooks</code> — 防止插件注入任意命令</li>
+<li><code>mcpServers</code> — 防止插件连接到任意 MCP 服务器</li>
+<li><code>permissionMode</code> — 防止插件跳过权限检查</li>
+</ul>
+<hr>
+<h2 id="十三sdk-层面的-subagent">
+  十三、SDK 层面的 Subagent
+  <a class="anchor" href="#%e5%8d%81%e4%b8%89sdk-%e5%b1%82%e9%9d%a2%e7%9a%84-subagent">#</a>
+</h2>
+<p>Claude Agent SDK 提供了编程式定义和调用 Subagent 的 API：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">import</span> { <span style="color:#a6e22e">Agent</span> } <span style="color:#66d9ef">from</span> <span style="color:#e6db74">&#39;@anthropic-ai/claude-agent-sdk&#39;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">agent</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Agent</span>({
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">agents</span><span style="color:#f92672">:</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#39;code-reviewer&#39;</span><span style="color:#f92672">:</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">description</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;Expert code reviewer&#39;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">prompt</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;You are a senior code reviewer...&#39;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">tools</span><span style="color:#f92672">:</span> [<span style="color:#e6db74">&#39;Read&#39;</span>, <span style="color:#e6db74">&#39;Grep&#39;</span>, <span style="color:#e6db74">&#39;Glob&#39;</span>],
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">model</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;sonnet&#39;</span>,
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>  },
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><p><strong>关键环境变量</strong>：</p>
+<ul>
+<li><code>CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS=1</code> — 禁用所有内置代理，仅使用自定义代理集</li>
+<li>适用于需要将代理定义完全控制在代码中的场景</li>
+</ul>
+<p><strong>源码参考</strong>：<a href="https://github.com/oboard/claude-code-rev/blob/main/src/entrypoints/agentSdkTypes.ts"><code>src/entrypoints/agentSdkTypes.ts</code></a></p>
+<hr>
+<h2 id="十四总结与设计哲学">
+  十四、总结与设计哲学
+  <a class="anchor" href="#%e5%8d%81%e5%9b%9b%e6%80%bb%e7%bb%93%e4%b8%8e%e8%ae%be%e8%ae%a1%e5%93%b2%e5%ad%a6">#</a>
+</h2>
+<p>Claude Code 的 Subagent 系统展现了几个核心设计哲学：</p>
+<h3 id="1-上下文隔离context-isolation">
+  1. 上下文隔离（Context Isolation）
+  <a class="anchor" href="#1-%e4%b8%8a%e4%b8%8b%e6%96%87%e9%9a%94%e7%a6%bbcontext-isolation">#</a>
+</h3>
+<blockquote>
+<p>&ldquo;Subagents work within their own context window.&rdquo;</p></blockquote>
+<p>探索与实现分离是 Subagent 存在的首要理由。通过让探索工作在独立窗口中进行，主会话上下文保持清洁，只接收精炼摘要。</p>
+<h3 id="2-渐进式复杂性progressive-complexity">
+  2. 渐进式复杂性（Progressive Complexity）
+  <a class="anchor" href="#2-%e6%b8%90%e8%bf%9b%e5%bc%8f%e5%a4%8d%e6%9d%82%e6%80%a7progressive-complexity">#</a>
+</h3>
+<p>从 <strong>Subagent</strong>（单向结果回传）→ <strong>Fork</strong>（共享 cache，异步通知）→ <strong>Agent Teams</strong>（双向通信，共享 TaskList），Claude Code 提供了三层递进的并行模型。用户可以根据任务的协作需求选择最合适的层次。</p>
+<h3 id="3-prompt-cache-优先cache-first-design">
+  3. Prompt Cache 优先（Cache-First Design）
+  <a class="anchor" href="#3-prompt-cache-%e4%bc%98%e5%85%88cache-first-design">#</a>
+</h3>
+<p>所有优化决策都以最大化 cache 命中率为目标：</p>
+<ul>
+<li>Fork 的字节级精确请求前缀</li>
+<li>Agent 列表从 tool schema 中分离</li>
+<li>系统提示直接传递已渲染字节而非重建</li>
+</ul>
+<h3 id="4-安全默认secure-by-default">
+  4. 安全默认（Secure by Default）
+  <a class="anchor" href="#4-%e5%ae%89%e5%85%a8%e9%bb%98%e8%ae%a4secure-by-default">#</a>
+</h3>
+<ul>
+<li>工具继承为白名单模式（不写 <code>tools</code> = 继承全部，写了 = 仅允许列出的）</li>
+<li>权限冒泡到用户，子代理不能代替用户做决定</li>
+<li>插件子代理被额外限制（无 hooks、无 MCP、无权限模式覆盖）</li>
+</ul>
+<h3 id="5-可扩展性extensibility">
+  5. 可扩展性（Extensibility）
+  <a class="anchor" href="#5-%e5%8f%af%e6%89%a9%e5%b1%95%e6%80%a7extensibility">#</a>
+</h3>
+<ul>
+<li>Markdown 定义文件（非代码）让非开发者也能创建子代理</li>
+<li>五级优先级覆盖系统支持从个人到企业的各种场景</li>
+<li>SDK 提供编程式 API 用于自动化场景</li>
+</ul>
+<h3 id="参考文件索引">
+  参考文件索引
+  <a class="anchor" href="#%e5%8f%82%e8%80%83%e6%96%87%e4%bb%b6%e7%b4%a2%e5%bc%95">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>文件</th>
+          <th>路径</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>AgentTool 核心</td>
+          <td><a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/AgentTool.tsx"><code>src/tools/AgentTool/AgentTool.tsx</code></a></td>
+          <td>代理工具定义、输入 schema、调度逻辑</td>
+      </tr>
+      <tr>
+          <td>代理执行</td>
+          <td><a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/runAgent.ts"><code>src/tools/AgentTool/runAgent.ts</code></a></td>
+          <td>API 调用循环、MCP 初始化、进度追踪</td>
+      </tr>
+      <tr>
+          <td>定义加载</td>
+          <td><a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/loadAgentsDir.ts"><code>src/tools/AgentTool/loadAgentsDir.ts</code></a></td>
+          <td>Zod schema、目录扫描、优先级处理</td>
+      </tr>
+      <tr>
+          <td>提示构建</td>
+          <td><a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/prompt.ts"><code>src/tools/AgentTool/prompt.ts</code></a></td>
+          <td>Agent 列表注入、fork 语义说明</td>
+      </tr>
+      <tr>
+          <td>Fork 机制</td>
+          <td><a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/forkSubagent.ts"><code>src/tools/AgentTool/forkSubagent.ts</code></a></td>
+          <td>消息构建、防递归、cache 优化</td>
+      </tr>
+      <tr>
+          <td>代理记忆</td>
+          <td><a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/agentMemory.ts"><code>src/tools/AgentTool/agentMemory.ts</code></a></td>
+          <td>三级 scope、路径安全</td>
+      </tr>
+      <tr>
+          <td>通用代理</td>
+          <td><a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/built-in/generalPurposeAgent.ts"><code>src/tools/AgentTool/built-in/generalPurposeAgent.ts</code></a></td>
+          <td>内置代理定义</td>
+      </tr>
+      <tr>
+          <td>团队调度</td>
+          <td><a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/shared/spawnMultiAgent.ts"><code>src/tools/shared/spawnMultiAgent.ts</code></a></td>
+          <td>Teammate 生成、模型解析、tmux 管理</td>
+      </tr>
+      <tr>
+          <td>任务管理</td>
+          <td><a href="https://github.com/oboard/claude-code-rev/blob/main/src/tasks/LocalAgentTask/LocalAgentTask.tsx"><code>src/tasks/LocalAgentTask/LocalAgentTask.tsx</code></a></td>
+          <td>进度追踪、生命周期管理</td>
+      </tr>
+      <tr>
+          <td>代理模型</td>
+          <td><a href="https://github.com/oboard/claude-code-rev/blob/main/src/utils/model/agent.ts"><code>src/utils/model/agent.ts</code></a></td>
+          <td>模型选择、thinking 继承</td>
+      </tr>
+      <tr>
+          <td>团队邮箱</td>
+          <td><a href="https://github.com/oboard/claude-code-rev/blob/main/src/utils/teammateMailbox.ts"><code>src/utils/teammateMailbox.ts</code></a></td>
+          <td>代理间消息系统</td>
+      </tr>
+      <tr>
+          <td>工具过滤</td>
+          <td><a href="https://github.com/oboard/claude-code-rev/blob/main/src/tools/AgentTool/agentToolUtils.ts"><code>src/tools/AgentTool/agentToolUtils.ts</code></a></td>
+          <td>工具池解析</td>
+      </tr>
+      <tr>
+          <td>SDK 类型</td>
+          <td><a href="https://github.com/oboard/claude-code-rev/blob/main/src/entrypoints/agentSdkTypes.ts"><code>src/entrypoints/agentSdkTypes.ts</code></a></td>
+          <td>Agent SDK 接口定义</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>官方文档</strong>：</p>
+<ul>
+<li><a href="https://code.claude.com/docs/en/sub-agents.md">Create custom subagents</a></li>
+<li><a href="https://code.claude.com/docs/en/agent-teams.md">Agent teams</a></li>
+<li><a href="https://code.claude.com/docs/en/agents.md">Run agents in parallel</a></li>
+<li><a href="https://code.claude.com/docs/en/agent-sdk/overview.md">Agent SDK overview</a></li>
+</ul>
+<hr>
+<p><em>本文基于 Claude Code v2.1.x 源码与官方文档编写。源码参考来自 <a href="https://github.com/oboard/claude-code-rev">oboard/claude-code-rev</a> 仓库。</em></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#claude-code-subagent-原理与设计实现深度解析">Claude Code Subagent 原理与设计实现深度解析</a>
+      <ul>
+        <li><a href="#一引言为什么需要-subagent">一、引言：为什么需要 Subagent？</a></li>
+        <li><a href="#二系统总览四层-agent-架构">二、系统总览：四层 Agent 架构</a></li>
+        <li><a href="#三subagent-定义系统">三、Subagent 定义系统</a>
+          <ul>
+            <li><a href="#31-定义来源与五级优先级">3.1 定义来源与五级优先级</a></li>
+            <li><a href="#32-定义格式markdown--yaml-frontmatter">3.2 定义格式：Markdown + YAML frontmatter</a></li>
+            <li><a href="#33-核心字段全解析">3.3 核心字段全解析</a></li>
+            <li><a href="#34-加载与热重载机制">3.4 加载与热重载机制</a></li>
+          </ul>
+        </li>
+        <li><a href="#四subagent-执行引擎">四、Subagent 执行引擎</a>
+          <ul>
+            <li><a href="#41-agenttool-核心架构">4.1 AgentTool 核心架构</a></li>
+            <li><a href="#42-完整生命周期">4.2 完整生命周期</a></li>
+            <li><a href="#43-模型解析链">4.3 模型解析链</a></li>
+            <li><a href="#44-内置-subagent">4.4 内置 Subagent</a></li>
+            <li><a href="#45-上下文注入什么到达-subagent">4.5 上下文注入：什么到达 Subagent？</a></li>
+          </ul>
+        </li>
+        <li><a href="#五fork-机制隐式派生子代理">五、Fork 机制：隐式派生子代理</a>
+          <ul>
+            <li><a href="#51-设计哲学">5.1 设计哲学</a></li>
+            <li><a href="#52-实现原理">5.2 实现原理</a></li>
+            <li><a href="#53-防递归机制">5.3 防递归机制</a></li>
+            <li><a href="#54-互斥关系">5.4 互斥关系</a></li>
+          </ul>
+        </li>
+        <li><a href="#六工具与权限控制">六、工具与权限控制</a>
+          <ul>
+            <li><a href="#61-工具过滤链resolveagenttools">6.1 工具过滤链（resolveAgentTools）</a></li>
+            <li><a href="#62-agent-工具的-allowlist-语法">6.2 Agent 工具的 Allowlist 语法</a></li>
+            <li><a href="#63-权限模式继承规则">6.3 权限模式继承规则</a></li>
+          </ul>
+        </li>
+        <li><a href="#七mcp-服务器隔离">七、MCP 服务器隔离</a>
+          <ul>
+            <li><a href="#71-两种引用方式">7.1 两种引用方式</a></li>
+            <li><a href="#72-安全策略">7.2 安全策略</a></li>
+          </ul>
+        </li>
+        <li><a href="#八持久记忆系统agent-memory">八、持久记忆系统（Agent Memory）</a>
+          <ul>
+            <li><a href="#81-三级存储范围">8.1 三级存储范围</a></li>
+            <li><a href="#82-自动能力注入">8.2 自动能力注入</a></li>
+            <li><a href="#83-安全路径检测">8.3 安全路径检测</a></li>
+          </ul>
+        </li>
+        <li><a href="#九钩子系统hooks">九、钩子系统（Hooks）</a>
+          <ul>
+            <li><a href="#91-frontmatter-钩子">9.1 Frontmatter 钩子</a></li>
+            <li><a href="#92-项目级钩子">9.2 项目级钩子</a></li>
+          </ul>
+        </li>
+        <li><a href="#十agent-teams超越-subagent-的协作">十、Agent Teams：超越 Subagent 的协作</a>
+          <ul>
+            <li><a href="#101-架构对比">10.1 架构对比</a></li>
+            <li><a href="#102-核心组件">10.2 核心组件</a></li>
+            <li><a href="#103-子代理定义在-team-中的复用">10.3 子代理定义在 Team 中的复用</a></li>
+          </ul>
+        </li>
+        <li><a href="#十一性能优化策略">十一、性能优化策略</a>
+          <ul>
+            <li><a href="#111-prompt-cache-优化">11.1 Prompt Cache 优化</a></li>
+            <li><a href="#112-后台执行模式">11.2 后台执行模式</a></li>
+            <li><a href="#113-扩展思考extended-thinking继承">11.3 扩展思考（Extended Thinking）继承</a></li>
+          </ul>
+        </li>
+        <li><a href="#十二安全设计">十二、安全设计</a>
+          <ul>
+            <li><a href="#121-权限边界">12.1 权限边界</a></li>
+            <li><a href="#122-工具沙箱">12.2 工具沙箱</a></li>
+            <li><a href="#123-插件子代理的额外限制">12.3 插件子代理的额外限制</a></li>
+          </ul>
+        </li>
+        <li><a href="#十三sdk-层面的-subagent">十三、SDK 层面的 Subagent</a></li>
+        <li><a href="#十四总结与设计哲学">十四、总结与设计哲学</a>
+          <ul>
+            <li><a href="#1-上下文隔离context-isolation">1. 上下文隔离（Context Isolation）</a></li>
+            <li><a href="#2-渐进式复杂性progressive-complexity">2. 渐进式复杂性（Progressive Complexity）</a></li>
+            <li><a href="#3-prompt-cache-优先cache-first-design">3. Prompt Cache 优先（Cache-First Design）</a></li>
+            <li><a href="#4-安全默认secure-by-default">4. 安全默认（Secure by Default）</a></li>
+            <li><a href="#5-可扩展性extensibility">5. 可扩展性（Extensibility）</a></li>
+            <li><a href="#参考文件索引">参考文件索引</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
