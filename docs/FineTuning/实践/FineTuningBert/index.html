@@ -151,19 +151,19 @@ Bert fine-tuning 二分类">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
 <meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/">
-  <meta property="og:site_name" content="基于LLM的系统设计与实现">
+  <meta property="og:site_name" content="Modern Agent">
   <meta property="og:title" content="Fine Tuning-Bert">
   <meta property="og:description" content="基于bert的二分类 # 代码 - 全参FT,非PEFT import datasets from datasets import load_dataset from datasets import load_metric from transformers import AutoTokenizer, AutoModel from transformers import AutoModelForSequenceClassification from transformers import TrainingArguments from transformers import Trainer import transformers from transformers import DataCollatorWithPadding from sklearn.metrics import f1_score import torch import numpy as np import os import torch.nn as nn SEED=42 # ALBERT是一种压缩过的BERT MODEL_NAME = &#34;albert-base-v2&#34; DATASET_NAME = &#34;glue&#34; # 一组NLP评测任务 DATASET_TASK = &#34;mrpc&#34; # MRPC 是其中一个子任务 -- Microsoft Research Paraphrase Corpus # 在Bert的基础上加了一个线性分类器 class MyClassifier(torch.nn.Module): def __init__(self, backbone): super().__init__() self.bert_encoder = backbone self.linear = torch.nn.Linear(768, 2) def compute_loss(self, logits, labels): loss_fct = nn.CrossEntropyLoss() return loss_fct(logits, labels) def forward(self, input_ids, attention_mask,labels=None): output = self.bert_encoder(input_ids=input_ids, attention_mask=attention_mask) output = output.last_hidden_state[:, 0, :] output = self.linear(output) if labels is not None: loss = self.compute_loss(output, labels) return loss, output return output # 加载数据集对应的评估方法 glue_metric = datasets.load_metric(DATASET_NAME, DATASET_TASK) def compute_metrics(eval_pred): logits, labels = eval_pred predictions = np.argmax(logits, axis=-1) return glue_metric.compute(predictions=predictions, references=labels) # 加载数据集 raw_datasets = load_dataset(DATASET_NAME,DATASET_TASK) # 训练集 raw_train_dataset = raw_datasets[&#34;train&#34;] # 验证集 raw_valid_dataset = raw_datasets[&#34;validation&#34;] columns = raw_train_dataset.column_names # 设置随机种子 transformers.set_seed(SEED) # 定义tokenizer tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME) # 定义数据处理函数，把原始数据转成input_ids, attention_mask, labels def process_fn(examples): inputs = tokenizer(examples[&#34;sentence1&#34;], examples[&#34;sentence2&#34;], truncation=True, max_length=128) examples[&#34;input_ids&#34;] = inputs[&#34;input_ids&#34;] examples[&#34;attention_mask&#34;] = inputs[&#34;attention_mask&#34;] examples[&#34;labels&#34;] = examples[&#34;label&#34;] return examples tokenized_train_dataset = raw_train_dataset.map( process_fn, batched=True, remove_columns=columns ) tokenized_valid_dataset = raw_valid_dataset.map( process_fn, batched=True, remove_columns=columns ) # 定义数据校准器（自动生成batch） collater = DataCollatorWithPadding( tokenizer=tokenizer, return_tensors=&#34;pt&#34;, ) # 定义模型 -- 其实Transformer可以直接用AutoModelForSequenceClassification #model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=2) # 我手工写了分类器层，为了方便大家理解什么叫在Transformer上面做分类任务 backbone = AutoModel.from_pretrained(MODEL_NAME) model = MyClassifier(backbone) # 定义训练参数 training_args = TrainingArguments( output_dir=&#34;./output&#34;, # checkpoint保存路径 evaluation_strategy=&#34;steps&#34;, # 每N步做一次eval overwrite_output_dir=True, num_train_epochs=1, # 训练epoch数 per_device_train_batch_size=8, # 每张卡的batch大小 gradient_accumulation_steps=4, # 累加几个step做一次参数更新 per_device_eval_batch_size=8, # evaluation batch size logging_steps=20, # 每20步eval一次 save_steps=20, # 每20步保存一个checkpoint learning_rate=2e-5, # 学习率 warmup_ratio=0.1, # 预热（可选） ) # 定义训练器 trainer = Trainer( model=model, # 待训练模型 args=training_args, # 训练参数 data_collator=collater, # 数据校准器 train_dataset=tokenized_train_dataset, # 训练集 eval_dataset=tokenized_valid_dataset, # 验证集 compute_metrics=compute_metrics, # 评价指标 ) # 禁用wandb（与huggingface.co同步的机制） os.environ[&#34;WANDB_DISABLED&#34;] = &#34;true&#34; # 开始训练 trainer.train() 参考 # Bert fine-tuning 二分类">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="website">
-<title>Fine Tuning-Bert | 基于LLM的系统设计与实现</title>
+<title>Fine Tuning-Bert | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
   <script defer src="/www6vAIGC/en.search.min.efe908ac39e0bc860077b23dd7463b9ab8e323167dfc5ef89903bb700bb1ef13.js" integrity="sha256-7&#43;kIrDngvIYAd7I910Y7mrjjIxZ9/F74mQO7cAux7xM=" crossorigin="anonymous"></script>
-<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/index.xml" title="基于LLM的系统设计与实现" />
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/index.xml" title="Modern Agent" />
 <!--
 Made with Book Theme
 https://github.com/alex-shpak/hugo-book
@@ -179,7 +179,7 @@ https://github.com/alex-shpak/hugo-book
         
   <nav>
 <h2 class="book-brand">
-  <a class="flex align-center" href="/www6vAIGC/"><span>基于LLM的系统设计与实现</span>
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
   </a>
 </h2>
 

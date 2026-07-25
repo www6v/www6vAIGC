@@ -174,21 +174,21 @@ prescript.py">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
 <meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Agent/Platform/DifySandbox/">
-  <meta property="og:site_name" content="基于LLM的系统设计与实现">
+  <meta property="og:site_name" content="Modern Agent">
   <meta property="og:title" content="(实现)Dify sandbox *">
   <meta property="og:description" content="Security Model # Security Architecture Overview # Syscall Filtering with Seccomp # Python Seccomp Implementation
 实现 # python.go
 type PythonRunner struct { runner.TempDirRunner } //go:embed prescript.py var sandbox_fs []byte func (p *PythonRunner) Run( code string, timeout time.Duration, stdin []byte, preload string, options *types.RunnerOptions, ) (chan []byte, chan []byte, chan bool, error) { configuration := static.GetDifySandboxGlobalConfigurations() // initialize the environment untrusted_code_path, key, err := p.InitializeEnvironment(code, preload, options) if err != nil { return nil, nil, nil, err } // capture the output output_handler := runner.NewOutputCaptureRunner() output_handler.SetTimeout(timeout) output_handler.SetAfterExitHook(func() { // remove untrusted code os.Remove(untrusted_code_path) }) // create a new process ### 执行python代码的进程 cmd := exec.Command( configuration.PythonPath, untrusted_code_path, LIB_PATH, key, ) cmd.Env = []string{} cmd.Dir = LIB_PATH if configuration.Proxy.Socks5 != &#34;&#34; { cmd.Env = append(cmd.Env, fmt.Sprintf(&#34;HTTPS_PROXY=%s&#34;, configuration.Proxy.Socks5)) cmd.Env = append(cmd.Env, fmt.Sprintf(&#34;HTTP_PROXY=%s&#34;, configuration.Proxy.Socks5)) } else if configuration.Proxy.Https != &#34;&#34; || configuration.Proxy.Http != &#34;&#34; { if configuration.Proxy.Https != &#34;&#34; { cmd.Env = append(cmd.Env, fmt.Sprintf(&#34;HTTPS_PROXY=%s&#34;, configuration.Proxy.Https)) } if configuration.Proxy.Http != &#34;&#34; { cmd.Env = append(cmd.Env, fmt.Sprintf(&#34;HTTP_PROXY=%s&#34;, configuration.Proxy.Http)) } } if len(configuration.AllowedSyscalls) &gt; 0 { cmd.Env = append(cmd.Env, fmt.Sprintf(&#34;ALLOWED_SYSCALLS=%s&#34;, strings.Trim(strings.Join(strings.Fields(fmt.Sprint(configuration.AllowedSyscalls)), &#34;,&#34;), &#34;[]&#34;), ), ) } err = output_handler.CaptureOutput(cmd) if err != nil { return nil, nil, nil, err } return output_handler.GetStdout(), output_handler.GetStderr(), output_handler.GetDone(), nil } func (p *PythonRunner) InitializeEnvironment(code string, preload string, options *types.RunnerOptions) (string, string, error) { if !checkLibAvaliable() { // ensure environment is reversed releaseLibBinary(false) } // create a tmp dir and copy the python script temp_code_name := strings.ReplaceAll(uuid.New().String(), &#34;-&#34;, &#34;_&#34;) temp_code_name = strings.ReplaceAll(temp_code_name, &#34;/&#34;, &#34;.&#34;) /// 把prescript.py中的placeholder都替换掉 script := strings.Replace( string(sandbox_fs), &#34;{{uid}}&#34;, strconv.Itoa(static.SANDBOX_USER_UID), 1, ) script = strings.Replace( script, &#34;{{gid}}&#34;, strconv.Itoa(static.SANDBOX_GROUP_ID), 1, ) if options.EnableNetwork { script = strings.Replace( script, &#34;{{enable_network}}&#34;, &#34;1&#34;, 1, ) } else { script = strings.Replace( script, &#34;{{enable_network}}&#34;, &#34;0&#34;, 1, ) } script = strings.Replace( script, &#34;{{preload}}&#34;, fmt.Sprintf(&#34;%s\\n&#34;, preload), 1, ) // generate a random 512 bit key key_len := 64 key := make([]byte, key_len) _, err := rand.Read(key) if err != nil { return &#34;&#34;, &#34;&#34;, err } /// 代码加密 // encrypt the code encrypted_code := make([]byte, len(code)) for i := 0; i &lt; len(code); i&#43;&#43; { encrypted_code[i] = code[i] ^ key[i%key_len] } /// 代码做base64 // encode code using base64 code = base64.StdEncoding.EncodeToString(encrypted_code) // encode key using base64 encoded_key := base64.StdEncoding.EncodeToString(key) code = strings.Replace( script, &#34;{{code}}&#34;, code, 1, ) untrusted_code_path := fmt.Sprintf(&#34;%s/tmp/%s.py&#34;, LIB_PATH, temp_code_name) err = os.MkdirAll(path.Dir(untrusted_code_path), 0755) if err != nil { return &#34;&#34;, &#34;&#34;, err } err = os.WriteFile(untrusted_code_path, []byte(code), 0755) if err != nil { return &#34;&#34;, &#34;&#34;, err } return untrusted_code_path, encoded_key, nil } prescript.py">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="website">
-<title>(实现)Dify sandbox * | 基于LLM的系统设计与实现</title>
+<title>(实现)Dify sandbox * | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Agent/Platform/DifySandbox/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
   <script defer src="/www6vAIGC/en.search.min.efe908ac39e0bc860077b23dd7463b9ab8e323167dfc5ef89903bb700bb1ef13.js" integrity="sha256-7&#43;kIrDngvIYAd7I910Y7mrjjIxZ9/F74mQO7cAux7xM=" crossorigin="anonymous"></script>
-<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Agent/Platform/DifySandbox/index.xml" title="基于LLM的系统设计与实现" />
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Agent/Platform/DifySandbox/index.xml" title="Modern Agent" />
 <!--
 Made with Book Theme
 https://github.com/alex-shpak/hugo-book
@@ -204,7 +204,7 @@ https://github.com/alex-shpak/hugo-book
         
   <nav>
 <h2 class="book-brand">
-  <a class="flex align-center" href="/www6vAIGC/"><span>基于LLM的系统设计与实现</span>
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
   </a>
 </h2>
 
