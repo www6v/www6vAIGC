@@ -4,26 +4,49 @@
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="
-  Hermes Arch
+  Hermes Agent Skill 自演化机制深度调研
   #
 
-Hermes Arch">
+
+  1. 总览：自演化的核心理念
+  #
+
+Hermes Agent 的 skill 自演化建立在 &ldquo;Agent 是自身知识库的维护者&rdquo; 这一核心理念上。Skill 不是静态文档，而是可写、可改、可生长、可衰老、可合并的程序化记忆（procedural memory）。整个系统由以下关键组件协作完成：
+Agent（AI）                     Curator（策展人）                    持久化层
+┌──────────────────┐          ┌────────────────────┐          ┌──────────────────────┐
+│  skill_manage()  │ ◄─────── │  maybe_run_curator()│          │  ~/.hermes/skills/   │
+│  创建/修改技能    │          │  后台维护/合并/归档  │─────────►│  ├── skill-a/       │
+│                  │ ───────► │                    │          │  ├── skill-b/       │
+│  skills_list()   │          │  apply_automatic_   │          │  ├── .archive/       │
+│  skill_view()    │          │    transitions()    │          │  ├── .usage.json     │
+│  ↑               │          │                    │          │  └── .curator_state  │
+│  │               │          │  run_llm_review()   │          └──────────────────────┘
+│  遥测计数器       │          └────────────────────┘
+│  bump_use/view/  │
+│  patch()         │
+└──────────────────┘
+
+  2. Skill 的生命周期状态机
+  #
+
+每个 agent 创建的 skill 都经历以下状态流转（tools/skill_usage.py）：">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
-<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes/arcitcture/">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/">
   <meta property="og:site_name" content="Modern Agent">
   <meta property="og:title" content="Modern Agent">
-  <meta property="og:description" content="Hermes Arch # Hermes Arch">
+  <meta property="og:description" content="Hermes Agent Skill 自演化机制深度调研 # 1. 总览：自演化的核心理念 # Hermes Agent 的 skill 自演化建立在 “Agent 是自身知识库的维护者” 这一核心理念上。Skill 不是静态文档，而是可写、可改、可生长、可衰老、可合并的程序化记忆（procedural memory）。整个系统由以下关键组件协作完成：
+Agent（AI） Curator（策展人） 持久化层 ┌──────────────────┐ ┌────────────────────┐ ┌──────────────────────┐ │ skill_manage() │ ◄─────── │ maybe_run_curator()│ │ ~/.hermes/skills/ │ │ 创建/修改技能 │ │ 后台维护/合并/归档 │─────────►│ ├── skill-a/ │ │ │ ───────► │ │ │ ├── skill-b/ │ │ skills_list() │ │ apply_automatic_ │ │ ├── .archive/ │ │ skill_view() │ │ transitions() │ │ ├── .usage.json │ │ ↑ │ │ │ │ └── .curator_state │ │ │ │ │ run_llm_review() │ └──────────────────────┘ │ 遥测计数器 │ └────────────────────┘ │ bump_use/view/ │ │ patch() │ └──────────────────┘ 2. Skill 的生命周期状态机 # 每个 agent 创建的 skill 都经历以下状态流转（tools/skill_usage.py）：">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="website">
-<title>Arcitcture | Modern Agent</title>
+<title>Skill Envolve | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
-<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes/arcitcture/">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.e6ed7a1b0747cae56572ab47a657dfee644a93c7de5276cade4a24dc5e33d843.js" integrity="sha256-5u16GwdHyuVlcqtHplff7mRKk8feUnbK3kok3F4z2EM=" crossorigin="anonymous"></script>
-<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes/arcitcture/index.xml" title="Modern Agent" />
+  <script defer src="/www6vAIGC/en.search.min.0afe9cd965ba2b6dc893cf9a5a7988bd604276c25186376e16c4e42a0358fef1.js" integrity="sha256-Cv6c2WW6K23Ik8&#43;aWnmIvWBCdsJRhjduFsTkKgNY/vE=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/index.xml" title="Modern Agent" />
 <!--
 Made with Book Theme
 https://github.com/alex-shpak/hugo-book
@@ -2193,81 +2216,6 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
-    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
-      <a role="button" class="">Claude Code</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code-arch/" class="">Claude Code 架构</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code/" class="">Cloud Code 架构[A1]</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
     <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
     <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
       <a role="button" class="">Harness</a>
@@ -2286,102 +2234,6 @@ https://github.com/alex-shpak/hugo-book
   
     <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
   
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-63bbb9b904218340c96ca4ad84304153" class="toggle" checked />
-    <label for="section-63bbb9b904218340c96ca4ad84304153" class="flex justify-between">
-      <a role="button" class="">Hermes</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/Hermes/arcitcture/" class="active">Arcitcture</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/Hermes/skill-envolve/" class="">Skill Envolve</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-0a4f54793a95f042d99660667b3f1c3f" class="toggle"  />
-    <label for="section-0a4f54793a95f042d99660667b3f1c3f" class="flex justify-between">
-      <a role="button" class="">Managed Agent</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/managed-agent/managed-agent/" class="">Managed Agent</a>
-  
-
-          
-  <ul>
-    
-  </ul>
 
         </li>
       
@@ -2476,6 +2328,216 @@ https://github.com/alex-shpak/hugo-book
   
 
   
+    <input type="checkbox" id="section-406a2e1159d423500a23abb9a994a5a3" class="toggle" checked />
+    <label for="section-406a2e1159d423500a23abb9a994a5a3" class="flex justify-between">
+      <a role="button" class="">Hermes Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitcture/" class="">Arcitcture</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/" class="active">Skill Envolve</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code-arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Claude-Code/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-339828cdd4ae109f0b47d6033c8220ec" class="toggle"  />
+    <label for="section-339828cdd4ae109f0b47d6033c8220ec" class="flex justify-between">
+      <a role="button" class="">Coding Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/coding-agent/Tau-Agent/" class="">Tau Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0a4f54793a95f042d99660667b3f1c3f" class="toggle"  />
+    <label for="section-0a4f54793a95f042d99660667b3f1c3f" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/managed-agent/managed-agent/" class="">Managed Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
     <input type="checkbox" id="section-2a6aa8fb2d00697ce540b0c02f7975a7" class="toggle"  />
     <label for="section-2a6aa8fb2d00697ce540b0c02f7975a7" class="flex justify-between">
       <a role="button" class="">长程任务</a>
@@ -2492,7 +2554,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/long-process/Claude-code-stability/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/long-process/Claude-code/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
   
 
         </li>
@@ -2559,7 +2621,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/long-process/stability/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/long-process/openclaw/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
   
 
         </li>
@@ -4050,7 +4112,7 @@ https://github.com/alex-shpak/hugo-book
     <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
   </label>
 
-  <h3>Arcitcture</h3>
+  <h3>Skill Envolve</h3>
 
   <label for="toc-control">
     
@@ -4066,7 +4128,32 @@ https://github.com/alex-shpak/hugo-book
   
 <nav id="TableOfContents">
   <ul>
-    <li><a href="#hermes-arch">Hermes Arch</a></li>
+    <li><a href="#hermes-agent-skill-自演化机制深度调研">Hermes Agent Skill 自演化机制深度调研</a>
+      <ul>
+        <li><a href="#1-总览自演化的核心理念">1. 总览：自演化的核心理念</a></li>
+        <li><a href="#2-skill-的生命周期状态机">2. Skill 的生命周期状态机</a></li>
+        <li><a href="#3-自演化的三层架构">3. 自演化的三层架构</a>
+          <ul>
+            <li><a href="#31-第一层agent-自主创建和修改运行时自演化">3.1 第一层：Agent 自主创建和修改（运行时自演化）</a></li>
+            <li><a href="#32-第二层curator-策展人后台维护">3.2 第二层：Curator 策展人（后台维护）</a></li>
+            <li><a href="#33-第三层使用遥测和生命周期数据驱动">3.3 第三层：使用遥测和生命周期（数据驱动）</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-skill-发现和加载机制">4. Skill 发现和加载机制</a>
+          <ul>
+            <li><a href="#41-渐进式披露progressive-disclosure">4.1 渐进式披露（Progressive Disclosure）</a></li>
+            <li><a href="#42-系统-prompt-注入">4.2 系统 Prompt 注入</a></li>
+            <li><a href="#43-斜杠命令自动注册">4.3 斜杠命令自动注册</a></li>
+            <li><a href="#44-skillmd-预处理">4.4 SKILL.md 预处理</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-安全机制">5. 安全机制</a></li>
+        <li><a href="#6-文件结构全景">6. 文件结构全景</a></li>
+        <li><a href="#7-配置项configyaml">7. 配置项（config.yaml）</a></li>
+        <li><a href="#8-自演化闭环总结">8. 自演化闭环总结</a></li>
+        <li><a href="#9-关键源码文件索引">9. 关键源码文件索引</a></li>
+      </ul>
+    </li>
   </ul>
 </nav>
 
@@ -4079,11 +4166,469 @@ https://github.com/alex-shpak/hugo-book
 
       
       
-  <article class="markdown book-article"><h1 id="hermes-arch">
-  Hermes Arch
-  <a class="anchor" href="#hermes-arch">#</a>
+  <article class="markdown book-article"><h1 id="hermes-agent-skill-自演化机制深度调研">
+  Hermes Agent Skill 自演化机制深度调研
+  <a class="anchor" href="#hermes-agent-skill-%e8%87%aa%e6%bc%94%e5%8c%96%e6%9c%ba%e5%88%b6%e6%b7%b1%e5%ba%a6%e8%b0%83%e7%a0%94">#</a>
 </h1>
-<p><a href="https://shanji.dingtalk.com/app/transcribes/76327569643335343133303432355f3232353934343633395f32">Hermes Arch</a></p>
+<h2 id="1-总览自演化的核心理念">
+  1. 总览：自演化的核心理念
+  <a class="anchor" href="#1-%e6%80%bb%e8%a7%88%e8%87%aa%e6%bc%94%e5%8c%96%e7%9a%84%e6%a0%b8%e5%bf%83%e7%90%86%e5%bf%b5">#</a>
+</h2>
+<p>Hermes Agent 的 skill 自演化建立在 <strong>&ldquo;Agent 是自身知识库的维护者&rdquo;</strong> 这一核心理念上。Skill 不是静态文档，而是<strong>可写、可改、可生长、可衰老、可合并</strong>的程序化记忆（procedural memory）。整个系统由以下关键组件协作完成：</p>
+<pre tabindex="0"><code>Agent（AI）                     Curator（策展人）                    持久化层
+┌──────────────────┐          ┌────────────────────┐          ┌──────────────────────┐
+│  skill_manage()  │ ◄─────── │  maybe_run_curator()│          │  ~/.hermes/skills/   │
+│  创建/修改技能    │          │  后台维护/合并/归档  │─────────►│  ├── skill-a/       │
+│                  │ ───────► │                    │          │  ├── skill-b/       │
+│  skills_list()   │          │  apply_automatic_   │          │  ├── .archive/       │
+│  skill_view()    │          │    transitions()    │          │  ├── .usage.json     │
+│  ↑               │          │                    │          │  └── .curator_state  │
+│  │               │          │  run_llm_review()   │          └──────────────────────┘
+│  遥测计数器       │          └────────────────────┘
+│  bump_use/view/  │
+│  patch()         │
+└──────────────────┘
+</code></pre><h2 id="2-skill-的生命周期状态机">
+  2. Skill 的生命周期状态机
+  <a class="anchor" href="#2-skill-%e7%9a%84%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f%e7%8a%b6%e6%80%81%e6%9c%ba">#</a>
+</h2>
+<p>每个 agent 创建的 skill 都经历以下状态流转（<code>tools/skill_usage.py</code>）：</p>
+<pre tabindex="0"><code>                    ┌──────────────────────────────────────────────┐
+                    │                                              ▼
+  [新创建] ─────► active ──(超过stale_after_days未使用)──► stale
+  STATE_ACTIVE      │  ▲                                       │
+                    │  │                                       │ (超过archive_after_days)
+                    │  │ (被重新使用)                           ▼
+                    │  └───────────────────────────── archived (移入 .archive/)
+                    │                                              ▲
+                    │                                              │
+                    └── pinned (用户手动固定，跳过所有自动流转) ───┘
+</code></pre><p><strong>关键时间参数</strong>（可通过 <code>config.yaml</code> 的 <code>curator.*</code> 调整）：</p>
+<ul>
+<li><code>stale_after_days</code>：默认 <strong>30 天</strong> 未使用标记为 stale</li>
+<li><code>archive_after_days</code>：默认 <strong>90 天</strong> 未使用移入归档</li>
+<li><code>interval_hours</code>：Curator 运行间隔，默认 <strong>7 天</strong>（168 小时）</li>
+<li><code>min_idle_hours</code>：Agent 空闲至少 <strong>2 小时</strong> 才触发 Curator</li>
+</ul>
+<h2 id="3-自演化的三层架构">
+  3. 自演化的三层架构
+  <a class="anchor" href="#3-%e8%87%aa%e6%bc%94%e5%8c%96%e7%9a%84%e4%b8%89%e5%b1%82%e6%9e%b6%e6%9e%84">#</a>
+</h2>
+<h3 id="31-第一层agent-自主创建和修改运行时自演化">
+  3.1 第一层：Agent 自主创建和修改（运行时自演化）
+  <a class="anchor" href="#31-%e7%ac%ac%e4%b8%80%e5%b1%82agent-%e8%87%aa%e4%b8%bb%e5%88%9b%e5%bb%ba%e5%92%8c%e4%bf%ae%e6%94%b9%e8%bf%90%e8%a1%8c%e6%97%b6%e8%87%aa%e6%bc%94%e5%8c%96">#</a>
+</h3>
+<p>Agent 在执行任务过程中，通过 <code>skill_manage</code> tool 自主管理技能。</p>
+<p><strong><code>tools/skill_manager_tool.py</code> 提供 6 种操作：</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>Action</th>
+          <th>触发时机</th>
+          <th>行为</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>create</code></td>
+          <td>完成复杂任务（5+ 次 tool 调用）、克服错误、用户纠正后</td>
+          <td>在 <code>~/.hermes/skills/</code> 下创建新目录 + SKILL.md</td>
+      </tr>
+      <tr>
+          <td><code>patch</code></td>
+          <td>发现 skill 过时、遗漏坑点</td>
+          <td>模糊匹配替换 SKILL.md 中的特定文本</td>
+      </tr>
+      <tr>
+          <td><code>edit</code></td>
+          <td>大规模重写</td>
+          <td>完全替换 SKILL.md 内容</td>
+      </tr>
+      <tr>
+          <td><code>write_file</code></td>
+          <td>添加参考文档/模板/脚本</td>
+          <td>写入 <code>references/</code>, <code>templates/</code>, <code>scripts/</code>, <code>assets/</code></td>
+      </tr>
+      <tr>
+          <td><code>delete</code></td>
+          <td>skill 不再需要</td>
+          <td>删除整个目录</td>
+      </tr>
+      <tr>
+          <td><code>remove_file</code></td>
+          <td>移除支持文件</td>
+          <td>删除指定子文件</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>关键特性：</strong></p>
+<ul>
+<li><strong>原子写入</strong>：所有文件写入使用 <code>tempfile + os.replace</code> 确保崩溃安全</li>
+<li><strong>安全扫描</strong>（可选）：写入后可触发 <code>skills_guard</code> 安全扫描，检测危险内容</li>
+<li><strong>模糊匹配</strong>：patch 使用 fuzzy_match 引擎，容忍空格/缩进差异</li>
+<li><strong>前置验证</strong>：frontmatter 必须合法，name ≤ 64 字符，description ≤ 1024 字符，总内容 ≤ 100,000 字符</li>
+<li><strong>Pinned 保护</strong>：用户 pin 的 skill 对 agent 写操作免疫</li>
+</ul>
+<h3 id="32-第二层curator-策展人后台维护">
+  3.2 第二层：Curator 策展人（后台维护）
+  <a class="anchor" href="#32-%e7%ac%ac%e4%ba%8c%e5%b1%82curator-%e7%ad%96%e5%b1%95%e4%ba%ba%e5%90%8e%e5%8f%b0%e7%bb%b4%e6%8a%a4">#</a>
+</h3>
+<p><code>agent/curator.py</code> 是整个自演化系统的核心大脑。</p>
+<p><strong>触发机制</strong>（非 cron 守护进程，而是空闲触发）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">maybe_run_curator</span>(<span style="color:#f92672">*</span>, idle_for_seconds, on_summary):
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 在 session 启动时检查：</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 1. curator.enabled == True</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 2. 未暂停</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 3. 上次运行超过 interval_hours</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 4. Agent 空闲超过 min_idle_hours</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 全部满足 → 启动</span>
+</span></span></code></pre></div><p><strong>Curator 执行两步走：</strong></p>
+<h4 id="step-1自动状态迁移纯逻辑无需-llm">
+  Step 1：自动状态迁移（纯逻辑，无需 LLM）
+  <a class="anchor" href="#step-1%e8%87%aa%e5%8a%a8%e7%8a%b6%e6%80%81%e8%bf%81%e7%a7%bb%e7%ba%af%e9%80%bb%e8%be%91%e6%97%a0%e9%9c%80-llm">#</a>
+</h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">apply_automatic_transitions</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> skill <span style="color:#f92672">in</span> agent_created_report():
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> pinned: <span style="color:#66d9ef">continue</span>
+</span></span><span style="display:flex;"><span>        anchor <span style="color:#f92672">=</span> last_activity <span style="color:#f92672">or</span> created_at
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> anchor <span style="color:#f92672">&lt;=</span> archive_cutoff: archive_skill(name)      <span style="color:#75715e"># 90天未用 → 归档</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">elif</span> anchor <span style="color:#f92672">&lt;=</span> stale_cutoff: set_state(STALE)         <span style="color:#75715e"># 30天未用 → 标记过期</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">elif</span> anchor <span style="color:#f92672">&gt;</span> stale_cutoff <span style="color:#f92672">and</span> state <span style="color:#f92672">==</span> STALE: set_state(ACTIVE)  <span style="color:#75715e"># 重新使用 → 恢复</span>
+</span></span></code></pre></div><h4 id="step-2llm-巩固合并fork-一个独立-aiagent">
+  Step 2：LLM 巩固合并（fork 一个独立 AIAgent）
+  <a class="anchor" href="#step-2llm-%e5%b7%a9%e5%9b%ba%e5%90%88%e5%b9%b6fork-%e4%b8%80%e4%b8%aa%e7%8b%ac%e7%ab%8b-aiagent">#</a>
+</h4>
+<p>这是最精妙的部分——<strong>用一个独立的 AI Agent 来整理和合并现有的 skills</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">run_curator_review</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 1. 自动状态迁移（Step 1）</span>
+</span></span><span style="display:flex;"><span>    apply_automatic_transitions()
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 2. 生成候选列表（含使用统计）</span>
+</span></span><span style="display:flex;"><span>    candidate_list <span style="color:#f92672">=</span> _render_candidate_list()
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 输出类似：</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># - hermes-config-fix  state=active  pinned=no  activity=12  use=8  patches=3</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># - hermes-dashboard   state=active  pinned=no  activity=5   use=3  patches=1</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 3. Fork 一个独立 AIAgent 执行巩固任务</span>
+</span></span><span style="display:flex;"><span>    review_agent <span style="color:#f92672">=</span> AIAgent(
+</span></span><span style="display:flex;"><span>        max_iterations<span style="color:#f92672">=</span><span style="color:#ae81ff">9999</span>,        <span style="color:#75715e"># 高迭代上限</span>
+</span></span><span style="display:flex;"><span>        platform<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;curator&#34;</span>,         <span style="color:#75715e"># 标记为 curator 平台</span>
+</span></span><span style="display:flex;"><span>        skip_context_files<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>,    <span style="color:#75715e"># 跳过上下文文件</span>
+</span></span><span style="display:flex;"><span>        skip_memory<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>,           <span style="color:#75715e"># 跳过 memory</span>
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>    review_agent<span style="color:#f92672">.</span>_memory_nudge_interval <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>  <span style="color:#75715e"># 禁止递归触发 curator</span>
+</span></span><span style="display:flex;"><span>    review_agent<span style="color:#f92672">.</span>_skill_nudge_interval <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 4. 执行对话</span>
+</span></span><span style="display:flex;"><span>    review_agent<span style="color:#f92672">.</span>run_conversation(
+</span></span><span style="display:flex;"><span>        user_message<span style="color:#f92672">=</span>CURATOR_REVIEW_PROMPT <span style="color:#f92672">+</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n\n</span><span style="color:#e6db74">&#34;</span> <span style="color:#f92672">+</span> candidate_list
+</span></span><span style="display:flex;"><span>    )
+</span></span></code></pre></div><p><strong>Curator 的指令（CURATOR_REVIEW_PROMPT）核心原则：</strong></p>
+<ul>
+<li><strong>目标</strong>：将技能集合维护为 <strong>&ldquo;类别级指令库&rdquo;</strong>，而非&quot;一次会话一个 skill&quot;的碎片</li>
+<li><strong>合并策略</strong>（三种方式）：
+<ul>
+<li><strong>MERGE INTO EXISTING UMBRELLA</strong>：已有宽泛 skill 作为伞，patch 它添加子章节，归档窄 skill</li>
+<li><strong>CREATE NEW UMBRELLA</strong>：创建新的类别级 SKILL.md，覆盖共享工作流</li>
+<li><strong>DEMOTE TO REFERENCES/TEMPLATES/SCRIPTS</strong>：窄但有价值的内容移入支持文件</li>
+</ul>
+</li>
+<li><strong>硬规则</strong>：
+<ul>
+<li>不碰 bundled 或 hub-installed skill</li>
+<li><strong>绝不删除</strong>，最大破坏动作是归档（可恢复）</li>
+<li>不碰 pinned skill</li>
+<li>不用使用计数器作为跳过合并的理由——基于<strong>内容重叠</strong>判断</li>
+</ul>
+</li>
+</ul>
+<h4 id="报告和审计">
+  报告和审计
+  <a class="anchor" href="#%e6%8a%a5%e5%91%8a%e5%92%8c%e5%ae%a1%e8%ae%a1">#</a>
+</h4>
+<p>每次 Curator 运行生成完整报告：</p>
+<pre tabindex="0"><code>~/.hermes/logs/curator/YYYYMMDD-HHMMSS/
+├── run.json              # 机器可读完整记录
+├── REPORT.md             # 人类可读报告
+└── cron_rewrites.json    # （如有）Cron job skill 引用重写
+</code></pre><p>报告包含：</p>
+<ul>
+<li>自动迁移计数（stale/archived/reactivated）</li>
+<li>LLM 合并详情（哪些 skill 被合并到哪些 umbrella）</li>
+<li>修剪列表（哪些 skill 被归档且未合并）</li>
+<li>Cron job 自动重写（当 skill 被合并时，自动更新引用的定时任务）</li>
+</ul>
+<h3 id="33-第三层使用遥测和生命周期数据驱动">
+  3.3 第三层：使用遥测和生命周期（数据驱动）
+  <a class="anchor" href="#33-%e7%ac%ac%e4%b8%89%e5%b1%82%e4%bd%bf%e7%94%a8%e9%81%a5%e6%b5%8b%e5%92%8c%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f%e6%95%b0%e6%8d%ae%e9%a9%b1%e5%8a%a8">#</a>
+</h3>
+<p><code>tools/skill_usage.py</code> 维护 <code>.usage.json</code> sidecar 文件：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;hermes-config-fix&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;use_count&#34;</span>: <span style="color:#ae81ff">8</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;view_count&#34;</span>: <span style="color:#ae81ff">15</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;patch_count&#34;</span>: <span style="color:#ae81ff">3</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;created_at&#34;</span>: <span style="color:#e6db74">&#34;2025-01-15T10:30:00+00:00&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;last_used_at&#34;</span>: <span style="color:#e6db74">&#34;2025-02-10T14:20:00+00:00&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;last_viewed_at&#34;</span>: <span style="color:#e6db74">&#34;2025-02-11T09:15:00+00:00&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;last_patched_at&#34;</span>: <span style="color:#e6db74">&#34;2025-02-08T16:45:00+00:00&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;state&#34;</span>: <span style="color:#e6db74">&#34;active&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;pinned&#34;</span>: <span style="color:#66d9ef">false</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;archived_at&#34;</span>: <span style="color:#66d9ef">null</span>
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>计数器自动递增点：</strong></p>
+<ul>
+<li><code>bump_use()</code>：skill 被主动使用时（<code>/skill-name</code> 或 <code>build_skill_invocation_message</code>）</li>
+<li><code>bump_view()</code>：<code>skill_view()</code> 成功返回时</li>
+<li><code>bump_patch()</code>：<code>skill_manage(patch/edit/write_file/remove_file)</code> 成功时</li>
+<li><code>forget()</code>：skill 被删除时</li>
+</ul>
+<p><strong>来源判定</strong>：<code>is_agent_created()</code> 通过比对 <code>.bundled_manifest</code> 和 <code>.hub/lock.json</code> 判断 skill 来源。Curator 只操作 agent-created skill。</p>
+<h2 id="4-skill-发现和加载机制">
+  4. Skill 发现和加载机制
+  <a class="anchor" href="#4-skill-%e5%8f%91%e7%8e%b0%e5%92%8c%e5%8a%a0%e8%bd%bd%e6%9c%ba%e5%88%b6">#</a>
+</h2>
+<h3 id="41-渐进式披露progressive-disclosure">
+  4.1 渐进式披露（Progressive Disclosure）
+  <a class="anchor" href="#41-%e6%b8%90%e8%bf%9b%e5%bc%8f%e6%8a%ab%e9%9c%b2progressive-disclosure">#</a>
+</h3>
+<p>Hermes 采用 Anthropic 推荐的渐进式披露架构：</p>
+<table>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>内容</th>
+          <th>令牌成本</th>
+          <th>触发</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Tier 1</td>
+          <td>name + description（skills_list）</td>
+          <td>极低</td>
+          <td>系统 prompt 中的 skills index</td>
+      </tr>
+      <tr>
+          <td>Tier 2</td>
+          <td>SKILL.md 完整内容（skill_view）</td>
+          <td>中</td>
+          <td>Agent 主动请求查看</td>
+      </tr>
+      <tr>
+          <td>Tier 3</td>
+          <td>references/templates/scripts/assets</td>
+          <td>按需</td>
+          <td>Agent 指定 file_path</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="42-系统-prompt-注入">
+  4.2 系统 Prompt 注入
+  <a class="anchor" href="#42-%e7%b3%bb%e7%bb%9f-prompt-%e6%b3%a8%e5%85%a5">#</a>
+</h3>
+<p><code>agent/prompt_builder.py</code> 在系统 prompt 中注入 skills index：</p>
+<ul>
+<li>扫描所有 <code>~/.hermes/skills/</code> 目录</li>
+<li>提取每个 skill 的 <code>name</code> + <code>description</code>（≤1024 字符）</li>
+<li>格式化为精简列表，供 Agent 知道有哪些 skill 可用</li>
+<li>带 prompt 缓存保护，变更时通过 <code>clear_skills_system_prompt_cache()</code> 刷新</li>
+</ul>
+<h3 id="43-斜杠命令自动注册">
+  4.3 斜杠命令自动注册
+  <a class="anchor" href="#43-%e6%96%9c%e6%9d%a0%e5%91%bd%e4%bb%a4%e8%87%aa%e5%8a%a8%e6%b3%a8%e5%86%8c">#</a>
+</h3>
+<p><code>agent/skill_commands.py</code> 自动将 skill 注册为 <code>/skill-name</code> 命令：</p>
+<ul>
+<li>扫描 skills 目录，将 skill name 转换为 slug（连字符分隔）</li>
+<li>用户输入 <code>/hermes-agent</code> 时，自动加载对应 SKILL.md 作为 user message</li>
+<li>同时支持 CLI 和 Gateway（Telegram/Discord 等）</li>
+</ul>
+<h3 id="44-skillmd-预处理">
+  4.4 SKILL.md 预处理
+  <a class="anchor" href="#44-skillmd-%e9%a2%84%e5%a4%84%e7%90%86">#</a>
+</h3>
+<p><code>agent/skill_preprocessing.py</code> 在加载时动态处理 skill 内容：</p>
+<ul>
+<li><strong>模板变量替换</strong>：<code>${HERMES_SKILL_DIR}</code>, <code>${HERMES_SESSION_ID}</code> → 实际值</li>
+<li><strong>内联 shell 执行</strong>：<code>!`date +%Y-%m-%d`</code> → 命令输出（可选，默认关闭）</li>
+</ul>
+<h2 id="5-安全机制">
+  5. 安全机制
+  <a class="anchor" href="#5-%e5%ae%89%e5%85%a8%e6%9c%ba%e5%88%b6">#</a>
+</h2>
+<p>自演化不是无限制的，有多层安全护栏：</p>
+<table>
+  <thead>
+      <tr>
+          <th>安全层</th>
+          <th>机制</th>
+          <th>实现</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>命名验证</td>
+          <td>lowercase, hyphens, ≤64字符</td>
+          <td><code>_validate_name()</code></td>
+      </tr>
+      <tr>
+          <td>Frontmatter验证</td>
+          <td>必须有name/description, YAML合法</td>
+          <td><code>_validate_frontmatter()</code></td>
+      </tr>
+      <tr>
+          <td>大小限制</td>
+          <td>SKILL.md ≤100K字符, 支持文件 ≤1MiB</td>
+          <td><code>_validate_content_size()</code></td>
+      </tr>
+      <tr>
+          <td>路径遍历防护</td>
+          <td>禁止 <code>..</code> 逃逸</td>
+          <td><code>path_security.has_traversal_component()</code></td>
+      </tr>
+      <tr>
+          <td>Prompt注入检测</td>
+          <td>检测&quot;ignore previous instructions&quot;等模式</td>
+          <td><code>_INJECTION_PATTERNS</code></td>
+      </tr>
+      <tr>
+          <td>安全扫描（可选）</td>
+          <td>检测脚本中的危险操作</td>
+          <td><code>skills_guard.scan_skill()</code></td>
+      </tr>
+      <tr>
+          <td>Pinned保护</td>
+          <td>用户pin的skill不可修改</td>
+          <td><code>_pinned_guard()</code></td>
+      </tr>
+      <tr>
+          <td>来源隔离</td>
+          <td>Curator不碰bundled/hub skill</td>
+          <td><code>is_agent_created()</code></td>
+      </tr>
+  </tbody>
+</table>
+<h2 id="6-文件结构全景">
+  6. 文件结构全景
+  <a class="anchor" href="#6-%e6%96%87%e4%bb%b6%e7%bb%93%e6%9e%84%e5%85%a8%e6%99%af">#</a>
+</h2>
+<pre tabindex="0"><code>~/.hermes/
+├── config.yaml                          # curator.* 配置
+├── skills/
+│   ├── hermes-agent/SKILL.md             # bundled skill
+│   ├── my-custom-skill/                  # agent-created skill
+│   │   ├── SKILL.md
+│   │   ├── references/
+│   │   ├── templates/
+│   │   └── scripts/
+│   ├── .archive/                         # 归档目录（可恢复）
+│   │   └── old-skill/
+│   ├── .usage.json                       # 使用遥测 sidecar
+│   ├── .curator_state                    # Curator 调度状态
+│   ├── .bundled_manifest                 # bundled skill 清单
+│   └── .hub/lock.json                    # hub-installed skill 清单
+└── logs/curator/
+    └── 20260520-140000/
+        ├── run.json                      # 机器可读报告
+        └── REPORT.md                     # 人类可读报告
+</code></pre><h2 id="7-配置项configyaml">
+  7. 配置项（config.yaml）
+  <a class="anchor" href="#7-%e9%85%8d%e7%bd%ae%e9%a1%b9configyaml">#</a>
+</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">curator</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">enabled</span>: <span style="color:#66d9ef">true</span>                    <span style="color:#75715e"># 默认开启</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">interval_hours</span>: <span style="color:#ae81ff">168</span>              <span style="color:#75715e"># 运行间隔：7天</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">min_idle_hours</span>: <span style="color:#ae81ff">2</span>                <span style="color:#75715e"># 最少空闲时间</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">stale_after_days</span>: <span style="color:#ae81ff">30</span>             <span style="color:#75715e"># 过期阈值</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">archive_after_days</span>: <span style="color:#ae81ff">90</span>           <span style="color:#75715e"># 归档阈值</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">skills</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">guard_agent_created</span>: <span style="color:#66d9ef">false</span>       <span style="color:#75715e"># 安全扫描（默认关闭）</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">disabled</span>: []                     <span style="color:#75715e"># 用户禁用的 skill 列表</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">platform_disabled</span>: {}            <span style="color:#75715e"># 按平台禁用</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">template_vars</span>: <span style="color:#66d9ef">true</span>              <span style="color:#75715e"># 启用模板变量替换</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">inline_shell</span>: <span style="color:#66d9ef">false</span>              <span style="color:#75715e"># 启用内联 shell 执行</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">inline_shell_timeout</span>: <span style="color:#ae81ff">10</span>         <span style="color:#75715e"># 超时秒数</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">auxiliary</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">curator</span>:                         <span style="color:#75715e"># Curator 专用模型配置</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">provider</span>: <span style="color:#ae81ff">auto                </span> <span style="color:#75715e"># 默认用主模型</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;&#34;</span>
+</span></span></code></pre></div><h2 id="8-自演化闭环总结">
+  8. 自演化闭环总结
+  <a class="anchor" href="#8-%e8%87%aa%e6%bc%94%e5%8c%96%e9%97%ad%e7%8e%af%e6%80%bb%e7%bb%93">#</a>
+</h2>
+<pre tabindex="0"><code>                    ┌─────────────────────────────────────┐
+                    │                                     │
+    用户任务 ─────► Agent 执行任务                          │
+                    │                                     │
+    │               ├─► 成功 → skill_manage(create) 保存经验 │
+    │               ├─► 出错 → skill_manage(patch) 修复 skill │
+    │               └─► 查看 → bump_view/use 更新遥测        │
+    │               │                                     │
+    │               ▼                                     │
+    │         ~/.hermes/skills/ 技能集合                   │
+    │               │                                     │
+    │         空闲触发（7天 + 2h空闲）                       │
+    │               │                                     │
+    │               ▼                                     │
+    │         Curator 运行：                                │
+    │         1. 自动迁移（active→stale→archived）          │
+    │         2. Fork AIAgent 执行 LLM 合并               │
+    │         3. 生成报告 + 重写 Cron 引用                  │
+    │               │                                     │
+    └───────────────┘                                     │
+                                                          │
+    下一轮任务 ──► 使用优化后的 skill 集合 ─────────────────┘
+</code></pre><p><strong>核心洞见</strong>：Hermes Agent 的 skill 自演化不是简单的&quot;自动更新&quot;，而是一个<strong>生态系统式的自组织过程</strong>——Agent 像园丁一样种植新 skill，Curator 像园丁一样修剪、合并、淘汰，使用数据像土壤养分一样驱动决策。整个系统形成了&quot;经验积累 → 知识沉淀 → 自动整理 → 更好执行&quot;的闭环。</p>
+<h2 id="9-关键源码文件索引">
+  9. 关键源码文件索引
+  <a class="anchor" href="#9-%e5%85%b3%e9%94%ae%e6%ba%90%e7%a0%81%e6%96%87%e4%bb%b6%e7%b4%a2%e5%bc%95">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>文件</th>
+          <th>作用</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>tools/skill_manager_tool.py</code></td>
+          <td>Agent 自主创建、修改、删除 skill 的工具</td>
+      </tr>
+      <tr>
+          <td><code>tools/skills_tool.py</code></td>
+          <td>skills_list/skill_view 渐进式披露实现</td>
+      </tr>
+      <tr>
+          <td><code>tools/skill_usage.py</code></td>
+          <td>使用遥测、生命周期状态、归档/恢复</td>
+      </tr>
+      <tr>
+          <td><code>agent/curator.py</code></td>
+          <td>策展人：自动迁移 + LLM 合并审查</td>
+      </tr>
+      <tr>
+          <td><code>agent/skill_commands.py</code></td>
+          <td>斜杠命令扫描与注入</td>
+      </tr>
+      <tr>
+          <td><code>agent/skill_preprocessing.py</code></td>
+          <td>模板变量替换与内联 shell 扩展</td>
+      </tr>
+      <tr>
+          <td><code>agent/skill_utils.py</code></td>
+          <td>工具函数：解析 frontmatter、平台匹配等</td>
+      </tr>
+      <tr>
+          <td><code>agent/prompt_builder.py</code></td>
+          <td>系统 prompt 中 skills index 的构建</td>
+      </tr>
+  </tbody>
+</table>
 </article>
  
       
@@ -4125,7 +4670,32 @@ https://github.com/alex-shpak/hugo-book
   
 <nav id="TableOfContents">
   <ul>
-    <li><a href="#hermes-arch">Hermes Arch</a></li>
+    <li><a href="#hermes-agent-skill-自演化机制深度调研">Hermes Agent Skill 自演化机制深度调研</a>
+      <ul>
+        <li><a href="#1-总览自演化的核心理念">1. 总览：自演化的核心理念</a></li>
+        <li><a href="#2-skill-的生命周期状态机">2. Skill 的生命周期状态机</a></li>
+        <li><a href="#3-自演化的三层架构">3. 自演化的三层架构</a>
+          <ul>
+            <li><a href="#31-第一层agent-自主创建和修改运行时自演化">3.1 第一层：Agent 自主创建和修改（运行时自演化）</a></li>
+            <li><a href="#32-第二层curator-策展人后台维护">3.2 第二层：Curator 策展人（后台维护）</a></li>
+            <li><a href="#33-第三层使用遥测和生命周期数据驱动">3.3 第三层：使用遥测和生命周期（数据驱动）</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-skill-发现和加载机制">4. Skill 发现和加载机制</a>
+          <ul>
+            <li><a href="#41-渐进式披露progressive-disclosure">4.1 渐进式披露（Progressive Disclosure）</a></li>
+            <li><a href="#42-系统-prompt-注入">4.2 系统 Prompt 注入</a></li>
+            <li><a href="#43-斜杠命令自动注册">4.3 斜杠命令自动注册</a></li>
+            <li><a href="#44-skillmd-预处理">4.4 SKILL.md 预处理</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-安全机制">5. 安全机制</a></li>
+        <li><a href="#6-文件结构全景">6. 文件结构全景</a></li>
+        <li><a href="#7-配置项configyaml">7. 配置项（config.yaml）</a></li>
+        <li><a href="#8-自演化闭环总结">8. 自演化闭环总结</a></li>
+        <li><a href="#9-关键源码文件索引">9. 关键源码文件索引</a></li>
+      </ul>
+    </li>
   </ul>
 </nav>
 
