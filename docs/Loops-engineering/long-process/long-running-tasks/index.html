@@ -1,0 +1,5609 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  Ralph Loop、OpenClaw 与 Hermes Agent 长程任务运行机制深度对比
+  #
+
+
+基于源码分析（2026年6月），聚焦三者如何实现长程任务（long-running tasks）的启动、执行、容错与终止。
+
+
+  一、项目概览
+  #
+
+
+  
+      
+          维度
+          Ralph Loop (snarktank/ralph)
+          OpenClaw (openclaw/openclaw)
+          Hermes Agent (NousResearch/hermes-agent)
+      
+  
+  
+      
+          语言
+          Bash &#43; Markdown/JSON
+          TypeScript (Node.js)
+          Python
+      
+      
+          Stars
+          ~19.9k
+          ~376k
+          ~180k
+      
+      
+          核心思想
+          文件驱动的自主循环
+          事件驱动的 Gateway &#43; ACP 架构
+          会话驱动的 Agent 循环 &#43; 调度器
+      
+      
+          长程任务模式
+          PRD 驱动的迭代编码循环
+          嵌入式 Agent Loop &#43; 子代理注册表 &#43; 命令队列
+          对话循环 (conversation_loop) &#43; Cron 调度器
+      
+      
+          状态持久化
+          progress.txt &#43; prd.json
+          内存 &#43; SQLite session store &#43; 磁盘状态
+          SQLite session DB &#43; ~/.hermes/cron/jobs.json
+      
+  
+
+
+
+  二、Ralph Loop：极简的文件驱动循环
+  #
+
+
+  2.1 核心架构
+  #
+
+Ralph 是三者中最简单的设计——本质上是一个 Bash for 循环，每次迭代启动一个独立的 AI 编码 Agent（amp 或 claude），让其完成 prd.json 中的一条用户故事。">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/">
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="Ralph Loop、OpenClaw 与 Hermes Agent 长程任务运行机制深度对比 # 基于源码分析（2026年6月），聚焦三者如何实现长程任务（long-running tasks）的启动、执行、容错与终止。
+一、项目概览 # 维度 Ralph Loop (snarktank/ralph) OpenClaw (openclaw/openclaw) Hermes Agent (NousResearch/hermes-agent) 语言 Bash &#43; Markdown/JSON TypeScript (Node.js) Python Stars ~19.9k ~376k ~180k 核心思想 文件驱动的自主循环 事件驱动的 Gateway &#43; ACP 架构 会话驱动的 Agent 循环 &#43; 调度器 长程任务模式 PRD 驱动的迭代编码循环 嵌入式 Agent Loop &#43; 子代理注册表 &#43; 命令队列 对话循环 (conversation_loop) &#43; Cron 调度器 状态持久化 progress.txt &#43; prd.json 内存 &#43; SQLite session store &#43; 磁盘状态 SQLite session DB &#43; ~/.hermes/cron/jobs.json 二、Ralph Loop：极简的文件驱动循环 # 2.1 核心架构 # Ralph 是三者中最简单的设计——本质上是一个 Bash for 循环，每次迭代启动一个独立的 AI 编码 Agent（amp 或 claude），让其完成 prd.json 中的一条用户故事。">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>Long Running Tasks | Modern Agent</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.3bd238e61d8b83033e5eb9f1ccb8012aa38428925913ec840b2262b0068cff91.js" integrity="sha256-O9I45h2LgwM&#43;XrnxzLgBKqOEKJJZE&#43;yECyJisAaM/5E=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/index.xml" title="Modern Agent" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall/" class="">Rag Recall</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/" class="">Rag Recall 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cc96aa92b1fe4deb19f2780a910b3a84" class="toggle"  />
+    <label for="section-cc96aa92b1fe4deb19f2780a910b3a84" class="flex justify-between">
+      <a role="button" class="">Dify</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="toggle"  />
+    <label for="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="flex justify-between">
+      <a role="button" class="">产品</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/list/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="toggle"  />
+    <label for="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="flex justify-between">
+      <a role="button" class="">Sandbox</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f52d73da99d8a76b38639b3169b9c30" class="toggle"  />
+    <label for="section-9f52d73da99d8a76b38639b3169b9c30" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agentclaude/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agentclaue2/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent/" class="">Managed Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fa07d823cbbab8a5cb211097d19a8b0f" class="toggle"  />
+    <label for="section-fa07d823cbbab8a5cb211097d19a8b0f" class="flex justify-between">
+      <a role="button" class="">Reflection</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91cb2f81fbf96ec25f68405674241162" class="toggle"  />
+    <label for="section-91cb2f81fbf96ec25f68405674241162" class="flex justify-between">
+      <a role="button" class="">Planning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b95bbb7a37b62a6b524cdc440bea4bea" class="toggle"  />
+    <label for="section-b95bbb7a37b62a6b524cdc440bea4bea" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c6918aab8d4437c8353af1df185685d7" class="toggle"  />
+    <label for="section-c6918aab8d4437c8353af1df185685d7" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4bd94f7e5788f6f6b717b9411d5219d7" class="toggle"  />
+    <label for="section-4bd94f7e5788f6f6b717b9411d5219d7" class="flex justify-between">
+      <a role="button" class="">Hermes</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes1/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes2/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes/" class="">Hermes Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a5f1c9d05f8697fe4344602432ed2c1" class="toggle"  />
+    <label for="section-4a5f1c9d05f8697fe4344602432ed2c1" class="flex justify-between">
+      <a role="button" class="">Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/hindsight/" class="">Hindsight</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking/" class="">Openviking</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27631881d59f460a7e82415eae943524" class="toggle"  />
+    <label for="section-27631881d59f460a7e82415eae943524" class="flex justify-between">
+      <a role="button" class="">Openclaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-867db087ab84641b5d4e3bc021355890" class="toggle"  />
+    <label for="section-867db087ab84641b5d4e3bc021355890" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ca53c095705ebe6e57deb96a02c0d3e3" class="toggle"  />
+    <label for="section-ca53c095705ebe6e57deb96a02c0d3e3" class="flex justify-between">
+      <a role="button" class="">Multi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7f3cbaaa32d67178b923d0e7080ddc58" class="toggle"  />
+    <label for="section-7f3cbaaa32d67178b923d0e7080ddc58" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Kanban/" class="">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7c1e99e2bc0dea50268247820e8feb36" class="toggle"  />
+    <label for="section-7c1e99e2bc0dea50268247820e8feb36" class="flex justify-between">
+      <a role="button" class="">Multi-agent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8aff2d658582dd8082936377ce08c46d" class="toggle"  />
+    <label for="section-8aff2d658582dd8082936377ce08c46d" class="flex justify-between">
+      <a role="button" class="">subagent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/Claude-code/" class="">Claude Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/subagent/" class="">Subagent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-78862664423ffb11f8c168297456fbac" class="toggle"  />
+    <label for="section-78862664423ffb11f8c168297456fbac" class="flex justify-between">
+      <a role="button" class="">Teams *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-Teams/" class="">Claude Code Teams</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-TeamsA1/" class="">Claude Code Teams[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-504cb284e9f6a649d018a049679638f6" class="toggle"  />
+    <label for="section-504cb284e9f6a649d018a049679638f6" class="flex justify-between">
+      <a role="button" class="">Agent Tool</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-3dad97d7b0c9fbf829c7a8480cd7bcec" class="toggle"  />
+    <label for="section-3dad97d7b0c9fbf829c7a8480cd7bcec" class="flex justify-between">
+      <a role="button" class="">Tool use</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/Tool-use/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/Tool-use/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/Tool-use/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/Tool-use/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-aa27abb55dc621af66ea631cd4bad469" class="toggle"  />
+    <label for="section-aa27abb55dc621af66ea631cd4bad469" class="flex justify-between">
+      <a role="button" class="">Tool 演进</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/%E6%BC%94%E8%BF%9B/fc&#43;mcp&#43;cli/" class="">Functioncall-&gt;MCP-&gt;cli &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8fd065cbe7dbbad30f0c4e4d0545d6c4" class="toggle"  />
+    <label for="section-8fd065cbe7dbbad30f0c4e4d0545d6c4" class="flex justify-between">
+      <a role="button" class="">MCP *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle"  />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle"  />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/openclaw-sandbox-security/" class="">Openclaw Sandbox Security</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/" class="">Openclaw Conversation State Management</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/" class="">Openclaw Tool Invocation Flow</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-406a2e1159d423500a23abb9a994a5a3" class="toggle"  />
+    <label for="section-406a2e1159d423500a23abb9a994a5a3" class="flex justify-between">
+      <a role="button" class="">Hermes Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitcture/" class="">Arcitcture</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/" class="">Skill Envolve</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/permission/" class="">Permission[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-339828cdd4ae109f0b47d6033c8220ec" class="toggle"  />
+    <label for="section-339828cdd4ae109f0b47d6033c8220ec" class="flex justify-between">
+      <a role="button" class="">Coding Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/coding-agent/Tau-Agent/" class="">Tau Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b1ceebdd7e406fc4533519c821a9e4c3" class="toggle" checked />
+    <label for="section-b1ceebdd7e406fc4533519c821a9e4c3" class="flex justify-between">
+      <a role="button" class="">Loops engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-01142eb3e9d36b255ac107cb9131d7c2" class="toggle"  />
+    <label for="section-01142eb3e9d36b255ac107cb9131d7c2" class="flex justify-between">
+      <a role="button" class="">goal</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/" class="">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="toggle"  />
+    <label for="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="flex justify-between">
+      <a role="button" class="">loop engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loops/" class="">loops engineering[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b3a0ebe16d532fb38ede799ae1575c3a" class="toggle" checked />
+    <label for="section-b3a0ebe16d532fb38ede799ae1575c3a" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/" class="active">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/openclaw/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle"  />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering1/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering2/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-compress/" class="">Claude /compact</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/codex-context/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">context engineering[Manus]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/skill/" class="">编写高质量Skill的六大失效模式</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="toggle"  />
+    <label for="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="flex justify-between">
+      <a role="button" class="">AI Native</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeminimax/" class="">AI原生组织实践(MiniMax)</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Claude-tag/" class="">Claude tag</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Ai-nativeali/" class="">AI native与人机协作[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeclaude/" class="">Bottleneck Shift in AI-native Engineering[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Long Running Tasks</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#ralph-loopopenclaw-与-hermes-agent-长程任务运行机制深度对比">Ralph Loop、OpenClaw 与 Hermes Agent 长程任务运行机制深度对比</a>
+      <ul>
+        <li><a href="#一项目概览">一、项目概览</a></li>
+        <li><a href="#二ralph-loop极简的文件驱动循环">二、Ralph Loop：极简的文件驱动循环</a>
+          <ul>
+            <li><a href="#21-核心架构">2.1 核心架构</a></li>
+            <li><a href="#22-源码剖析ralphsh">2.2 源码剖析：<code>ralph.sh</code></a></li>
+            <li><a href="#23-agent-指令promptmd">2.3 Agent 指令：<code>prompt.md</code></a></li>
+            <li><a href="#24-关键约束">2.4 关键约束</a></li>
+            <li><a href="#25-容错机制">2.5 容错机制</a></li>
+            <li><a href="#26-局限性">2.6 局限性</a></li>
+          </ul>
+        </li>
+        <li><a href="#三openclaw事件驱动的-gateway--acp-架构">三、OpenClaw：事件驱动的 Gateway + ACP 架构</a>
+          <ul>
+            <li><a href="#31-核心架构">3.1 核心架构</a></li>
+            <li><a href="#32-command-queue--lanes并发控制核心">3.2 Command Queue + Lanes：并发控制核心</a></li>
+            <li><a href="#33-acp-turn-runner单次执行单元">3.3 ACP Turn Runner：单次执行单元</a></li>
+            <li><a href="#34-subagent-registry子代理生命周期管理">3.4 Subagent Registry：子代理生命周期管理</a></li>
+            <li><a href="#35-子代理完成生命周期subagent-announcets">3.5 子代理完成生命周期（subagent-announce.ts）</a></li>
+            <li><a href="#36-a2aagent-to-agentping-pong-流程">3.6 A2A（Agent-to-Agent）Ping-Pong 流程</a></li>
+          </ul>
+        </li>
+        <li><a href="#四hermes-agent会话驱动的-agent-循环--cron-调度器">四、Hermes Agent：会话驱动的 Agent 循环 + Cron 调度器</a>
+          <ul>
+            <li><a href="#41-核心架构">4.1 核心架构</a></li>
+            <li><a href="#42-conversation-loop核心迭代机制">4.2 Conversation Loop：核心迭代机制</a></li>
+            <li><a href="#43-context-compression长对话管理">4.3 Context Compression：长对话管理</a></li>
+            <li><a href="#44-cron-调度器定时长程任务">4.4 Cron 调度器：定时长程任务</a></li>
+            <li><a href="#45-asyncsync-bridging">4.5 Async/Sync Bridging</a></li>
+            <li><a href="#46-background-review后台自我改进">4.6 Background Review：后台自我改进</a></li>
+          </ul>
+        </li>
+        <li><a href="#五三种机制对比分析">五、三种机制对比分析</a>
+          <ul>
+            <li><a href="#51-循环模型对比">5.1 循环模型对比</a></li>
+            <li><a href="#52-长程任务设计哲学">5.2 长程任务设计哲学</a></li>
+            <li><a href="#53-状态持久化对比">5.3 状态持久化对比</a></li>
+            <li><a href="#54-容错深度对比">5.4 容错深度对比</a></li>
+          </ul>
+        </li>
+        <li><a href="#六源码级关键技术细节">六、源码级关键技术细节</a>
+          <ul>
+            <li><a href="#61-ralph-的-prd-状态机">6.1 Ralph 的 PRD 状态机</a></li>
+            <li><a href="#62-openclaw-的-lane-优先级队列">6.2 OpenClaw 的 Lane 优先级队列</a></li>
+            <li><a href="#63-hermes-的-iteration-budget-线程安全">6.3 Hermes 的 Iteration Budget 线程安全</a></li>
+            <li><a href="#64-openclaw-的-subagent-孤儿恢复">6.4 OpenClaw 的 Subagent 孤儿恢复</a></li>
+            <li><a href="#65-hermes-的-cron-grace-window">6.5 Hermes 的 Cron Grace Window</a></li>
+          </ul>
+        </li>
+        <li><a href="#七总结与启示">七、总结与启示</a>
+          <ul>
+            <li><a href="#71-三种模式适用场景">7.1 三种模式适用场景</a></li>
+            <li><a href="#72-设计模式总结">7.2 设计模式总结</a></li>
+            <li><a href="#73-关键教训">7.3 关键教训</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="ralph-loopopenclaw-与-hermes-agent-长程任务运行机制深度对比">
+  Ralph Loop、OpenClaw 与 Hermes Agent 长程任务运行机制深度对比
+  <a class="anchor" href="#ralph-loopopenclaw-%e4%b8%8e-hermes-agent-%e9%95%bf%e7%a8%8b%e4%bb%bb%e5%8a%a1%e8%bf%90%e8%a1%8c%e6%9c%ba%e5%88%b6%e6%b7%b1%e5%ba%a6%e5%af%b9%e6%af%94">#</a>
+</h1>
+<blockquote>
+<p>基于源码分析（2026年6月），聚焦三者如何实现长程任务（long-running tasks）的启动、执行、容错与终止。</p></blockquote>
+<hr>
+<h2 id="一项目概览">
+  一、项目概览
+  <a class="anchor" href="#%e4%b8%80%e9%a1%b9%e7%9b%ae%e6%a6%82%e8%a7%88">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>Ralph Loop (snarktank/ralph)</th>
+          <th>OpenClaw (openclaw/openclaw)</th>
+          <th>Hermes Agent (NousResearch/hermes-agent)</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>语言</td>
+          <td>Bash + Markdown/JSON</td>
+          <td>TypeScript (Node.js)</td>
+          <td>Python</td>
+      </tr>
+      <tr>
+          <td>Stars</td>
+          <td>~19.9k</td>
+          <td>~376k</td>
+          <td>~180k</td>
+      </tr>
+      <tr>
+          <td>核心思想</td>
+          <td><strong>文件驱动</strong>的自主循环</td>
+          <td><strong>事件驱动</strong>的 Gateway + ACP 架构</td>
+          <td><strong>会话驱动</strong>的 Agent 循环 + 调度器</td>
+      </tr>
+      <tr>
+          <td>长程任务模式</td>
+          <td>PRD 驱动的迭代编码循环</td>
+          <td>嵌入式 Agent Loop + 子代理注册表 + 命令队列</td>
+          <td>对话循环 (conversation_loop) + Cron 调度器</td>
+      </tr>
+      <tr>
+          <td>状态持久化</td>
+          <td><code>progress.txt</code> + <code>prd.json</code></td>
+          <td>内存 + SQLite session store + 磁盘状态</td>
+          <td>SQLite session DB + <code>~/.hermes/cron/jobs.json</code></td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="二ralph-loop极简的文件驱动循环">
+  二、Ralph Loop：极简的文件驱动循环
+  <a class="anchor" href="#%e4%ba%8cralph-loop%e6%9e%81%e7%ae%80%e7%9a%84%e6%96%87%e4%bb%b6%e9%a9%b1%e5%8a%a8%e5%be%aa%e7%8e%af">#</a>
+</h2>
+<h3 id="21-核心架构">
+  2.1 核心架构
+  <a class="anchor" href="#21-%e6%a0%b8%e5%bf%83%e6%9e%b6%e6%9e%84">#</a>
+</h3>
+<p>Ralph 是三者中最简单的设计——本质上是一个 <strong>Bash <code>for</code> 循环</strong>，每次迭代启动一个独立的 AI 编码 Agent（amp 或 claude），让其完成 <code>prd.json</code> 中的一条用户故事。</p>
+<pre tabindex="0"><code>┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│  prd.json    │────▶│ ralph.sh     │────▶│ AI Agent    │
+│  (PRD状态)   │     │ (for循环)     │     │ (amp/claude)│
+└─────────────┘     └──────────────┘     └──────┬──────┘
+                                                │
+                                  ┌─────────────┴─────────────┐
+                                  │ 检查 &lt;promise&gt;COMPLETE    │
+                                  │ 更新 prd.json passes:true  │
+                                  │ 追加 progress.txt          │
+                                  └───────────────────────────┘
+</code></pre><h3 id="22-源码剖析ralphsh">
+  2.2 源码剖析：<code>ralph.sh</code>
+  <a class="anchor" href="#22-%e6%ba%90%e7%a0%81%e5%89%96%e6%9e%90ralphsh">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 核心循环（摘自 ralph.sh）</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> i in <span style="color:#66d9ef">$(</span>seq <span style="color:#ae81ff">1</span> $MAX_ITERATIONS<span style="color:#66d9ef">)</span>; <span style="color:#66d9ef">do</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 启动 AI 编码 Agent</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> <span style="color:#f92672">[[</span> <span style="color:#e6db74">&#34;</span>$TOOL<span style="color:#e6db74">&#34;</span> <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;amp&#34;</span> <span style="color:#f92672">]]</span>; <span style="color:#66d9ef">then</span>
+</span></span><span style="display:flex;"><span>    OUTPUT<span style="color:#f92672">=</span><span style="color:#66d9ef">$(</span>cat <span style="color:#e6db74">&#34;</span>$SCRIPT_DIR<span style="color:#e6db74">/prompt.md&#34;</span> | amp --dangerously-allow-all 2&gt;&amp;1<span style="color:#66d9ef">)</span> <span style="color:#f92672">||</span> true
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">else</span>
+</span></span><span style="display:flex;"><span>    OUTPUT<span style="color:#f92672">=</span><span style="color:#66d9ef">$(</span>claude --dangerously-skip-permissions --print &lt; <span style="color:#e6db74">&#34;</span>$CLAUDE<span style="color:#e6db74">.md&#34;</span> 2&gt;&amp;1<span style="color:#66d9ef">)</span> <span style="color:#f92672">||</span> true
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">fi</span>
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 检查完成信号</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> echo <span style="color:#e6db74">&#34;</span>$OUTPUT<span style="color:#e6db74">&#34;</span> | grep -q <span style="color:#e6db74">&#34;&lt;promise&gt;COMPLETE&lt;/promise&gt;&#34;</span>; <span style="color:#66d9ef">then</span>
+</span></span><span style="display:flex;"><span>    echo <span style="color:#e6db74">&#34;Ralph completes all tasks!&#34;</span>
+</span></span><span style="display:flex;"><span>    exit <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">fi</span>
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span>  echo <span style="color:#e6db74">&#34;Iteration </span>$i<span style="color:#e6db74"> complete. Continuing...&#34;</span>
+</span></span><span style="display:flex;"><span>  sleep <span style="color:#ae81ff">2</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">done</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>echo <span style="color:#e6db74">&#34;Ralph reached max iterations (</span>$MAX_ITERATIONS<span style="color:#e6db74">) without completing all tasks.&#34;</span>
+</span></span><span style="display:flex;"><span>exit <span style="color:#ae81ff">1</span>
+</span></span></code></pre></div><p><strong>关键设计点：</strong></p>
+<ol>
+<li>
+<p><strong>无状态迭代</strong>：每次迭代启动一个全新的 Agent 实例，无上下文记忆。Agent 通过读取 <code>progress.txt</code> 中的 &ldquo;Codebase Patterns&rdquo; 部分获取前序经验。</p>
+</li>
+<li>
+<p><strong>完成信号协议</strong>：Agent 在回复中包含 <code>&lt;promise&gt;COMPLETE&lt;/promise&gt;</code> 标记，Bash 脚本通过 <code>grep</code> 检测。这是一种极简的信号量机制。</p>
+</li>
+<li>
+<p><strong>PRD 状态机</strong>：<code>prd.json</code> 充当任务队列和状态机：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;userStories&#34;</span>: [
+</span></span><span style="display:flex;"><span>    {<span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;US-001&#34;</span>, <span style="color:#f92672">&#34;priority&#34;</span>: <span style="color:#ae81ff">1</span>, <span style="color:#f92672">&#34;passes&#34;</span>: <span style="color:#66d9ef">false</span>, <span style="color:#960050;background-color:#1e0010">...</span>},
+</span></span><span style="display:flex;"><span>    {<span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;US-002&#34;</span>, <span style="color:#f92672">&#34;priority&#34;</span>: <span style="color:#ae81ff">2</span>, <span style="color:#f92672">&#34;passes&#34;</span>: <span style="color:#66d9ef">false</span>, <span style="color:#960050;background-color:#1e0010">...</span>}
+</span></span><span style="display:flex;"><span>  ]
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>每次迭代 Agent 找到最高优先级的 <code>passes: false</code> 故事，实现后设为 <code>true</code>。</p>
+</li>
+<li>
+<p><strong>进度归档</strong>：切换分支时自动归档旧进度到 <code>archive/YYYY-MM-DD-feature/</code>。</p>
+</li>
+</ol>
+<h3 id="23-agent-指令promptmd">
+  2.3 Agent 指令：<code>prompt.md</code>
+  <a class="anchor" href="#23-agent-%e6%8c%87%e4%bb%a4promptmd">#</a>
+</h3>
+<p>Prompt 定义了 Agent 的完整工作流：</p>
+<ol>
+<li>读取 <code>prd.json</code> 和 <code>progress.txt</code></li>
+<li>切换到正确分支</li>
+<li>选取最高优先级未完成的用户故事</li>
+<li>实现该故事</li>
+<li>运行质量检查（typecheck, lint, test）</li>
+<li>更新 <code>AGENTS.md</code>（发现可复用模式时）</li>
+<li>提交代码</li>
+<li>更新 <code>prd.json</code> 设置 <code>passes: true</code></li>
+<li>追加 <code>progress.txt</code> 进度日志</li>
+<li>检查是否全部完成 → 输出 <code>&lt;promise&gt;COMPLETE&lt;/promise&gt;</code></li>
+</ol>
+<h3 id="24-关键约束">
+  2.4 关键约束
+  <a class="anchor" href="#24-%e5%85%b3%e9%94%ae%e7%ba%a6%e6%9d%9f">#</a>
+</h3>
+<p>从 <code>skills/ralph/SKILL.md</code> 中可以看到：</p>
+<blockquote>
+<p><strong>Each story must be completable in ONE Ralph iteration (one context window).</strong></p></blockquote>
+<p>Ralph 每轮启动新的 Agent，没有上下文记忆。如果故事太大，LLM 会在上下文耗尽前无法完成，产出破坏性代码。因此故事粒度控制是 Ralph 成功的关键。</p>
+<h3 id="25-容错机制">
+  2.5 容错机制
+  <a class="anchor" href="#25-%e5%ae%b9%e9%94%99%e6%9c%ba%e5%88%b6">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>容错手段</th>
+          <th>实现方式</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>最大迭代限制</td>
+          <td><code>MAX_ITERATIONS</code> 参数（默认 10）</td>
+      </tr>
+      <tr>
+          <td>Agent 崩溃恢复</td>
+          <td>`</td>
+      </tr>
+      <tr>
+          <td>上下文限制</td>
+          <td>通过 <code>progress.txt</code> 的模式总结传递知识</td>
+      </tr>
+      <tr>
+          <td>分支隔离</td>
+          <td>每个 PRD 使用独立 git 分支</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="26-局限性">
+  2.6 局限性
+  <a class="anchor" href="#26-%e5%b1%80%e9%99%90%e6%80%a7">#</a>
+</h3>
+<ul>
+<li><strong>无并发</strong>：只能串行执行，一轮一次</li>
+<li><strong>无状态恢复</strong>：如果脚本被中断（Ctrl+C），没有恢复机制</li>
+<li><strong>依赖外部 Agent</strong>：需要 amp 或 claude CLI 可用</li>
+<li><strong>简单完成检测</strong>：grep 匹配可能被误触发</li>
+</ul>
+<hr>
+<h2 id="三openclaw事件驱动的-gateway--acp-架构">
+  三、OpenClaw：事件驱动的 Gateway + ACP 架构
+  <a class="anchor" href="#%e4%b8%89openclaw%e4%ba%8b%e4%bb%b6%e9%a9%b1%e5%8a%a8%e7%9a%84-gateway--acp-%e6%9e%b6%e6%9e%84">#</a>
+</h2>
+<h3 id="31-核心架构">
+  3.1 核心架构
+  <a class="anchor" href="#31-%e6%a0%b8%e5%bf%83%e6%9e%b6%e6%9e%84">#</a>
+</h3>
+<p>OpenClaw 的长程任务机制是其最复杂的部分，涉及 <strong>五层多代理交互</strong>（来自源码注释）：</p>
+<table>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>机制</th>
+          <th>方向</th>
+          <th>核心源文件</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>① 路由</td>
+          <td>Binding + resolve-route</td>
+          <td>Channel → Agent</td>
+          <td><code>src/routing/session-key.ts</code></td>
+      </tr>
+      <tr>
+          <td>② 会话</td>
+          <td>Session key + isolated storage</td>
+          <td>Agent-internal</td>
+          <td><code>src/agents/agent-scope.ts</code></td>
+      </tr>
+      <tr>
+          <td>③ 委派</td>
+          <td>sessions_spawn + subagent</td>
+          <td>Parent → Child</td>
+          <td><code>src/agents/subagent-spawn.ts</code>, <code>subagent-announce.ts</code></td>
+      </tr>
+      <tr>
+          <td>④ 对等</td>
+          <td>sessions_send + A2A flow</td>
+          <td>Agent ↔ Agent</td>
+          <td><code>sessions-send-tool.ts</code></td>
+      </tr>
+      <tr>
+          <td>⑤ 调度</td>
+          <td>Command queue + lanes</td>
+          <td>Global 并发控制</td>
+          <td><code>src/agents/lanes.ts</code></td>
+      </tr>
+  </tbody>
+</table>
+<pre tabindex="0"><code>┌──────────────────────────────────────────────────────────────┐
+│                      Gateway (Node.js)                        │
+│                                                              │
+│  ┌─────────┐  ┌───────────────┐  ┌──────────────────────┐   │
+│  │ Channels │─▶│ Command Queue  │─▶│  ACP Session Manager │   │
+│  │ (TG/Disc│  │  + Lanes       │  │  (turn-runner)        │   │
+│  │ ord/...)│  └───────────────┘  └──────────┬───────────┘   │
+│  └─────────┘                                │               │
+│                                             ▼               │
+│                               ┌─────────────────────────┐   │
+│                               │  Subagent Registry      │   │
+│                               │  (lifecycle/delivery/   │   │
+│                               │   steer/orphan recovery)│   │
+│                               └─────────────────────────┘   │
+│                                             │               │
+│                                             ▼               │
+│                               ┌─────────────────────────┐   │
+│                               │  ACP Runtime (LLM API)   │   │
+│                               │  (Claude/Codex/etc.)     │   │
+│                               └─────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
+</code></pre><h3 id="32-command-queue--lanes并发控制核心">
+  3.2 Command Queue + Lanes：并发控制核心
+  <a class="anchor" href="#32-command-queue--lanes%e5%b9%b6%e5%8f%91%e6%8e%a7%e5%88%b6%e6%a0%b8%e5%bf%83">#</a>
+</h3>
+<p><strong>源码：<code>src/process/command-queue.ts</code></strong></p>
+<p>OpenClaw 使用 <strong>Lane（车道）</strong> 模型来序列化命令执行：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">LaneState</span> <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">lane</span>: <span style="color:#66d9ef">string</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">queue</span>: <span style="color:#66d9ef">QueueEntry</span>[];
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">activeTaskIds</span>: <span style="color:#66d9ef">Set</span>&lt;<span style="color:#f92672">number</span>&gt;;
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">maxConcurrent</span>: <span style="color:#66d9ef">number</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">draining</span>: <span style="color:#66d9ef">boolean</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">generation</span>: <span style="color:#66d9ef">number</span>;
+</span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p><strong>Lane 类型</strong>（<code>src/agents/lanes.ts</code>）：</p>
+<table>
+  <thead>
+      <tr>
+          <th>Lane</th>
+          <th>用途</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>main</code></td>
+          <td>默认入站聊天 Lane</td>
+      </tr>
+      <tr>
+          <td><code>subagent</code></td>
+          <td>子代理执行</td>
+      </tr>
+      <tr>
+          <td><code>cron</code></td>
+          <td>Cron 任务外层 Lane</td>
+      </tr>
+      <tr>
+          <td><code>cron-nested</code></td>
+          <td>Cron 内部 Agent 工作</td>
+      </tr>
+      <tr>
+          <td><code>nested:&lt;sessionKey&gt;</code></td>
+          <td>每个会话的嵌套工作</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>队列排水（drain）机制</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">drainLane</span>(<span style="color:#a6e22e">lane</span>: <span style="color:#66d9ef">string</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">state</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">getLaneState</span>(<span style="color:#a6e22e">lane</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">draining</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">pump</span> <span style="color:#f92672">=</span> () <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> (<span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">activeTaskIds</span>.<span style="color:#a6e22e">size</span> <span style="color:#f92672">&lt;</span> <span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">maxConcurrent</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">queue</span>.<span style="color:#a6e22e">length</span> <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">entry</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">queue</span>.<span style="color:#a6e22e">shift</span>();
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">taskId</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">getQueueState</span>().<span style="color:#a6e22e">nextTaskId</span><span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">activeTaskIds</span>.<span style="color:#a6e22e">add</span>(<span style="color:#a6e22e">taskId</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">void</span> (<span style="color:#66d9ef">async</span> () <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">result</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">runQueueEntryTask</span>(<span style="color:#a6e22e">lane</span>, <span style="color:#a6e22e">entry</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">completeTask</span>(<span style="color:#a6e22e">state</span>, <span style="color:#a6e22e">taskId</span>, <span style="color:#a6e22e">taskGeneration</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">notifyActiveTaskWaiters</span>();
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">pump</span>();  <span style="color:#75715e">// 递归排水
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      })();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">pump</span>();
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>关键设计</strong>：</p>
+<ul>
+<li>每个 Lane 独立队列，互不阻塞</li>
+<li>支持优先级排序（foreground/background/normal）</li>
+<li>支持任务超时（<code>taskTimeoutMs</code> + 滑动超时计算）</li>
+<li>Drain 模式用于优雅重启</li>
+</ul>
+<h3 id="33-acp-turn-runner单次执行单元">
+  3.3 ACP Turn Runner：单次执行单元
+  <a class="anchor" href="#33-acp-turn-runner%e5%8d%95%e6%ac%a1%e6%89%a7%e8%a1%8c%e5%8d%95%e5%85%83">#</a>
+</h3>
+<p><strong>源码：<code>src/acp/control-plane/manager.turn-runner.ts</code></strong></p>
+<p><code>runManagerTurn</code> 是 OpenClaw 执行单次 LLM 交互的核心函数：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">runManagerTurn</span>(<span style="color:#a6e22e">params</span><span style="color:#f92672">:</span> {...})<span style="color:#f92672">:</span> <span style="color:#a6e22e">Promise</span>&lt;<span style="color:#f92672">void</span>&gt; {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">turnStartedAt</span> <span style="color:#f92672">=</span> Date.<span style="color:#a6e22e">now</span>();
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 1. 记录后台任务上下文
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">taskContext</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">createBackgroundTaskRecord</span>(<span style="color:#a6e22e">taskContext</span>, <span style="color:#a6e22e">turnStartedAt</span>);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 2. 后端故障转移（failover）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">let</span> <span style="color:#a6e22e">backendIdx</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">backendIdx</span> <span style="color:#f92672">&lt;</span> <span style="color:#a6e22e">candidateBackends</span>.<span style="color:#a6e22e">length</span>; <span style="color:#a6e22e">backendIdx</span><span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">let</span> <span style="color:#a6e22e">attempt</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">attempt</span> <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">2</span>; <span style="color:#a6e22e">attempt</span><span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 3. 确保运行时句柄
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">ensured</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">ensureRuntimeHandle</span>({...});
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 4. 消费 ACP 事件流
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">turnPromise</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">consumeAcpTurnStream</span>({
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">runtime</span>, <span style="color:#a6e22e">turn</span><span style="color:#f92672">:</span> {<span style="color:#a6e22e">handle</span>, <span style="color:#a6e22e">text</span>, <span style="color:#a6e22e">signal</span>: <span style="color:#66d9ef">combinedSignal</span>},
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">onOutputEvent</span><span style="color:#f92672">:</span> (<span style="color:#a6e22e">event</span>) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">sawTurnOutput</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 进度追踪
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#a6e22e">taskProgressSummary</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">appendBackgroundTaskProgressSummary</span>(
+</span></span><span style="display:flex;"><span>              <span style="color:#a6e22e">taskProgressSummary</span>, <span style="color:#a6e22e">event</span>.<span style="color:#a6e22e">text</span>
+</span></span><span style="display:flex;"><span>            );
+</span></span><span style="display:flex;"><span>          },
+</span></span><span style="display:flex;"><span>        });
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 5. 带超时的等待
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">turnOutcome</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">awaitTurnWithTimeout</span>({
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">turnPromise</span>, <span style="color:#a6e22e">timeoutMs</span>: <span style="color:#66d9ef">turnTimeoutMs</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">GRACE_MS</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">onTimeout</span>: <span style="color:#66d9ef">async</span> () <span style="color:#f92672">=&gt;</span> { <span style="color:#a6e22e">cleanupTimedOutTurn</span>(...) },
+</span></span><span style="display:flex;"><span>        });
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 6. 记录完成
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#a6e22e">markBackgroundTaskTerminal</span>(<span style="color:#a6e22e">taskContext</span>.<span style="color:#a6e22e">runId</span>, {<span style="color:#a6e22e">status</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;succeeded&#34;</span>});
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>      } <span style="color:#66d9ef">catch</span> (<span style="color:#a6e22e">error</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 故障恢复逻辑
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#a6e22e">retryFreshHandle</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">prepareFreshManagerRuntimeHandleRetry</span>({...});
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">retryFreshHandle</span>) <span style="color:#66d9ef">continue</span>;
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>关键设计</strong>：</p>
+<ul>
+<li><strong>后端故障转移</strong>：支持主后端 + 多个 fallback 后端的自动切换</li>
+<li><strong>重试机制</strong>：每个后端最多重试 2 次</li>
+<li><strong>超时管理</strong>：可配置的 turn 超时 + 优雅期</li>
+<li><strong>进度追踪</strong>：后台任务的文本输出累积为进度摘要</li>
+</ul>
+<h3 id="34-subagent-registry子代理生命周期管理">
+  3.4 Subagent Registry：子代理生命周期管理
+  <a class="anchor" href="#34-subagent-registry%e5%ad%90%e4%bb%a3%e7%90%86%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f%e7%ae%a1%e7%90%86">#</a>
+</h3>
+<p><strong>源码：<code>src/agents/subagent-registry.ts</code></strong></p>
+<p>这是 OpenClaw 最复杂的部分之一——管理子代理的完整生命周期：</p>
+<pre tabindex="0"><code>Subagent 生命周期：
+  spawned → running → [paused/yielded] → completed/failed → announced
+</code></pre><p><strong>关键常量</strong>（源码中可见）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">SUBAGENT_ANNOUNCE_TIMEOUT_MS</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">120</span><span style="color:#a6e22e">_000</span>;      <span style="color:#75715e">// 2分钟完成通知超时
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">LIFECYCLE_ERROR_RETRY_GRACE_MS</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">15</span><span style="color:#a6e22e">_000</span>;     <span style="color:#75715e">// 错误重试宽限期
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">STALE_ACTIVE_SUBAGENT_GRACE_MS</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">60</span><span style="color:#a6e22e">_000</span>;      <span style="color:#75715e">// 活跃子代理变宽限期
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">SUSPENDED_DELIVERY_HARD_CAP</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">50</span>;             <span style="color:#75715e">// 挂起交付硬上限
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">SESSION_RUN_TTL_MS</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">5</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">60</span><span style="color:#a6e22e">_000</span>;              <span style="color:#75715e">// 会话运行 TTL
+</span></span></span></code></pre></div><p><strong>核心功能</strong>：</p>
+<ol>
+<li><strong>注册与持久化</strong>：子代理状态写入磁盘（SQLite + JSON）</li>
+<li><strong>交付重试</strong>：完成通知失败时自动重试（最多 <code>MAX_ANNOUNCE_RETRY_COUNT</code> 次）</li>
+<li><strong>孤儿恢复</strong>：进程重启后恢复孤立的子代理记录</li>
+<li><strong>转向（Steering）</strong>：支持运行时注入指导到活跃子代理</li>
+<li><strong>深度限制</strong>：防止无限嵌套委派</li>
+</ol>
+<h3 id="35-子代理完成生命周期subagent-announcets">
+  3.5 子代理完成生命周期（subagent-announce.ts）
+  <a class="anchor" href="#35-%e5%ad%90%e4%bb%a3%e7%90%86%e5%ae%8c%e6%88%90%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9fsubagent-announcets">#</a>
+</h3>
+<pre tabindex="0"><code>1. 子代理完成 → readSubagentOutput() 读取输出
+2. 构建内部事件上下文
+3. 尝试唤醒父级运行（如果父级仍活跃）
+4. 回退到请求者 Agent 交接
+5. 通过 Gateway send 方法交付到请求者聊天频道
+6. 使用 SILENT_REPLY_TOKEN 抑制重复通知
+</code></pre><h3 id="36-a2aagent-to-agentping-pong-流程">
+  3.6 A2A（Agent-to-Agent）Ping-Pong 流程
+  <a class="anchor" href="#36-a2aagent-to-agentping-pong-%e6%b5%81%e7%a8%8b">#</a>
+</h3>
+<pre tabindex="0"><code>- maxPingPongTurns 控制最大轮数（默认 2）
+- buildAgentToAgentReplyContext() 包装每轮角色/上下文
+- runAgentStep() 在专用 Lane 上执行每轮
+- 终止条件：isReplySkip() / isNonDeliverableSessionsReply() / 达到最大轮数
+- 最终通知通过 Gateway send 方法交付
+</code></pre><hr>
+<h2 id="四hermes-agent会话驱动的-agent-循环--cron-调度器">
+  四、Hermes Agent：会话驱动的 Agent 循环 + Cron 调度器
+  <a class="anchor" href="#%e5%9b%9bhermes-agent%e4%bc%9a%e8%af%9d%e9%a9%b1%e5%8a%a8%e7%9a%84-agent-%e5%be%aa%e7%8e%af--cron-%e8%b0%83%e5%ba%a6%e5%99%a8">#</a>
+</h2>
+<h3 id="41-核心架构">
+  4.1 核心架构
+  <a class="anchor" href="#41-%e6%a0%b8%e5%bf%83%e6%9e%b6%e6%9e%84">#</a>
+</h3>
+<p>Hermes Agent 的长程任务分为两个层次：</p>
+<pre tabindex="0"><code>层次 1：对话循环（conversation_loop.py）
+  ┌─────────────────────────────────────────────┐
+  │  while (api_calls &lt; max_iterations          │
+  │     &amp;&amp; iteration_budget.remaining &gt; 0) {    │
+  │    1. 检查中断                              │
+  │    2. 消耗迭代预算                           │
+  │    3. 构建 API 消息                         │
+  │    4. 调用 LLM API                          │
+  │    5. 解析响应                               │
+  │    6a. 有工具调用 → 执行 → 追加消息 → 继续  │
+  │    6b. 有文本响应 → 完成 → 返回             │
+  │    6c. 截断 → 重试 / continue              │
+  │    6d. 空响应 → 重试 (最多3次) / 故障转移   │
+  │  }                                          │
+  │  预算耗尽 → 要求模型总结                     │
+  └─────────────────────────────────────────────┘
+
+层次 2：Cron 调度器（cron/scheduler.py + cron/jobs.py）
+  ┌─────────────────────────────────────────────┐
+  │  tick() 每 60 秒执行：                       │
+  │    1. 获取到期的 Cron 任务                   │
+  │    2. 并行池提交并行任务                     │
+  │    3. 顺序池提交序列化任务                   │
+  │    4. 每个任务启动独立 Agent 运行            │
+  │    5. 输出保存到 ~/.hermes/cron/output/      │
+  │    6. 交付结果到指定平台                     │
+  └─────────────────────────────────────────────┘
+</code></pre><h3 id="42-conversation-loop核心迭代机制">
+  4.2 Conversation Loop：核心迭代机制
+  <a class="anchor" href="#42-conversation-loop%e6%a0%b8%e5%bf%83%e8%bf%ad%e4%bb%a3%e6%9c%ba%e5%88%b6">#</a>
+</h3>
+<p><strong>源码：<code>agent/conversation_loop.py</code></strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">run_conversation</span>(agent, user_message, <span style="color:#f92672">...</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 初始化迭代预算（默认 90 次）</span>
+</span></span><span style="display:flex;"><span>    agent<span style="color:#f92672">.</span>iteration_budget <span style="color:#f92672">=</span> IterationBudget(agent<span style="color:#f92672">.</span>max_iterations)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 主循环</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> (api_call_count <span style="color:#f92672">&lt;</span> agent<span style="color:#f92672">.</span>max_iterations 
+</span></span><span style="display:flex;"><span>           <span style="color:#f92672">and</span> agent<span style="color:#f92672">.</span>iteration_budget<span style="color:#f92672">.</span>remaining <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#f92672">or</span> agent<span style="color:#f92672">.</span>_budget_grace_call:
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># 1. 中断检查</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> agent<span style="color:#f92672">.</span>_interrupt_requested:
+</span></span><span style="display:flex;"><span>            interrupted <span style="color:#f92672">=</span> <span style="color:#66d9ef">True</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        api_call_count <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># 2. 消耗预算（或触发优雅退出）</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> agent<span style="color:#f92672">.</span>_budget_grace_call:
+</span></span><span style="display:flex;"><span>            agent<span style="color:#f92672">.</span>_budget_grace_call <span style="color:#f92672">=</span> <span style="color:#66d9ef">False</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">elif</span> <span style="color:#f92672">not</span> agent<span style="color:#f92672">.</span>iteration_budget<span style="color:#f92672">.</span>consume():
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">break</span>  <span style="color:#75715e"># 预算耗尽</span>
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># 3. /steer 指导注入（运行时中途注入文本）</span>
+</span></span><span style="display:flex;"><span>        _pre_api_steer <span style="color:#f92672">=</span> agent<span style="color:#f92672">.</span>_drain_pending_steer()
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> _pre_api_steer:
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># 注入到最近的 tool 消息中</span>
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># 4. 调用 LLM API</span>
+</span></span><span style="display:flex;"><span>        response <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> agent<span style="color:#f92672">.</span>_call_api(api_messages, <span style="color:#f92672">...</span>)
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># 5. 解析响应</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> 有工具调用:
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># 执行工具</span>
+</span></span><span style="display:flex;"><span>            tool_results <span style="color:#f92672">=</span> agent<span style="color:#f92672">.</span>_execute_tool_calls(tool_calls, <span style="color:#f92672">...</span>)
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># 追加 tool 结果到消息列表</span>
+</span></span><span style="display:flex;"><span>            messages<span style="color:#f92672">.</span>extend(tool_results)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">continue</span>  <span style="color:#75715e"># 继续循环</span>
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">elif</span> 有文本响应:
+</span></span><span style="display:flex;"><span>            final_response <span style="color:#f92672">=</span> response
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">break</span>  <span style="color:#75715e"># 完成</span>
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">elif</span> 截断响应:
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># 重试，要求继续</span>
+</span></span><span style="display:flex;"><span>            length_continue_retries <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">continue</span>
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">elif</span> 空响应:
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># 最多重试 3 次</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> agent<span style="color:#f92672">.</span>_empty_content_retries <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">3</span>:
+</span></span><span style="display:flex;"><span>                agent<span style="color:#f92672">.</span>_empty_content_retries <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">continue</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># 否则尝试故障转移</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> agent<span style="color:#f92672">.</span>_fallback_chain:
+</span></span><span style="display:flex;"><span>                agent<span style="color:#f92672">.</span>_try_activate_fallback()
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">continue</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 预算耗尽 → 要求模型总结（去除工具调用能力）</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> budget_exhausted:
+</span></span><span style="display:flex;"><span>        final_response <span style="color:#f92672">=</span> agent<span style="color:#f92672">.</span>_handle_max_iterations(messages, api_call_count)
+</span></span></code></pre></div><p><strong>关键设计</strong>：</p>
+<ul>
+<li>
+<p><strong>IterationBudget</strong>（<code>agent/iteration_budget.py</code>）：线程安全的迭代计数器</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">IterationBudget</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, max_total):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>max_total <span style="color:#f92672">=</span> max_total  <span style="color:#75715e"># 默认 90</span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>_used <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>_lock <span style="color:#f92672">=</span> threading<span style="color:#f92672">.</span>Lock()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">consume</span>(self) <span style="color:#f92672">-&gt;</span> bool:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">with</span> self<span style="color:#f92672">.</span>_lock:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> self<span style="color:#f92672">.</span>_used <span style="color:#f92672">&gt;=</span> self<span style="color:#f92672">.</span>max_total:
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">False</span>
+</span></span><span style="display:flex;"><span>            self<span style="color:#f92672">.</span>_used <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">True</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">refund</span>(self):
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># execute_code 的迭代可以退还预算</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">with</span> self<span style="color:#f92672">.</span>_lock:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> self<span style="color:#f92672">.</span>_used <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>:
+</span></span><span style="display:flex;"><span>                self<span style="color:#f92672">.</span>_used <span style="color:#f92672">-=</span> <span style="color:#ae81ff">1</span>
+</span></span></code></pre></div></li>
+<li>
+<p><strong>预算宽限期（Grace Call）</strong>：预算耗尽后给模型最后一次机会</p>
+</li>
+<li>
+<p><strong>中断机制</strong>：支持用户发送新消息时中断当前运行</p>
+</li>
+<li>
+<p><strong>Steer 机制</strong>：运行时中途注入指导文本到活跃对话</p>
+</li>
+<li>
+<p><strong>故障转移链</strong>：主模型失败时自动切换到备用模型</p>
+</li>
+</ul>
+<h3 id="43-context-compression长对话管理">
+  4.3 Context Compression：长对话管理
+  <a class="anchor" href="#43-context-compression%e9%95%bf%e5%af%b9%e8%af%9d%e7%ae%a1%e7%90%86">#</a>
+</h3>
+<p>Hermes 使用上下文压缩来管理长对话：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 预飞行压缩检查</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> compressor<span style="color:#f92672">.</span>should_compress(_preflight_tokens):
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> _pass <span style="color:#f92672">in</span> range(<span style="color:#ae81ff">3</span>):  <span style="color:#75715e"># 最多 3 轮压缩</span>
+</span></span><span style="display:flex;"><span>        messages, active_system_prompt <span style="color:#f92672">=</span> agent<span style="color:#f92672">.</span>_compress_context(
+</span></span><span style="display:flex;"><span>            messages, system_message, approx_tokens<span style="color:#f92672">=</span>_preflight_tokens
+</span></span><span style="display:flex;"><span>        )
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> len(messages) <span style="color:#f92672">&gt;=</span> _orig_len:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">break</span>  <span style="color:#75715e"># 无法进一步压缩</span>
+</span></span></code></pre></div><h3 id="44-cron-调度器定时长程任务">
+  4.4 Cron 调度器：定时长程任务
+  <a class="anchor" href="#44-cron-%e8%b0%83%e5%ba%a6%e5%99%a8%e5%ae%9a%e6%97%b6%e9%95%bf%e7%a8%8b%e4%bb%bb%e5%8a%a1">#</a>
+</h3>
+<p><strong>源码：<code>cron/scheduler.py</code> + <code>cron/jobs.py</code></strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># scheduler.py 核心</span>
+</span></span><span style="display:flex;"><span>_parallel_pool: Optional[concurrent<span style="color:#f92672">.</span>futures<span style="color:#f92672">.</span>ThreadPoolExecutor] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>
+</span></span><span style="display:flex;"><span>_sequential_pool: Optional[concurrent<span style="color:#f92672">.</span>futures<span style="color:#f92672">.</span>ThreadPoolExecutor] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">tick</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;每 60 秒从后台线程调用&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    due_jobs <span style="color:#f92672">=</span> get_due_jobs()
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> job <span style="color:#f92672">in</span> due_jobs:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> job_needs_sequential_execution:
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># 序列化池（环境变量/配置隔离的任务）</span>
+</span></span><span style="display:flex;"><span>            _get_sequential_pool()<span style="color:#f92672">.</span>submit(<span style="color:#66d9ef">lambda</span>: run_job(job))
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># 并行池</span>
+</span></span><span style="display:flex;"><span>            _get_parallel_pool(max_workers)<span style="color:#f92672">.</span>submit(<span style="color:#66d9ef">lambda</span>: run_job(job))
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">run_job</span>(job):
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;执行单个 Cron 任务&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 1. 构建 Agent prompt（含注入检测）</span>
+</span></span><span style="display:flex;"><span>    prompt <span style="color:#f92672">=</span> _build_job_prompt(job)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 2. 配置工具集限制</span>
+</span></span><span style="display:flex;"><span>    disabled <span style="color:#f92672">=</span> _resolve_cron_disabled_toolsets(cfg)
+</span></span><span style="display:flex;"><span>    enabled <span style="color:#f92672">=</span> _resolve_cron_enabled_toolsets(job, cfg)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 3. 启动 Agent 运行</span>
+</span></span><span style="display:flex;"><span>    result <span style="color:#f92672">=</span> run_conversation(agent, prompt, <span style="color:#f92672">...</span>)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 4. 保存输出</span>
+</span></span><span style="display:flex;"><span>    save_job_output(job_id, timestamp, result)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 5. 交付结果</span>
+</span></span><span style="display:flex;"><span>    _deliver_result(job, result)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 6. 推进下次运行时间</span>
+</span></span><span style="display:flex;"><span>    advance_next_run(job)
+</span></span></code></pre></div><p><strong>调度类型</strong>（<code>cron/jobs.py</code>）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">parse_schedule</span>(schedule: str) <span style="color:#f92672">-&gt;</span> Dict[str, Any]:
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># &#34;30m&#34;              → 一次性，30分钟后</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># &#34;2h&#34;               → 一次性，2小时后</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># &#34;every 30m&#34;        → 循环，每30分钟</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># &#34;every 2h&#34;         → 循环，每2小时</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># &#34;0 9 * * *&#34;        → cron 表达式</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># &#34;2026-02-03T14:00&#34; → 一次性，指定时间</span>
+</span></span></code></pre></div><p><strong>容错机制</strong>：</p>
+<ul>
+<li>文件锁防止多个 tick 重叠执行</li>
+<li>Grace window：一次性任务错过执行时间后的宽限期（120秒）</li>
+<li>半周期 grace 计算：循环任务错过后的追赶逻辑</li>
+<li>并行池可配置最大工作线程数</li>
+<li>输出原子写入（临时文件 + 重命名）</li>
+</ul>
+<h3 id="45-asyncsync-bridging">
+  4.5 Async/Sync Bridging
+  <a class="anchor" href="#45-asyncsync-bridging">#</a>
+</h3>
+<p><strong>源码：<code>agent/async_utils.py</code></strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">safe_schedule_threadsafe</span>(coro, loop, <span style="color:#f92672">...</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;从同步线程安全调度协程到事件循环&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> loop <span style="color:#f92672">is</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        coro<span style="color:#f92672">.</span>close()  <span style="color:#75715e"># 防止协程泄漏</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">None</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> asyncio<span style="color:#f92672">.</span>run_coroutine_threadsafe(coro, loop)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span>:
+</span></span><span style="display:flex;"><span>        coro<span style="color:#f92672">.</span>close()  <span style="color:#75715e"># 调度失败时关闭协程</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">None</span>
+</span></span></code></pre></div><p>这确保了在多线程环境中，异步操作不会泄漏未等待的协程。</p>
+<h3 id="46-background-review后台自我改进">
+  4.6 Background Review：后台自我改进
+  <a class="anchor" href="#46-background-review%e5%90%8e%e5%8f%b0%e8%87%aa%e6%88%91%e6%94%b9%e8%bf%9b">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 对话完成后，后台触发 review</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> _should_review_memory <span style="color:#f92672">or</span> _should_review_skills:
+</span></span><span style="display:flex;"><span>    agent<span style="color:#f92672">.</span>_spawn_background_review(
+</span></span><span style="display:flex;"><span>        messages_snapshot<span style="color:#f92672">=</span>list(messages),
+</span></span><span style="display:flex;"><span>        review_memory<span style="color:#f92672">=</span>_should_review_memory,
+</span></span><span style="display:flex;"><span>        review_skills<span style="color:#f92672">=</span>_should_review_skills,
+</span></span><span style="display:flex;"><span>    )
+</span></span></code></pre></div><p>Hermes 在用户对话完成后，会在后台 fork 一个新线程，让 Agent 自我审查和更新 memory/skills，不阻塞用户交互。</p>
+<hr>
+<h2 id="五三种机制对比分析">
+  五、三种机制对比分析
+  <a class="anchor" href="#%e4%ba%94%e4%b8%89%e7%a7%8d%e6%9c%ba%e5%88%b6%e5%af%b9%e6%af%94%e5%88%86%e6%9e%90">#</a>
+</h2>
+<h3 id="51-循环模型对比">
+  5.1 循环模型对比
+  <a class="anchor" href="#51-%e5%be%aa%e7%8e%af%e6%a8%a1%e5%9e%8b%e5%af%b9%e6%af%94">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>特性</th>
+          <th>Ralph Loop</th>
+          <th>OpenClaw</th>
+          <th>Hermes Agent</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>循环粒度</strong></td>
+          <td>进程级（每次启动新 Agent）</td>
+          <td>事件级（单个 turn）</td>
+          <td>工具调用级（单次 API call）</td>
+      </tr>
+      <tr>
+          <td><strong>状态保持</strong></td>
+          <td>文件（<code>progress.txt</code>）</td>
+          <td>内存 + SQLite + 磁盘</td>
+          <td>SQLite + 内存</td>
+      </tr>
+      <tr>
+          <td><strong>中断恢复</strong></td>
+          <td>❌ 无</td>
+          <td>✅ Session resume + orphan recovery</td>
+          <td>✅ Session resume + pending steer</td>
+      </tr>
+      <tr>
+          <td><strong>并发执行</strong></td>
+          <td>❌ 串行</td>
+          <td>✅ 多 Lane 并发</td>
+          <td>✅ 线程池并行</td>
+      </tr>
+      <tr>
+          <td><strong>子代理委派</strong></td>
+          <td>❌ 不支持</td>
+          <td>✅ 完整 Subagent Registry</td>
+          <td>✅ delegate_task + IterationBudget</td>
+      </tr>
+      <tr>
+          <td><strong>运行时指导</strong></td>
+          <td>❌ 不支持</td>
+          <td>✅ Steering queue</td>
+          <td>✅ /steer 命令</td>
+      </tr>
+      <tr>
+          <td><strong>故障转移</strong></td>
+          <td>❌ 无</td>
+          <td>✅ 后端 failover</td>
+          <td>✅ fallback chain</td>
+      </tr>
+      <tr>
+          <td><strong>预算控制</strong></td>
+          <td>最大迭代数</td>
+          <td>Lane 超时 + turn 超时</td>
+          <td>IterationBudget + max_iterations</td>
+      </tr>
+      <tr>
+          <td><strong>优雅退出</strong></td>
+          <td>❌ 无</td>
+          <td>✅ Drain 模式</td>
+          <td>✅ 中断检查 + graceful summary</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="52-长程任务设计哲学">
+  5.2 长程任务设计哲学
+  <a class="anchor" href="#52-%e9%95%bf%e7%a8%8b%e4%bb%bb%e5%8a%a1%e8%ae%be%e8%ae%a1%e5%93%b2%e5%ad%a6">#</a>
+</h3>
+<p><strong>Ralph Loop</strong>：极简主义</p>
+<blockquote>
+<p>&ldquo;每次都是一个全新的开始，状态通过文件传递。简单到无法出错，但也简单到无法处理复杂场景。&rdquo;</p></blockquote>
+<ul>
+<li>适合：短期、独立、可分解的编码任务</li>
+<li>不适合：需要上下文保持、多步骤依赖、需要人工干预的任务</li>
+</ul>
+<p><strong>OpenClaw</strong>：企业级事件驱动</p>
+<blockquote>
+<p>&ldquo;每一个交互都是事件，每一个事件都在 Lane 上排队。状态可恢复，任务可委派，交付可重试。&rdquo;</p></blockquote>
+<ul>
+<li>适合：7×24 运行的个人助手，多平台、多 Agent、复杂任务编排</li>
+<li>复杂度代价：代码量巨大，学习曲线陡峭</li>
+</ul>
+<p><strong>Hermes Agent</strong>：实用主义会话驱动</p>
+<blockquote>
+<p>&ldquo;一次对话就是多轮 API 调用，预算耗尽就要求总结。Cron 调度器负责定时任务，后台 review 负责自我改进。&rdquo;</p></blockquote>
+<ul>
+<li>适合：交互式对话 + 定时自动化 + 自我进化</li>
+<li>特色：Budget refund 机制、Context compression、Background review</li>
+</ul>
+<h3 id="53-状态持久化对比">
+  5.3 状态持久化对比
+  <a class="anchor" href="#53-%e7%8a%b6%e6%80%81%e6%8c%81%e4%b9%85%e5%8c%96%e5%af%b9%e6%af%94">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>状态类型</th>
+          <th>Ralph</th>
+          <th>OpenClaw</th>
+          <th>Hermes</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>任务进度</td>
+          <td><code>prd.json</code> (JSON)</td>
+          <td>Session store (SQLite)</td>
+          <td>Session DB (SQLite)</td>
+      </tr>
+      <tr>
+          <td>Agent 记忆</td>
+          <td><code>progress.txt</code> (Markdown)</td>
+          <td>Agent steering queue + memory</td>
+          <td>Memory manager + skills</td>
+      </tr>
+      <tr>
+          <td>子代理状态</td>
+          <td>N/A</td>
+          <td>Subagent Registry (SQLite + JSON)</td>
+          <td>N/A (delegate_task 是同步的)</td>
+      </tr>
+      <tr>
+          <td>Cron 任务</td>
+          <td>N/A</td>
+          <td>Built-in cron</td>
+          <td><code>jobs.json</code> (JSON)</td>
+      </tr>
+      <tr>
+          <td>系统提示</td>
+          <td>N/A</td>
+          <td>ACP session meta</td>
+          <td>Session DB 缓存</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="54-容错深度对比">
+  5.4 容错深度对比
+  <a class="anchor" href="#54-%e5%ae%b9%e9%94%99%e6%b7%b1%e5%ba%a6%e5%af%b9%e6%af%94">#</a>
+</h3>
+<pre tabindex="0"><code>Ralph:
+  失败 → || true → 继续下一轮 → 达到 MAX_ITERATIONS → 退出
+  
+OpenClaw:
+  失败 → 重试 (2次) → 后端 failover → 超时清理 → 
+  孤儿恢复 → 交付重试 → 挂起队列
+  
+Hermes:
+  失败 → 重试 (3次) → fallback chain → 预算耗尽 → 
+  要求总结 → 上下文压缩 → 后台 review
+</code></pre><hr>
+<h2 id="六源码级关键技术细节">
+  六、源码级关键技术细节
+  <a class="anchor" href="#%e5%85%ad%e6%ba%90%e7%a0%81%e7%ba%a7%e5%85%b3%e9%94%ae%e6%8a%80%e6%9c%af%e7%bb%86%e8%8a%82">#</a>
+</h2>
+<h3 id="61-ralph-的-prd-状态机">
+  6.1 Ralph 的 PRD 状态机
+  <a class="anchor" href="#61-ralph-%e7%9a%84-prd-%e7%8a%b6%e6%80%81%e6%9c%ba">#</a>
+</h3>
+<pre tabindex="0"><code>初始状态: 所有 story.passes = false
+每次迭代:
+  1. 找到 priority 最小且 passes=false 的 story
+  2. 实现该 story
+  3. 设置 story.passes = true
+  4. 追加 progress.txt
+终止条件: 所有 story.passes = true → &lt;promise&gt;COMPLETE&lt;/promise&gt;
+</code></pre><h3 id="62-openclaw-的-lane-优先级队列">
+  6.2 OpenClaw 的 Lane 优先级队列
+  <a class="anchor" href="#62-openclaw-%e7%9a%84-lane-%e4%bc%98%e5%85%88%e7%ba%a7%e9%98%9f%e5%88%97">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 优先级排序逻辑
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">enqueueLaneEntry</span>(<span style="color:#a6e22e">state</span>, <span style="color:#a6e22e">entry</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">insertAt</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">queue</span>.<span style="color:#a6e22e">findIndex</span>(
+</span></span><span style="display:flex;"><span>    (<span style="color:#a6e22e">queued</span>) <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">queued</span>.<span style="color:#a6e22e">priority</span> <span style="color:#f92672">&lt;</span> <span style="color:#a6e22e">entry</span>.<span style="color:#a6e22e">priority</span> <span style="color:#f92672">||</span>
+</span></span><span style="display:flex;"><span>      (<span style="color:#a6e22e">queued</span>.<span style="color:#a6e22e">priority</span> <span style="color:#f92672">===</span> <span style="color:#a6e22e">entry</span>.<span style="color:#a6e22e">priority</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">queued</span>.<span style="color:#a6e22e">sequence</span> <span style="color:#f92672">&gt;</span> <span style="color:#a6e22e">entry</span>.<span style="color:#a6e22e">sequence</span>)
+</span></span><span style="display:flex;"><span>  );
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// foreground(1) &gt; normal(0) &gt; background(-1)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">insertAt</span> <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">queue</span>.<span style="color:#a6e22e">push</span>(<span style="color:#a6e22e">entry</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">else</span> <span style="color:#a6e22e">state</span>.<span style="color:#a6e22e">queue</span>.<span style="color:#a6e22e">splice</span>(<span style="color:#a6e22e">insertAt</span>, <span style="color:#ae81ff">0</span>, <span style="color:#a6e22e">entry</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="63-hermes-的-iteration-budget-线程安全">
+  6.3 Hermes 的 Iteration Budget 线程安全
+  <a class="anchor" href="#63-hermes-%e7%9a%84-iteration-budget-%e7%ba%bf%e7%a8%8b%e5%ae%89%e5%85%a8">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">IterationBudget</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;线程安全的迭代计数器&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, max_total):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>max_total <span style="color:#f92672">=</span> max_total  <span style="color:#75715e"># 父 Agent 默认 90，子 Agent 默认 50</span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>_used <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>_lock <span style="color:#f92672">=</span> threading<span style="color:#f92672">.</span>Lock()
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">consume</span>(self) <span style="color:#f92672">-&gt;</span> bool:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">with</span> self<span style="color:#f92672">.</span>_lock:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> self<span style="color:#f92672">.</span>_used <span style="color:#f92672">&gt;=</span> self<span style="color:#f92672">.</span>max_total:
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">False</span>
+</span></span><span style="display:flex;"><span>            self<span style="color:#f92672">.</span>_used <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">True</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">refund</span>(self):
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;execute_code 的迭代不消耗预算&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">with</span> self<span style="color:#f92672">.</span>_lock:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> self<span style="color:#f92672">.</span>_used <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>:
+</span></span><span style="display:flex;"><span>                self<span style="color:#f92672">.</span>_used <span style="color:#f92672">-=</span> <span style="color:#ae81ff">1</span>
+</span></span></code></pre></div><h3 id="64-openclaw-的-subagent-孤儿恢复">
+  6.4 OpenClaw 的 Subagent 孤儿恢复
+  <a class="anchor" href="#64-openclaw-%e7%9a%84-subagent-%e5%ad%a4%e5%84%bf%e6%81%a2%e5%a4%8d">#</a>
+</h3>
+<pre tabindex="0"><code>进程重启时:
+  1. 从磁盘恢复 Subagent Registry
+  2. reconcileOrphanedRestoredRuns() 检测孤儿
+  3. 对于 &#34;running&#34; 但没有活跃运行上下文的子代理:
+     - STALE_ACTIVE_SUBAGENT_GRACE_MS (60s) 后标记为 stale
+     - 尝试恢复或终止
+  4. 对于挂起交付的子代理:
+     - 根据类型设置过期时间 (2h/6h/24h)
+     - 超过 SUSPENDED_DELIVERY_HARD_CAP (50) 时停止重试
+</code></pre><h3 id="65-hermes-的-cron-grace-window">
+  6.5 Hermes 的 Cron Grace Window
+  <a class="anchor" href="#65-hermes-%e7%9a%84-cron-grace-window">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_compute_grace_seconds</span>(schedule: dict) <span style="color:#f92672">-&gt;</span> int:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;计算任务错过后允许追赶的宽限期
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    使用调度周期的一半，限制在 120s ~ 2h 之间
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    MIN_GRACE <span style="color:#f92672">=</span> <span style="color:#ae81ff">120</span>
+</span></span><span style="display:flex;"><span>    MAX_GRACE <span style="color:#f92672">=</span> <span style="color:#ae81ff">7200</span>  <span style="color:#75715e"># 2 hours</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># ...</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 每5分钟的任务 → ~150s grace</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 每天的任务 → 2h grace</span>
+</span></span></code></pre></div><hr>
+<h2 id="七总结与启示">
+  七、总结与启示
+  <a class="anchor" href="#%e4%b8%83%e6%80%bb%e7%bb%93%e4%b8%8e%e5%90%af%e7%a4%ba">#</a>
+</h2>
+<h3 id="71-三种模式适用场景">
+  7.1 三种模式适用场景
+  <a class="anchor" href="#71-%e4%b8%89%e7%a7%8d%e6%a8%a1%e5%bc%8f%e9%80%82%e7%94%a8%e5%9c%ba%e6%99%af">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>推荐方案</th>
+          <th>理由</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>快速原型/一次性批量编码</td>
+          <td>Ralph Loop</td>
+          <td>简单、无配置、开箱即用</td>
+      </tr>
+      <tr>
+          <td>7×24 个人助手/多平台集成</td>
+          <td>OpenClaw</td>
+          <td>最完整的生命周期管理</td>
+      </tr>
+      <tr>
+          <td>交互式 AI + 定时任务 + 自我改进</td>
+          <td>Hermes Agent</td>
+          <td>平衡了复杂度和功能</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="72-设计模式总结">
+  7.2 设计模式总结
+  <a class="anchor" href="#72-%e8%ae%be%e8%ae%a1%e6%a8%a1%e5%bc%8f%e6%80%bb%e7%bb%93">#</a>
+</h3>
+<ol>
+<li><strong>文件驱动状态</strong>（Ralph）：最朴素但最透明的方式，状态可审计、可手动修改</li>
+<li><strong>事件驱动队列</strong>（OpenClaw）：最强大的并发控制，支持复杂的多 Agent 协作</li>
+<li><strong>预算驱动的迭代</strong>（Hermes）：最实用的长程任务控制，预算耗尽自动降级</li>
+</ol>
+<h3 id="73-关键教训">
+  7.3 关键教训
+  <a class="anchor" href="#73-%e5%85%b3%e9%94%ae%e6%95%99%e8%ae%ad">#</a>
+</h3>
+<ul>
+<li><strong>Ralph</strong> 证明了：极简设计在特定场景下可以非常有效，但缺乏恢复能力是致命弱点</li>
+<li><strong>OpenClaw</strong> 证明了：完善的生命周期管理（注册、持久化、孤儿恢复、交付重试）是 7×24 运行的前提</li>
+<li><strong>Hermes</strong> 证明了：预算控制 + 上下文压缩 + 后台自我改进 是可持续长程运行的关键三角</li>
+</ul>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#ralph-loopopenclaw-与-hermes-agent-长程任务运行机制深度对比">Ralph Loop、OpenClaw 与 Hermes Agent 长程任务运行机制深度对比</a>
+      <ul>
+        <li><a href="#一项目概览">一、项目概览</a></li>
+        <li><a href="#二ralph-loop极简的文件驱动循环">二、Ralph Loop：极简的文件驱动循环</a>
+          <ul>
+            <li><a href="#21-核心架构">2.1 核心架构</a></li>
+            <li><a href="#22-源码剖析ralphsh">2.2 源码剖析：<code>ralph.sh</code></a></li>
+            <li><a href="#23-agent-指令promptmd">2.3 Agent 指令：<code>prompt.md</code></a></li>
+            <li><a href="#24-关键约束">2.4 关键约束</a></li>
+            <li><a href="#25-容错机制">2.5 容错机制</a></li>
+            <li><a href="#26-局限性">2.6 局限性</a></li>
+          </ul>
+        </li>
+        <li><a href="#三openclaw事件驱动的-gateway--acp-架构">三、OpenClaw：事件驱动的 Gateway + ACP 架构</a>
+          <ul>
+            <li><a href="#31-核心架构">3.1 核心架构</a></li>
+            <li><a href="#32-command-queue--lanes并发控制核心">3.2 Command Queue + Lanes：并发控制核心</a></li>
+            <li><a href="#33-acp-turn-runner单次执行单元">3.3 ACP Turn Runner：单次执行单元</a></li>
+            <li><a href="#34-subagent-registry子代理生命周期管理">3.4 Subagent Registry：子代理生命周期管理</a></li>
+            <li><a href="#35-子代理完成生命周期subagent-announcets">3.5 子代理完成生命周期（subagent-announce.ts）</a></li>
+            <li><a href="#36-a2aagent-to-agentping-pong-流程">3.6 A2A（Agent-to-Agent）Ping-Pong 流程</a></li>
+          </ul>
+        </li>
+        <li><a href="#四hermes-agent会话驱动的-agent-循环--cron-调度器">四、Hermes Agent：会话驱动的 Agent 循环 + Cron 调度器</a>
+          <ul>
+            <li><a href="#41-核心架构">4.1 核心架构</a></li>
+            <li><a href="#42-conversation-loop核心迭代机制">4.2 Conversation Loop：核心迭代机制</a></li>
+            <li><a href="#43-context-compression长对话管理">4.3 Context Compression：长对话管理</a></li>
+            <li><a href="#44-cron-调度器定时长程任务">4.4 Cron 调度器：定时长程任务</a></li>
+            <li><a href="#45-asyncsync-bridging">4.5 Async/Sync Bridging</a></li>
+            <li><a href="#46-background-review后台自我改进">4.6 Background Review：后台自我改进</a></li>
+          </ul>
+        </li>
+        <li><a href="#五三种机制对比分析">五、三种机制对比分析</a>
+          <ul>
+            <li><a href="#51-循环模型对比">5.1 循环模型对比</a></li>
+            <li><a href="#52-长程任务设计哲学">5.2 长程任务设计哲学</a></li>
+            <li><a href="#53-状态持久化对比">5.3 状态持久化对比</a></li>
+            <li><a href="#54-容错深度对比">5.4 容错深度对比</a></li>
+          </ul>
+        </li>
+        <li><a href="#六源码级关键技术细节">六、源码级关键技术细节</a>
+          <ul>
+            <li><a href="#61-ralph-的-prd-状态机">6.1 Ralph 的 PRD 状态机</a></li>
+            <li><a href="#62-openclaw-的-lane-优先级队列">6.2 OpenClaw 的 Lane 优先级队列</a></li>
+            <li><a href="#63-hermes-的-iteration-budget-线程安全">6.3 Hermes 的 Iteration Budget 线程安全</a></li>
+            <li><a href="#64-openclaw-的-subagent-孤儿恢复">6.4 OpenClaw 的 Subagent 孤儿恢复</a></li>
+            <li><a href="#65-hermes-的-cron-grace-window">6.5 Hermes 的 Cron Grace Window</a></li>
+          </ul>
+        </li>
+        <li><a href="#七总结与启示">七、总结与启示</a>
+          <ul>
+            <li><a href="#71-三种模式适用场景">7.1 三种模式适用场景</a></li>
+            <li><a href="#72-设计模式总结">7.2 设计模式总结</a></li>
+            <li><a href="#73-关键教训">7.3 关键教训</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+

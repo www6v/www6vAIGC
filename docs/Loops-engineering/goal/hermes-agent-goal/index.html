@@ -1,0 +1,5110 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  Hermes Agent /goal 的原理机制与实现方式
+  #
+
+
+基于 Hermes Agent 开源仓库源码深度分析。核心实现位于 hermes_cli/goals.py（~535 行），CLI 集成在 cli.py（~6500-7200 行），Gateway 集成在 gateway/run.py（~7479-7672 行）。
+
+  一、整体定位
+  #
+
+Hermes Agent 的 /goal 是一个跨轮次持久化目标系统——它给 Agent 设定一个&quot;站着的目标&quot;（standing goal），然后让 Agent 在多个对话轮次中自动持续工作，直到目标达成、预算耗尽、或用户手动暂停/清除。
+文档中的原话：
+
+It&rsquo;s our take on the Ralph loop, directly inspired by Codex CLI 0.128.0&rsquo;s /goal by Eric Traut (OpenAI). The core idea — keep a goal alive across turns and don&rsquo;t stop until it&rsquo;s achieved — is theirs. The implementation here is independent and adapted to Hermes&rsquo; architecture.">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/">
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="Hermes Agent /goal 的原理机制与实现方式 # 基于 Hermes Agent 开源仓库源码深度分析。核心实现位于 hermes_cli/goals.py（~535 行），CLI 集成在 cli.py（~6500-7200 行），Gateway 集成在 gateway/run.py（~7479-7672 行）。
+一、整体定位 # Hermes Agent 的 /goal 是一个跨轮次持久化目标系统——它给 Agent 设定一个&#34;站着的目标&#34;（standing goal），然后让 Agent 在多个对话轮次中自动持续工作，直到目标达成、预算耗尽、或用户手动暂停/清除。
+文档中的原话：
+It’s our take on the Ralph loop, directly inspired by Codex CLI 0.128.0’s /goal by Eric Traut (OpenAI). The core idea — keep a goal alive across turns and don’t stop until it’s achieved — is theirs. The implementation here is independent and adapted to Hermes’ architecture.">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>Hermes Agent Goal | Modern Agent</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.3bd238e61d8b83033e5eb9f1ccb8012aa38428925913ec840b2262b0068cff91.js" integrity="sha256-O9I45h2LgwM&#43;XrnxzLgBKqOEKJJZE&#43;yECyJisAaM/5E=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/index.xml" title="Modern Agent" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall/" class="">Rag Recall</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/" class="">Rag Recall 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cc96aa92b1fe4deb19f2780a910b3a84" class="toggle"  />
+    <label for="section-cc96aa92b1fe4deb19f2780a910b3a84" class="flex justify-between">
+      <a role="button" class="">Dify</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="toggle"  />
+    <label for="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="flex justify-between">
+      <a role="button" class="">产品</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/list/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="toggle"  />
+    <label for="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="flex justify-between">
+      <a role="button" class="">Sandbox</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f52d73da99d8a76b38639b3169b9c30" class="toggle"  />
+    <label for="section-9f52d73da99d8a76b38639b3169b9c30" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agentclaude/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agentclaue2/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent/" class="">Managed Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fa07d823cbbab8a5cb211097d19a8b0f" class="toggle"  />
+    <label for="section-fa07d823cbbab8a5cb211097d19a8b0f" class="flex justify-between">
+      <a role="button" class="">Reflection</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91cb2f81fbf96ec25f68405674241162" class="toggle"  />
+    <label for="section-91cb2f81fbf96ec25f68405674241162" class="flex justify-between">
+      <a role="button" class="">Planning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b95bbb7a37b62a6b524cdc440bea4bea" class="toggle"  />
+    <label for="section-b95bbb7a37b62a6b524cdc440bea4bea" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c6918aab8d4437c8353af1df185685d7" class="toggle"  />
+    <label for="section-c6918aab8d4437c8353af1df185685d7" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4bd94f7e5788f6f6b717b9411d5219d7" class="toggle"  />
+    <label for="section-4bd94f7e5788f6f6b717b9411d5219d7" class="flex justify-between">
+      <a role="button" class="">Hermes</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes1/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes2/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes/" class="">Hermes Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a5f1c9d05f8697fe4344602432ed2c1" class="toggle"  />
+    <label for="section-4a5f1c9d05f8697fe4344602432ed2c1" class="flex justify-between">
+      <a role="button" class="">Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/hindsight/" class="">Hindsight</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking/" class="">Openviking</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27631881d59f460a7e82415eae943524" class="toggle"  />
+    <label for="section-27631881d59f460a7e82415eae943524" class="flex justify-between">
+      <a role="button" class="">Openclaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-867db087ab84641b5d4e3bc021355890" class="toggle"  />
+    <label for="section-867db087ab84641b5d4e3bc021355890" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ca53c095705ebe6e57deb96a02c0d3e3" class="toggle"  />
+    <label for="section-ca53c095705ebe6e57deb96a02c0d3e3" class="flex justify-between">
+      <a role="button" class="">Multi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7f3cbaaa32d67178b923d0e7080ddc58" class="toggle"  />
+    <label for="section-7f3cbaaa32d67178b923d0e7080ddc58" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Kanban/" class="">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7c1e99e2bc0dea50268247820e8feb36" class="toggle"  />
+    <label for="section-7c1e99e2bc0dea50268247820e8feb36" class="flex justify-between">
+      <a role="button" class="">Multi-agent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8aff2d658582dd8082936377ce08c46d" class="toggle"  />
+    <label for="section-8aff2d658582dd8082936377ce08c46d" class="flex justify-between">
+      <a role="button" class="">subagent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/Claude-code/" class="">Claude Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/subagent/" class="">Subagent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-78862664423ffb11f8c168297456fbac" class="toggle"  />
+    <label for="section-78862664423ffb11f8c168297456fbac" class="flex justify-between">
+      <a role="button" class="">Teams *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-Teams/" class="">Claude Code Teams</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-TeamsA1/" class="">Claude Code Teams[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-504cb284e9f6a649d018a049679638f6" class="toggle"  />
+    <label for="section-504cb284e9f6a649d018a049679638f6" class="flex justify-between">
+      <a role="button" class="">Agent Tool</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-3dad97d7b0c9fbf829c7a8480cd7bcec" class="toggle"  />
+    <label for="section-3dad97d7b0c9fbf829c7a8480cd7bcec" class="flex justify-between">
+      <a role="button" class="">Tool use</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/Tool-use/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/Tool-use/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/Tool-use/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/Tool-use/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-aa27abb55dc621af66ea631cd4bad469" class="toggle"  />
+    <label for="section-aa27abb55dc621af66ea631cd4bad469" class="flex justify-between">
+      <a role="button" class="">Tool 演进</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/%E6%BC%94%E8%BF%9B/fc&#43;mcp&#43;cli/" class="">Functioncall-&gt;MCP-&gt;cli &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8fd065cbe7dbbad30f0c4e4d0545d6c4" class="toggle"  />
+    <label for="section-8fd065cbe7dbbad30f0c4e4d0545d6c4" class="flex justify-between">
+      <a role="button" class="">MCP *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle"  />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle"  />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/openclaw-sandbox-security/" class="">Openclaw Sandbox Security</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/" class="">Openclaw Conversation State Management</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/" class="">Openclaw Tool Invocation Flow</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-406a2e1159d423500a23abb9a994a5a3" class="toggle"  />
+    <label for="section-406a2e1159d423500a23abb9a994a5a3" class="flex justify-between">
+      <a role="button" class="">Hermes Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitcture/" class="">Arcitcture</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/" class="">Skill Envolve</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/permission/" class="">Permission[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-339828cdd4ae109f0b47d6033c8220ec" class="toggle"  />
+    <label for="section-339828cdd4ae109f0b47d6033c8220ec" class="flex justify-between">
+      <a role="button" class="">Coding Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/coding-agent/Tau-Agent/" class="">Tau Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b1ceebdd7e406fc4533519c821a9e4c3" class="toggle" checked />
+    <label for="section-b1ceebdd7e406fc4533519c821a9e4c3" class="flex justify-between">
+      <a role="button" class="">Loops engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-01142eb3e9d36b255ac107cb9131d7c2" class="toggle" checked />
+    <label for="section-01142eb3e9d36b255ac107cb9131d7c2" class="flex justify-between">
+      <a role="button" class="">goal</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/" class="active">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="toggle"  />
+    <label for="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="flex justify-between">
+      <a role="button" class="">loop engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loops/" class="">loops engineering[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b3a0ebe16d532fb38ede799ae1575c3a" class="toggle"  />
+    <label for="section-b3a0ebe16d532fb38ede799ae1575c3a" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/" class="">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/openclaw/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle"  />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering1/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering2/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-compress/" class="">Claude /compact</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/codex-context/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">context engineering[Manus]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/skill/" class="">编写高质量Skill的六大失效模式</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="toggle"  />
+    <label for="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="flex justify-between">
+      <a role="button" class="">AI Native</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeminimax/" class="">AI原生组织实践(MiniMax)</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Claude-tag/" class="">Claude tag</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Ai-nativeali/" class="">AI native与人机协作[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeclaude/" class="">Bottleneck Shift in AI-native Engineering[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Hermes Agent Goal</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#hermes-agent-goal-的原理机制与实现方式">Hermes Agent <code>/goal</code> 的原理机制与实现方式</a>
+      <ul>
+        <li><a href="#一整体定位">一、整体定位</a></li>
+        <li><a href="#二整体架构">二、整体架构</a></li>
+        <li><a href="#三核心模块拆解">三、核心模块拆解</a>
+          <ul>
+            <li><a href="#31-goalstate--数据模型">3.1 GoalState — 数据模型</a></li>
+            <li><a href="#32-持久化层--sessiondb">3.2 持久化层 — SessionDB</a></li>
+            <li><a href="#33-judge-机制--核心判断引擎">3.3 Judge 机制 — 核心判断引擎</a></li>
+            <li><a href="#34-goalmanager--编排引擎">3.4 GoalManager — 编排引擎</a></li>
+            <li><a href="#35-continuation-prompt--自动续跑注入">3.5 Continuation Prompt — 自动续跑注入</a></li>
+            <li><a href="#36-cli-集成">3.6 CLI 集成</a></li>
+            <li><a href="#37-gateway-集成">3.7 Gateway 集成</a></li>
+            <li><a href="#38-用户消息优先机制">3.8 用户消息优先机制</a></li>
+          </ul>
+        </li>
+        <li><a href="#四完整生命周期流程图">四、完整生命周期流程图</a></li>
+        <li><a href="#五配置方式">五、配置方式</a></li>
+        <li><a href="#六设计亮点与权衡">六、设计亮点与权衡</a></li>
+        <li><a href="#七与-codex-goal-的对比">七、与 Codex <code>/goal</code> 的对比</a></li>
+        <li><a href="#八总结">八、总结</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="hermes-agent-goal-的原理机制与实现方式">
+  Hermes Agent <code>/goal</code> 的原理机制与实现方式
+  <a class="anchor" href="#hermes-agent-goal-%e7%9a%84%e5%8e%9f%e7%90%86%e6%9c%ba%e5%88%b6%e4%b8%8e%e5%ae%9e%e7%8e%b0%e6%96%b9%e5%bc%8f">#</a>
+</h1>
+<blockquote>
+<p>基于 Hermes Agent 开源仓库源码深度分析。核心实现位于 <code>hermes_cli/goals.py</code>（~535 行），CLI 集成在 <code>cli.py</code>（~6500-7200 行），Gateway 集成在 <code>gateway/run.py</code>（~7479-7672 行）。</p></blockquote>
+<h2 id="一整体定位">
+  一、整体定位
+  <a class="anchor" href="#%e4%b8%80%e6%95%b4%e4%bd%93%e5%ae%9a%e4%bd%8d">#</a>
+</h2>
+<p>Hermes Agent 的 <code>/goal</code> 是一个<strong>跨轮次持久化目标系统</strong>——它给 Agent 设定一个&quot;站着的目标&quot;（standing goal），然后让 Agent 在多个对话轮次中自动持续工作，直到目标达成、预算耗尽、或用户手动暂停/清除。</p>
+<p>文档中的原话：</p>
+<blockquote>
+<p>It&rsquo;s our take on the <strong>Ralph loop</strong>, directly inspired by Codex CLI 0.128.0&rsquo;s <code>/goal</code> by Eric Traut (OpenAI). The core idea — keep a goal alive across turns and don&rsquo;t stop until it&rsquo;s achieved — is theirs. The implementation here is independent and adapted to Hermes&rsquo; architecture.</p></blockquote>
+<p><strong>一句话概括</strong>：用户设定目标 → 每轮结束后调用辅助模型（judge）判断是否完成 → 未完成则自动注入 continuation prompt 触发下一轮 → 循环直到 done / budget exhausted / user intervention。</p>
+<h2 id="二整体架构">
+  二、整体架构
+  <a class="anchor" href="#%e4%ba%8c%e6%95%b4%e4%bd%93%e6%9e%b6%e6%9e%84">#</a>
+</h2>
+<pre tabindex="0"><code>┌──────────────────────────────────────────────────────────────────┐
+│                        User Interface                             │
+│  CLI: _handle_goal_command() + _pending_input.put()              │
+│  Gateway: _handle_goal_command() + _enqueue_fifo()               │
+└──────────────────────┬───────────────────────────────────────────┘
+                       │
+            ┌──────────▼──────────┐
+            │    GoalManager       │
+            │  (hermes_cli/goals.py)│
+            │                      │
+            │  set/pause/resume/   │
+            │  clear/status/       │
+            │  evaluate_after_turn │
+            │  next_continuation   │
+            └──┬──────┬──────┬─────┘
+               │      │      │
+     ┌─────────▼┐ ┌───▼────┐ │
+     │SessionDB │ │ Judge  │ │
+     │state_meta│ │(aux    │ │
+     │goal:&lt;sid&gt;│ │ model) │ │
+     └──────────┘ └────────┘ │
+                             │
+              ┌──────────────▼──────────────┐
+              │  Continuation Prompt → FIFO  │
+              │  (_pending_input / adapter)  │
+              └─────────────────────────────┘
+</code></pre><h2 id="三核心模块拆解">
+  三、核心模块拆解
+  <a class="anchor" href="#%e4%b8%89%e6%a0%b8%e5%bf%83%e6%a8%a1%e5%9d%97%e6%8b%86%e8%a7%a3">#</a>
+</h2>
+<h3 id="31-goalstate--数据模型">
+  3.1 GoalState — 数据模型
+  <a class="anchor" href="#31-goalstate--%e6%95%b0%e6%8d%ae%e6%a8%a1%e5%9e%8b">#</a>
+</h3>
+<p>定义在 <code>hermes_cli/goals.py</code>，是一个可序列化的 dataclass：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">GoalState</span>:
+</span></span><span style="display:flex;"><span>    goal: str                        <span style="color:#75715e"># 目标文本</span>
+</span></span><span style="display:flex;"><span>    status: str <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;active&#34;</span>           <span style="color:#75715e"># active | paused | done | cleared</span>
+</span></span><span style="display:flex;"><span>    turns_used: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>              <span style="color:#75715e"># 已消耗轮次</span>
+</span></span><span style="display:flex;"><span>    max_turns: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">20</span>              <span style="color:#75715e"># 轮次预算上限（可配置）</span>
+</span></span><span style="display:flex;"><span>    created_at: float <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.0</span>          <span style="color:#75715e"># 创建时间戳</span>
+</span></span><span style="display:flex;"><span>    last_turn_at: float <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.0</span>        <span style="color:#75715e"># 最后一轮时间戳</span>
+</span></span><span style="display:flex;"><span>    last_verdict: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>  <span style="color:#75715e"># &#34;done&#34; | &#34;continue&#34; | &#34;skipped&#34;</span>
+</span></span><span style="display:flex;"><span>    last_reason: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>   <span style="color:#75715e"># judge 的判据理由</span>
+</span></span><span style="display:flex;"><span>    paused_reason: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span> <span style="color:#75715e"># 暂停原因</span>
+</span></span></code></pre></div><p><strong>状态机</strong>：</p>
+<pre tabindex="0"><code>              set()                  pause()
+  [none] ──────────► active ──────────► paused
+                         │                │
+                         │                │ resume(reset_budget=True)
+                         │                │
+                         │                ▼
+                    evaluate_after_turn  active
+                         │
+            ┌────────────┼────────────┐
+            │            │            │
+        done=true   turns&gt;=max   user clears
+            │            │            │
+            ▼            ▼            ▼
+          done        paused       cleared
+</code></pre><h3 id="32-持久化层--sessiondb">
+  3.2 持久化层 — SessionDB
+  <a class="anchor" href="#32-%e6%8c%81%e4%b9%85%e5%8c%96%e5%b1%82--sessiondb">#</a>
+</h3>
+<p>Goal 状态通过 <code>SessionDB.state_meta</code> 表持久化，key 为 <code>goal:&lt;session_id&gt;</code>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_meta_key</span>(session_id: str) <span style="color:#f92672">-&gt;</span> str:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;goal:</span><span style="color:#e6db74">{</span>session_id<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">save_goal</span>(session_id: str, state: GoalState) <span style="color:#f92672">-&gt;</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>    db <span style="color:#f92672">=</span> _get_session_db()
+</span></span><span style="display:flex;"><span>    db<span style="color:#f92672">.</span>set_meta(_meta_key(session_id), state<span style="color:#f92672">.</span>to_json())
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">load_goal</span>(session_id: str) <span style="color:#f92672">-&gt;</span> Optional[GoalState]:
+</span></span><span style="display:flex;"><span>    db <span style="color:#f92672">=</span> _get_session_db()
+</span></span><span style="display:flex;"><span>    raw <span style="color:#f92672">=</span> db<span style="color:#f92672">.</span>get_meta(_meta_key(session_id))
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> GoalState<span style="color:#f92672">.</span>from_json(raw) <span style="color:#66d9ef">if</span> raw <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">None</span>
+</span></span></code></pre></div><p><strong>关键设计</strong>：DB 实例按 <code>HERMES_HOME</code> 路径缓存（<code>_DB_CACHE</code>），避免每次调用都重新打开 SQLite 文件。</p>
+<p><strong>持久化的意义</strong>：<code>/resume</code> 能恢复之前设置的目标——即使关闭终端、第二天回来，goal 状态（active/paused/done）依然完好。</p>
+<h3 id="33-judge-机制--核心判断引擎">
+  3.3 Judge 机制 — 核心判断引擎
+  <a class="anchor" href="#33-judge-%e6%9c%ba%e5%88%b6--%e6%a0%b8%e5%bf%83%e5%88%a4%e6%96%ad%e5%bc%95%e6%93%8e">#</a>
+</h3>
+<p>这是整个 <code>/goal</code> 的<strong>灵魂</strong>。定义在 <code>hermes_cli/goals.py</code> 的 <code>judge_goal()</code> 函数：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">judge_goal</span>(goal: str, last_response: str, <span style="color:#f92672">*</span>, timeout<span style="color:#f92672">=</span><span style="color:#ae81ff">30.0</span>) <span style="color:#f92672">-&gt;</span> Tuple[str, str]:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Ask the auxiliary model whether the goal is satisfied.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    Returns (verdict, reason) where verdict is &#34;done&#34;, &#34;continue&#34;, or &#34;skipped&#34;.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    Deliberately fail-open: any error returns (&#34;continue&#34;, &#34;...&#34;)
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    so a broken judge doesn&#39;t wedge progress — the turn budget is the backstop.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;&#34;&#34;</span>
+</span></span></code></pre></div><p><strong>Judge 的 System Prompt</strong>（硬编码在源码中）：</p>
+<pre tabindex="0"><code>You are a strict judge evaluating whether an autonomous agent has 
+achieved a user&#39;s stated goal. You receive the goal text and the 
+agent&#39;s most recent response. Your only job is to decide whether 
+the goal is fully satisfied based on that response.
+
+A goal is DONE only when:
+- The response explicitly confirms the goal was completed, OR
+- The response clearly shows the final deliverable was produced, OR
+- The response explains the goal is unachievable / blocked / needs 
+  user input (treat this as DONE with reason describing the block).
+
+Otherwise the goal is NOT done — CONTINUE.
+
+Reply ONLY with a single JSON object on one line:
+{&#34;done&#34;: &lt;true|false&gt;, &#34;reason&#34;: &#34;&lt;one-sentence rationale&gt;&#34;}
+</code></pre><p><strong>Judge 的 User Prompt</strong>（模板）：</p>
+<pre tabindex="0"><code>Goal:
+{goal}
+
+Agent&#39;s most recent response:
+{response}
+
+Is the goal satisfied?
+</code></pre><p><strong>调用方式</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>client, model <span style="color:#f92672">=</span> get_text_auxiliary_client(<span style="color:#e6db74">&#34;goal_judge&#34;</span>)
+</span></span><span style="display:flex;"><span>resp <span style="color:#f92672">=</span> client<span style="color:#f92672">.</span>chat<span style="color:#f92672">.</span>completions<span style="color:#f92672">.</span>create(
+</span></span><span style="display:flex;"><span>    model<span style="color:#f92672">=</span>model,
+</span></span><span style="display:flex;"><span>    messages<span style="color:#f92672">=</span>[
+</span></span><span style="display:flex;"><span>        {<span style="color:#e6db74">&#34;role&#34;</span>: <span style="color:#e6db74">&#34;system&#34;</span>, <span style="color:#e6db74">&#34;content&#34;</span>: JUDGE_SYSTEM_PROMPT},
+</span></span><span style="display:flex;"><span>        {<span style="color:#e6db74">&#34;role&#34;</span>: <span style="color:#e6db74">&#34;user&#34;</span>, <span style="color:#e6db74">&#34;content&#34;</span>: prompt},
+</span></span><span style="display:flex;"><span>    ],
+</span></span><span style="display:flex;"><span>    temperature<span style="color:#f92672">=</span><span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>    max_tokens<span style="color:#f92672">=</span><span style="color:#ae81ff">200</span>,
+</span></span><span style="display:flex;"><span>    timeout<span style="color:#f92672">=</span>timeout,
+</span></span><span style="display:flex;"><span>)
+</span></span></code></pre></div><p><strong>关键设计决策</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>设计点</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Fail-open 语义</strong></td>
+          <td>Judge 出错（网络故障、JSON 解析失败、模型不可用）时返回 <code>(&quot;continue&quot;, &quot;...&quot;)</code>，不会卡住进度。真正的安全网是 turn budget。</td>
+      </tr>
+      <tr>
+          <td><strong>保守判断</strong></td>
+          <td>只有明确完成或确认受阻才标记 done，其他情况一律 continue。这使得 false positive（误判完成）比 false negative（误判未完成）更罕见。</td>
+      </tr>
+      <tr>
+          <td><strong>辅助模型</strong></td>
+          <td>使用独立的 <code>goal_judge</code> auxiliary task，可配置为便宜快速的模型（如 gemini-3-flash），每次调用仅 ~200 输出 token。</td>
+      </tr>
+      <tr>
+          <td><strong>截断保护</strong></td>
+          <td>goal 文本截断到 2000 字符，response 截断到 4000 字符，避免上下文爆炸。</td>
+      </tr>
+      <tr>
+          <td><strong>JSON 解析容错</strong></td>
+          <td>先尝试整体解析，失败后用正则提取第一个 JSON 对象，支持 markdown code fence 包裹。</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="34-goalmanager--编排引擎">
+  3.4 GoalManager — 编排引擎
+  <a class="anchor" href="#34-goalmanager--%e7%bc%96%e6%8e%92%e5%bc%95%e6%93%8e">#</a>
+</h3>
+<p><code>GoalManager</code> 是 CLI 和 Gateway 共同使用的核心编排类：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">GoalManager</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, session_id: str, <span style="color:#f92672">*</span>, default_max_turns<span style="color:#f92672">=</span><span style="color:#ae81ff">20</span>):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>session_id <span style="color:#f92672">=</span> session_id
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>default_max_turns <span style="color:#f92672">=</span> default_max_turns
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>_state <span style="color:#f92672">=</span> load_goal(session_id)
+</span></span></code></pre></div><p><strong>核心方法</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>方法</th>
+          <th>作用</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>set(goal)</code></td>
+          <td>设置新目标，创建 GoalState，status=active，turns_used=0</td>
+      </tr>
+      <tr>
+          <td><code>pause(reason)</code></td>
+          <td>暂停，status=paused，记录原因</td>
+      </tr>
+      <tr>
+          <td><code>resume(reset_budget=True)</code></td>
+          <td>恢复，status=active，<strong>重置 turns_used=0</strong></td>
+      </tr>
+      <tr>
+          <td><code>clear()</code></td>
+          <td>清除，status=cleared</td>
+      </tr>
+      <tr>
+          <td><code>mark_done(reason)</code></td>
+          <td>标记完成</td>
+      </tr>
+      <tr>
+          <td><code>status_line()</code></td>
+          <td>生成状态行（用于 CLI/Gateway 显示）</td>
+      </tr>
+      <tr>
+          <td><code>evaluate_after_turn(last_response)</code></td>
+          <td><strong>核心入口</strong>：调用 judge、更新状态、返回决策</td>
+      </tr>
+      <tr>
+          <td><code>next_continuation_prompt()</code></td>
+          <td>生成 continuation prompt 文本</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>evaluate_after_turn 的决策逻辑</strong>（最关键的函数）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">evaluate_after_turn</span>(self, last_response, <span style="color:#f92672">*</span>, user_initiated<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 1. 检查是否有 active goal</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> state <span style="color:#f92672">is</span> <span style="color:#66d9ef">None</span> <span style="color:#f92672">or</span> state<span style="color:#f92672">.</span>status <span style="color:#f92672">!=</span> <span style="color:#e6db74">&#34;active&#34;</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> {<span style="color:#e6db74">&#34;status&#34;</span>: <span style="color:#66d9ef">None</span>, <span style="color:#e6db74">&#34;should_continue&#34;</span>: <span style="color:#66d9ef">False</span>, <span style="color:#f92672">...</span>}
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 2. 计轮</span>
+</span></span><span style="display:flex;"><span>    state<span style="color:#f92672">.</span>turns_used <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>    state<span style="color:#f92672">.</span>last_turn_at <span style="color:#f92672">=</span> time<span style="color:#f92672">.</span>time()
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 3. 调用 judge</span>
+</span></span><span style="display:flex;"><span>    verdict, reason <span style="color:#f92672">=</span> judge_goal(state<span style="color:#f92672">.</span>goal, last_response)
+</span></span><span style="display:flex;"><span>    state<span style="color:#f92672">.</span>last_verdict <span style="color:#f92672">=</span> verdict
+</span></span><span style="display:flex;"><span>    state<span style="color:#f92672">.</span>last_reason <span style="color:#f92672">=</span> reason
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 4. 分支决策</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> verdict <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;done&#34;</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># → 目标达成！</span>
+</span></span><span style="display:flex;"><span>        state<span style="color:#f92672">.</span>status <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;done&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> {<span style="color:#e6db74">&#34;should_continue&#34;</span>: <span style="color:#66d9ef">False</span>, <span style="color:#e6db74">&#34;verdict&#34;</span>: <span style="color:#e6db74">&#34;done&#34;</span>, 
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;message&#34;</span>: <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;✓ Goal achieved: </span><span style="color:#e6db74">{</span>reason<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>}
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> state<span style="color:#f92672">.</span>turns_used <span style="color:#f92672">&gt;=</span> state<span style="color:#f92672">.</span>max_turns:
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># → 预算耗尽！</span>
+</span></span><span style="display:flex;"><span>        state<span style="color:#f92672">.</span>status <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;paused&#34;</span>
+</span></span><span style="display:flex;"><span>        state<span style="color:#f92672">.</span>paused_reason <span style="color:#f92672">=</span> <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;turn budget exhausted (</span><span style="color:#e6db74">{</span>state<span style="color:#f92672">.</span>turns_used<span style="color:#e6db74">}</span><span style="color:#e6db74">/</span><span style="color:#e6db74">{</span>state<span style="color:#f92672">.</span>max_turns<span style="color:#e6db74">}</span><span style="color:#e6db74">)&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> {<span style="color:#e6db74">&#34;should_continue&#34;</span>: <span style="color:#66d9ef">False</span>, <span style="color:#e6db74">&#34;verdict&#34;</span>: <span style="color:#e6db74">&#34;continue&#34;</span>,
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;message&#34;</span>: <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;⏸ Goal paused — </span><span style="color:#e6db74">{</span>state<span style="color:#f92672">.</span>turns_used<span style="color:#e6db74">}</span><span style="color:#e6db74">/</span><span style="color:#e6db74">{</span>state<span style="color:#f92672">.</span>max_turns<span style="color:#e6db74">}</span><span style="color:#e6db74"> turns used.&#34;</span>}
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># → 继续！</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> {<span style="color:#e6db74">&#34;should_continue&#34;</span>: <span style="color:#66d9ef">True</span>, <span style="color:#e6db74">&#34;verdict&#34;</span>: <span style="color:#e6db74">&#34;continue&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;continuation_prompt&#34;</span>: self<span style="color:#f92672">.</span>next_continuation_prompt(),
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;message&#34;</span>: <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;↻ Continuing toward goal (</span><span style="color:#e6db74">{</span>state<span style="color:#f92672">.</span>turns_used<span style="color:#e6db74">}</span><span style="color:#e6db74">/</span><span style="color:#e6db74">{</span>state<span style="color:#f92672">.</span>max_turns<span style="color:#e6db74">}</span><span style="color:#e6db74">): </span><span style="color:#e6db74">{</span>reason<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>}
+</span></span></code></pre></div><h3 id="35-continuation-prompt--自动续跑注入">
+  3.5 Continuation Prompt — 自动续跑注入
+  <a class="anchor" href="#35-continuation-prompt--%e8%87%aa%e5%8a%a8%e7%bb%ad%e8%b7%91%e6%b3%a8%e5%85%a5">#</a>
+</h3>
+<p>当 judge 判断需要继续时，系统自动生成一个 continuation prompt 并注入到对话队列中：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>CONTINUATION_PROMPT_TEMPLATE <span style="color:#f92672">=</span> (
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;[Continuing toward your standing goal]</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;Goal: </span><span style="color:#e6db74">{goal}</span><span style="color:#ae81ff">\n\n</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;Continue working toward this goal. Take the next concrete step. &#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;If you believe the goal is complete, state so explicitly and stop. &#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;If you are blocked and need input from the user, say so clearly and stop.&#34;</span>
+</span></span><span style="display:flex;"><span>)
+</span></span></code></pre></div><p><strong>关键设计</strong>：</p>
+<ul>
+<li>continuation prompt 只是一个普通的 user-role 消息</li>
+<li><strong>不修改 system prompt，不切换 toolset，不触碰对话上下文</strong></li>
+<li>因此 prompt caching 完全不受影响——20 轮 goal 运行的 cache 成本等同于 20 轮普通对话</li>
+</ul>
+<h3 id="36-cli-集成">
+  3.6 CLI 集成
+  <a class="anchor" href="#36-cli-%e9%9b%86%e6%88%90">#</a>
+</h3>
+<p>CLI 端的 Goal 生命周期：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 1. 初始化（懒加载，缓存）</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_get_goal_manager</span>(self):
+</span></span><span style="display:flex;"><span>    sid <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>session_id
+</span></span><span style="display:flex;"><span>    existing <span style="color:#f92672">=</span> getattr(self, <span style="color:#e6db74">&#34;_goal_manager&#34;</span>, <span style="color:#66d9ef">None</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> existing <span style="color:#f92672">and</span> existing<span style="color:#f92672">.</span>session_id <span style="color:#f92672">==</span> sid:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> existing
+</span></span><span style="display:flex;"><span>    cfg <span style="color:#f92672">=</span> load_config()
+</span></span><span style="display:flex;"><span>    max_turns <span style="color:#f92672">=</span> cfg<span style="color:#f92672">.</span>get(<span style="color:#e6db74">&#34;goals&#34;</span>, {})<span style="color:#f92672">.</span>get(<span style="color:#e6db74">&#34;max_turns&#34;</span>, <span style="color:#ae81ff">20</span>)
+</span></span><span style="display:flex;"><span>    mgr <span style="color:#f92672">=</span> GoalManager(session_id<span style="color:#f92672">=</span>sid, default_max_turns<span style="color:#f92672">=</span>max_turns)
+</span></span><span style="display:flex;"><span>    self<span style="color:#f92672">.</span>_goal_manager <span style="color:#f92672">=</span> mgr
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> mgr
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 2. 处理 /goal 命令</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_handle_goal_command</span>(self, cmd):
+</span></span><span style="display:flex;"><span>    parts <span style="color:#f92672">=</span> cmd<span style="color:#f92672">.</span>strip()<span style="color:#f92672">.</span>split(<span style="color:#66d9ef">None</span>, <span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>    arg <span style="color:#f92672">=</span> parts[<span style="color:#ae81ff">1</span>]<span style="color:#f92672">.</span>strip() <span style="color:#66d9ef">if</span> len(parts) <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">1</span> <span style="color:#66d9ef">else</span> <span style="color:#e6db74">&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    mgr <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>_get_goal_manager()
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># /goal 或 /goal status → 显示状态</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">not</span> arg <span style="color:#f92672">or</span> arg<span style="color:#f92672">.</span>lower() <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;status&#34;</span>:
+</span></span><span style="display:flex;"><span>        _cprint(mgr<span style="color:#f92672">.</span>status_line())
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># /goal pause → 暂停</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> arg<span style="color:#f92672">.</span>lower() <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;pause&#34;</span>:
+</span></span><span style="display:flex;"><span>        mgr<span style="color:#f92672">.</span>pause(reason<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;user-paused&#34;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># /goal resume → 恢复（重置计数器）</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> arg<span style="color:#f92672">.</span>lower() <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;resume&#34;</span>:
+</span></span><span style="display:flex;"><span>        mgr<span style="color:#f92672">.</span>resume()
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># /goal clear/stop/done → 清除</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> arg<span style="color:#f92672">.</span>lower() <span style="color:#f92672">in</span> (<span style="color:#e6db74">&#34;clear&#34;</span>, <span style="color:#e6db74">&#34;stop&#34;</span>, <span style="color:#e6db74">&#34;done&#34;</span>):
+</span></span><span style="display:flex;"><span>        mgr<span style="color:#f92672">.</span>clear()
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># /goal &lt;text&gt; → 设置新目标，并立即触发第一轮</span>
+</span></span><span style="display:flex;"><span>    state <span style="color:#f92672">=</span> mgr<span style="color:#f92672">.</span>set(arg)
+</span></span><span style="display:flex;"><span>    self<span style="color:#f92672">.</span>_pending_input<span style="color:#f92672">.</span>put(state<span style="color:#f92672">.</span>goal)  <span style="color:#75715e"># 注入队列，立即开始工作</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 3. 每轮结束后调用的 Hook</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_maybe_continue_goal_after_turn</span>(self):
+</span></span><span style="display:flex;"><span>    mgr <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>_get_goal_manager()
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">not</span> mgr <span style="color:#f92672">or</span> <span style="color:#f92672">not</span> mgr<span style="color:#f92672">.</span>is_active():
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 如果用户已输入新消息，跳过判断（用户消息优先）</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> self<span style="color:#f92672">.</span>_pending_input <span style="color:#f92672">and</span> <span style="color:#f92672">not</span> self<span style="color:#f92672">.</span>_pending_input<span style="color:#f92672">.</span>empty():
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 提取 assistant 的最终回复</span>
+</span></span><span style="display:flex;"><span>    last_response <span style="color:#f92672">=</span> extract_last_assistant_response(self<span style="color:#f92672">.</span>conversation_history)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 调用 judge</span>
+</span></span><span style="display:flex;"><span>    decision <span style="color:#f92672">=</span> mgr<span style="color:#f92672">.</span>evaluate_after_turn(last_response, user_initiated<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>)
+</span></span><span style="display:flex;"><span>    _cprint(decision<span style="color:#f92672">.</span>get(<span style="color:#e6db74">&#34;message&#34;</span>, <span style="color:#e6db74">&#34;&#34;</span>))
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 如果需要继续，将 continuation prompt 注入队列</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> decision<span style="color:#f92672">.</span>get(<span style="color:#e6db74">&#34;should_continue&#34;</span>):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>_pending_input<span style="color:#f92672">.</span>put(decision[<span style="color:#e6db74">&#34;continuation_prompt&#34;</span>])
+</span></span></code></pre></div><h3 id="37-gateway-集成">
+  3.7 Gateway 集成
+  <a class="anchor" href="#37-gateway-%e9%9b%86%e6%88%90">#</a>
+</h3>
+<p>Gateway 端（支持 Telegram/Discord/Slack/Matrix/Signal/WhatsApp 等所有平台）的实现逻辑相同，但使用了 adapter-FIFO 队列机制：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_handle_goal_command</span>(self, event):
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># ... 解析子命令 ...</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 设置新目标时，构造一个 MessageEvent 并放入 adapter FIFO</span>
+</span></span><span style="display:flex;"><span>    kickoff_event <span style="color:#f92672">=</span> MessageEvent(
+</span></span><span style="display:flex;"><span>        text<span style="color:#f92672">=</span>state<span style="color:#f92672">.</span>goal,
+</span></span><span style="display:flex;"><span>        message_type<span style="color:#f92672">=</span>MessageType<span style="color:#f92672">.</span>TEXT,
+</span></span><span style="display:flex;"><span>        source<span style="color:#f92672">=</span>event<span style="color:#f92672">.</span>source,
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>    self<span style="color:#f92672">.</span>_enqueue_fifo(_quick_key, kickoff_event, adapter)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_post_turn_goal_continuation</span>(self, <span style="color:#f92672">*</span>, session_entry, source, final_response):
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Turn 边界后的 Hook — 调用 judge 并可能注入 continuation。&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    mgr <span style="color:#f92672">=</span> GoalManager(session_id<span style="color:#f92672">=</span>sid, default_max_turns<span style="color:#f92672">=</span>max_turns)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">not</span> mgr<span style="color:#f92672">.</span>is_active():
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    decision <span style="color:#f92672">=</span> mgr<span style="color:#f92672">.</span>evaluate_after_turn(final_response, user_initiated<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 将 judge 结果发送给用户</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> decision<span style="color:#f92672">.</span>get(<span style="color:#e6db74">&#34;message&#34;</span>):
+</span></span><span style="display:flex;"><span>        adapter<span style="color:#f92672">.</span>send_message(source, decision[<span style="color:#e6db74">&#34;message&#34;</span>])
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 如果需要继续，通过 adapter FIFO 注入 continuation</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> decision<span style="color:#f92672">.</span>get(<span style="color:#e6db74">&#34;should_continue&#34;</span>):
+</span></span><span style="display:flex;"><span>        cont_event <span style="color:#f92672">=</span> MessageEvent(text<span style="color:#f92672">=</span>decision[<span style="color:#e6db74">&#34;continuation_prompt&#34;</span>], <span style="color:#f92672">...</span>)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>_enqueue_fifo(_quick_key, cont_event, adapter)
+</span></span></code></pre></div><p><strong>Gateway 的安全设计</strong>：</p>
+<ul>
+<li>Agent 运行中，<code>/goal status</code>、<code>/goal pause</code>、<code>/goal clear</code> 是安全的（只修改控制面状态）</li>
+<li><code>/goal &lt;new text&gt;</code> 在 Agent 运行中被拒绝，提示先 <code>/stop</code>，避免旧 continuation 与新目标竞争</li>
+</ul>
+<h3 id="38-用户消息优先机制">
+  3.8 用户消息优先机制
+  <a class="anchor" href="#38-%e7%94%a8%e6%88%b7%e6%b6%88%e6%81%af%e4%bc%98%e5%85%88%e6%9c%ba%e5%88%b6">#</a>
+</h3>
+<p>这是确保系统不会失控的关键设计：</p>
+<p><strong>CLI 端</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 如果 _pending_input 队列中已有用户消息，跳过判断</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> self<span style="color:#f92672">.</span>_pending_input <span style="color:#f92672">and</span> <span style="color:#f92672">not</span> self<span style="color:#f92672">.</span>_pending_input<span style="color:#f92672">.</span>empty():
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span>  <span style="color:#75715e"># 用户消息优先</span>
+</span></span></code></pre></div><p><strong>Gateway 端</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 通过 adapter FIFO 队列，用户消息天然排在 continuation 前面</span>
+</span></span><span style="display:flex;"><span>self<span style="color:#f92672">.</span>_enqueue_fifo(_quick_key, cont_event, adapter)
+</span></span></code></pre></div><p><strong>效果</strong>：任何用户发送的真实消息都会自动抢占 continuation loop，用户消息执行完后 judge 会再次运行——如果用户消息碰巧完成了目标，judge 会识别并停止循环。</p>
+<h2 id="四完整生命周期流程图">
+  四、完整生命周期流程图
+  <a class="anchor" href="#%e5%9b%9b%e5%ae%8c%e6%95%b4%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f%e6%b5%81%e7%a8%8b%e5%9b%be">#</a>
+</h2>
+<pre tabindex="0"><code>用户: /goal &#34;修复 tests/hermes_cli/ 所有失败测试&#34;
+
+  ⊙ Goal set (20-turn budget): 修复 tests/hermes_cli/ 所有失败测试
+  
+  [CLI/Gateway 将 goal 文本注入 _pending_input/FIFO]
+
+  ┌─ Turn 1 ────────────────────────────────────────────────────┐
+  │ Hermes: 运行测试...发现 5 个失败，修复了 2 个               │
+  │ [轮次结束 Hook 触发]                                         │
+  │ judge_goal(goal, last_response) → {&#34;done&#34;: false, &#34;reason&#34;:  │
+  │   &#34;only 2 of 5 failures fixed; 3 remain&#34;}                   │
+  │ → decision: should_continue=True                             │
+  │ ↻ Continuing toward goal (1/20): only 2 of 5 fixed          │
+  │ [continuation prompt 注入队列]                               │
+  └──────────────────────────────────────────────────────────────┘
+
+  ┌─ Turn 2 (continuation prompt 触发) ──────────────────────────┐
+  │ Hermes: [Continuing toward your standing goal]...            │
+  │ 修复了剩余 3 个测试                                           │
+  │ [轮次结束 Hook 触发]                                         │
+  │ judge_goal(goal, last_response) → {&#34;done&#34;: true, &#34;reason&#34;:   │
+  │   &#34;All 5 tests fixed, response confirms completion&#34;}         │
+  │ → decision: should_continue=False, verdict=done              │
+  │ ✓ Goal achieved: All 5 tests fixed...                        │
+  └──────────────────────────────────────────────────────────────┘
+
+  用户: _ (空闲，等待新输入)
+</code></pre><p><strong>其他终止路径</strong>：</p>
+<pre tabindex="0"><code>路径 B（预算耗尽）：
+  ↻ Continuing (18/20) → ↻ (19/20) → ⏸ Goal paused — 20/20 turns used
+  用户: /goal resume → 计数器重置为 0 → 继续
+
+路径 C（用户干预）：
+  ↻ Continuing (3/20) → 用户发送 &#34;等一下，换个思路&#34;
+  → 用户消息抢占，continuation 被丢弃
+  → 新轮次结束后 judge 再次运行
+
+路径 D（受阻确认）：
+  Hermes: &#34;这个测试需要修改上游 API，我无法访问&#34;
+  judge → {&#34;done&#34;: true, &#34;reason&#34;: &#34;goal is blocked, needs user input&#34;}
+  ✓ Goal achieved: goal is blocked, needs user input
+</code></pre><h2 id="五配置方式">
+  五、配置方式
+  <a class="anchor" href="#%e4%ba%94%e9%85%8d%e7%bd%ae%e6%96%b9%e5%bc%8f">#</a>
+</h2>
+<p>在 <code>~/.hermes/config.yaml</code> 中：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">goals</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 最大续跑轮次，默认 20。调低用于 tighter loops，调高用于长期重构</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">max_turns</span>: <span style="color:#ae81ff">20</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">auxiliary</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">goal_judge</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 可选：将 judge 路由到便宜快速的模型</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">provider</span>: <span style="color:#ae81ff">openrouter</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">model</span>: <span style="color:#ae81ff">google/gemini-3-flash-preview</span>
+</span></span></code></pre></div><h2 id="六设计亮点与权衡">
+  六、设计亮点与权衡
+  <a class="anchor" href="#%e5%85%ad%e8%ae%be%e8%ae%a1%e4%ba%ae%e7%82%b9%e4%b8%8e%e6%9d%83%e8%a1%a1">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>设计点</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Fail-open 语义</strong></td>
+          <td>Judge 失败 → continue，而非 block。broken judge 不会卡住进度，turn budget 是最终安全网</td>
+      </tr>
+      <tr>
+          <td><strong>零侵入性</strong></td>
+          <td>continuation 只是普通 user 消息，不改 system prompt、不切 toolset、不碰 prompt cache</td>
+      </tr>
+      <tr>
+          <td><strong>持久化</strong></td>
+          <td><code>SessionDB.state_meta</code> 持久化，<code>/resume</code> 可跨会话恢复</td>
+      </tr>
+      <tr>
+          <td><strong>用户消息优先</strong></td>
+          <td>真实用户消息天然抢占 continuation loop，不会丢失用户输入</td>
+      </tr>
+      <tr>
+          <td><strong>保守判断策略</strong></td>
+          <td>只有明确完成或确认受阻才 done，使 false positive 比 false negative 更罕见</td>
+      </tr>
+      <tr>
+          <td><strong>双端统一</strong></td>
+          <td>CLI（<code>_pending_input</code>）和 Gateway（adapter-FIFO）共享同一 <code>GoalManager</code>，逻辑一致</td>
+      </tr>
+      <tr>
+          <td><strong>独立辅助模型</strong></td>
+          <td>Judge 用独立 <code>goal_judge</code> auxiliary task，可配便宜模型，每次 ~200 token</td>
+      </tr>
+      <tr>
+          <td><strong>JSON 解析容错</strong></td>
+          <td>多层 fallback：直接解析 → 正则提取 JSON 对象 → 剥离 markdown fence</td>
+      </tr>
+  </tbody>
+</table>
+<h2 id="七与-codex-goal-的对比">
+  七、与 Codex <code>/goal</code> 的对比
+  <a class="anchor" href="#%e4%b8%83%e4%b8%8e-codex-goal-%e7%9a%84%e5%af%b9%e6%af%94">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>Codex <code>/goal</code></th>
+          <th>Hermes <code>/goal</code></th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>灵感来源</td>
+          <td>原创（Eric Traut, OpenAI）</td>
+          <td>受 Codex 启发的 Ralph loop 变体</td>
+      </tr>
+      <tr>
+          <td>Judge 机制</td>
+          <td>Agent 自身通过 <code>update_goal</code> tool 自我判断</td>
+          <td><strong>独立的辅助模型</strong>（auxiliary client）做判断</td>
+      </tr>
+      <tr>
+          <td>续跑注入</td>
+          <td>Steering prompt（隐藏上下文，<code>InternalModelContextFragment</code>）</td>
+          <td><strong>普通 user 消息</strong>（<code>_pending_input</code> / FIFO 队列）</td>
+      </tr>
+      <tr>
+          <td>持久化</td>
+          <td>SQLite <code>thread_goals</code> 表（独立表）</td>
+          <td><code>SessionDB.state_meta</code> KV 存储（<code>goal:&lt;session_id&gt;</code>）</td>
+      </tr>
+      <tr>
+          <td>预算维度</td>
+          <td>Token budget + 挂钟时间</td>
+          <td><strong>Turn budget</strong>（轮次计数）</td>
+      </tr>
+      <tr>
+          <td>完成审计</td>
+          <td>严格 completion audit + blocked audit（需 3 轮相同阻塞）</td>
+          <td>Judge 单次判断（保守策略，blocked 也视为 done）</td>
+      </tr>
+      <tr>
+          <td>架构集成</td>
+          <td>Extension API（ThreadLifecycle/TurnLifecycle/ToolContributor）</td>
+          <td><strong>GoalManager</strong> 类 + CLI/Gateway 双端 Hook</td>
+      </tr>
+      <tr>
+          <td>语言</td>
+          <td>Rust</td>
+          <td>Python</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>本质区别</strong>：Codex 把 goal 判断<strong>内嵌在 Agent 的工具调用中</strong>（Agent 自己调 <code>update_goal</code>），而 Hermes 用<strong>独立的外部 Judge 模型</strong>在每轮结束后做判断。这使得 Hermes 的实现更轻量——不需要修改 Agent 的工具集或 system prompt，但代价是 Judge 可能误判（通过保守策略和 turn budget 兜底）。</p>
+<h2 id="八总结">
+  八、总结
+  <a class="anchor" href="#%e5%85%ab%e6%80%bb%e7%bb%93">#</a>
+</h2>
+<p>Hermes Agent 的 <code>/goal</code> 是一个精心设计的<strong>自主持续工作模式</strong>，核心思想可以概括为：</p>
+<blockquote>
+<p><strong>设定目标 → 工作 → Judge 判断 → 未完成则自动续跑 → 循环直到 done/budget/intervention</strong></p></blockquote>
+<p>它的巧妙之处在于：</p>
+<ol>
+<li><strong>极简实现</strong>——仅 ~535 行核心代码，零侵入性（不改 system prompt / toolset）</li>
+<li><strong>独立 Judge</strong>——用辅助模型做判断，避免 Agent 自我评估的 bias</li>
+<li><strong>Fail-open</strong>——Judge 坏了也不卡进度，turn budget 兜底</li>
+<li><strong>用户优先</strong>——真实消息天然抢占 continuation loop</li>
+<li><strong>跨平台统一</strong>——CLI 和 Gateway 共享同一 GoalManager</li>
+</ol>
+<p>它把一个&quot;一次性问答&quot;变成了&quot;有明确目标、有轮次预算、有自动判断、能自主续跑的持久任务&quot;。</p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#hermes-agent-goal-的原理机制与实现方式">Hermes Agent <code>/goal</code> 的原理机制与实现方式</a>
+      <ul>
+        <li><a href="#一整体定位">一、整体定位</a></li>
+        <li><a href="#二整体架构">二、整体架构</a></li>
+        <li><a href="#三核心模块拆解">三、核心模块拆解</a>
+          <ul>
+            <li><a href="#31-goalstate--数据模型">3.1 GoalState — 数据模型</a></li>
+            <li><a href="#32-持久化层--sessiondb">3.2 持久化层 — SessionDB</a></li>
+            <li><a href="#33-judge-机制--核心判断引擎">3.3 Judge 机制 — 核心判断引擎</a></li>
+            <li><a href="#34-goalmanager--编排引擎">3.4 GoalManager — 编排引擎</a></li>
+            <li><a href="#35-continuation-prompt--自动续跑注入">3.5 Continuation Prompt — 自动续跑注入</a></li>
+            <li><a href="#36-cli-集成">3.6 CLI 集成</a></li>
+            <li><a href="#37-gateway-集成">3.7 Gateway 集成</a></li>
+            <li><a href="#38-用户消息优先机制">3.8 用户消息优先机制</a></li>
+          </ul>
+        </li>
+        <li><a href="#四完整生命周期流程图">四、完整生命周期流程图</a></li>
+        <li><a href="#五配置方式">五、配置方式</a></li>
+        <li><a href="#六设计亮点与权衡">六、设计亮点与权衡</a></li>
+        <li><a href="#七与-codex-goal-的对比">七、与 Codex <code>/goal</code> 的对比</a></li>
+        <li><a href="#八总结">八、总结</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
