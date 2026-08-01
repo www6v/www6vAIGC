@@ -1,0 +1,5870 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  Loop Engineering：从 Prompt 到系统自主
+  #
+
+
+摘要：2026 年 6 月，AI Agent 领域发生了一场静悄悄的范式转移。Peter Steinberger（OpenClaw 作者）发了一条推文——&ldquo;你不应该再手动给 coding agent 写 prompt 了，你应该设计让 agent 自动跑的 loop&rdquo;——这条推文获得了 830 万浏览，引爆了整个行业。Loop Engineering 从此成为 AI Agent 开发的核心技能。本文将从概念、架构、模式、系统实现和最佳实践五个维度，全面拆解 Loop Engineering。
+
+
+  📊 插图索引
+  #
+
+
+  
+      
+          编号
+          插图
+          说明
+      
+  
+  
+      
+          图 1
+          
+          传统 Prompt 工作模式 vs Loop Engineering
+      
+      
+          图 2
+          
+          Loop Engineering 自动循环架构
+      
+      
+          图 3
+          
+          Agent Loop：目标→行动→观察→判断
+      
+      
+          图 4
+          
+          加入记忆、评估和脚手架
+      
+      
+          图 5
+          
+          Addy Osmani 框架的六大组件
+      
+      
+          图 6
+          
+          基础循环：模型 &#43; 工具
+      
+      
+          图 7
+          
+          验证循环 &#43; Maker-Checker
+      
+      
+          图 8
+          
+          事件驱动循环
+      
+      
+          图 9
+          
+          爬坡循环：自我改进
+      
+      
+          图 10
+          
+          Loopcraft：堆叠 loop 的艺术
+      
+      
+          图 11
+          
+          失败后自我反思模式
+      
+      
+          图 12
+          
+          编排器调度多个 Worker
+      
+      
+          图 13
+          
+          生产环境最主流模式
+      
+      
+          图 14
+          
+          敏感操作人工审批流
+      
+      
+          图 15
+          
+          从手动 Prompt 到自我改进
+      
+  
+
+
+
+  一、引言：为什么 Loop Engineering 在 2026 年爆发
+  #
+
+
+  1.1 一句话定义
+  #
+
+Loop Engineering 就是：不再自己手动给 Agent 写 prompt，而是设计一个系统，让系统自动给 Agent 发 prompt、检查结果、决定下一步。">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Loops-engineering/loop-engineering/loop-engineering1/">
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="Loop Engineering：从 Prompt 到系统自主 # 摘要：2026 年 6 月，AI Agent 领域发生了一场静悄悄的范式转移。Peter Steinberger（OpenClaw 作者）发了一条推文——“你不应该再手动给 coding agent 写 prompt 了，你应该设计让 agent 自动跑的 loop”——这条推文获得了 830 万浏览，引爆了整个行业。Loop Engineering 从此成为 AI Agent 开发的核心技能。本文将从概念、架构、模式、系统实现和最佳实践五个维度，全面拆解 Loop Engineering。
+📊 插图索引 # 编号 插图 说明 图 1 传统 Prompt 工作模式 vs Loop Engineering 图 2 Loop Engineering 自动循环架构 图 3 Agent Loop：目标→行动→观察→判断 图 4 加入记忆、评估和脚手架 图 5 Addy Osmani 框架的六大组件 图 6 基础循环：模型 &#43; 工具 图 7 验证循环 &#43; Maker-Checker 图 8 事件驱动循环 图 9 爬坡循环：自我改进 图 10 Loopcraft：堆叠 loop 的艺术 图 11 失败后自我反思模式 图 12 编排器调度多个 Worker 图 13 生产环境最主流模式 图 14 敏感操作人工审批流 图 15 从手动 Prompt 到自我改进 一、引言：为什么 Loop Engineering 在 2026 年爆发 # 1.1 一句话定义 # Loop Engineering 就是：不再自己手动给 Agent 写 prompt，而是设计一个系统，让系统自动给 Agent 发 prompt、检查结果、决定下一步。">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>Loop Engineering1 | Modern Agent</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Loops-engineering/loop-engineering/loop-engineering1/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.cc1a69cc3cedb7fd607317bb81afce481210182e3d04d8ea01af863c9b64c289.js" integrity="sha256-zBppzDztt/1gcxe7ga/OSBIQGC49BNjqAa&#43;GPJtkwok=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Loops-engineering/loop-engineering/loop-engineering1/index.xml" title="Modern Agent" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall/" class="">Rag Recall</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/" class="">Rag Recall 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cc96aa92b1fe4deb19f2780a910b3a84" class="toggle"  />
+    <label for="section-cc96aa92b1fe4deb19f2780a910b3a84" class="flex justify-between">
+      <a role="button" class="">Dify</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="toggle"  />
+    <label for="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="flex justify-between">
+      <a role="button" class="">产品</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/list/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="toggle"  />
+    <label for="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="flex justify-between">
+      <a role="button" class="">Sandbox</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f52d73da99d8a76b38639b3169b9c30" class="toggle"  />
+    <label for="section-9f52d73da99d8a76b38639b3169b9c30" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E4%BC%98%E5%8C%96/" class="">Claude Platform 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent2/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent3/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E8%A7%A3%E8%AF%BB/" class="">脑和手的解耦</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E5%8E%9F%E6%96%87/" class="">原文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fa07d823cbbab8a5cb211097d19a8b0f" class="toggle"  />
+    <label for="section-fa07d823cbbab8a5cb211097d19a8b0f" class="flex justify-between">
+      <a role="button" class="">Reflection</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91cb2f81fbf96ec25f68405674241162" class="toggle"  />
+    <label for="section-91cb2f81fbf96ec25f68405674241162" class="flex justify-between">
+      <a role="button" class="">Planning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b95bbb7a37b62a6b524cdc440bea4bea" class="toggle"  />
+    <label for="section-b95bbb7a37b62a6b524cdc440bea4bea" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c6918aab8d4437c8353af1df185685d7" class="toggle"  />
+    <label for="section-c6918aab8d4437c8353af1df185685d7" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4bd94f7e5788f6f6b717b9411d5219d7" class="toggle"  />
+    <label for="section-4bd94f7e5788f6f6b717b9411d5219d7" class="flex justify-between">
+      <a role="button" class="">Hermes</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes1/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes2/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes/" class="">Hermes Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e851bc8bb25b6d3ab16779dd8e31e163" class="toggle"  />
+    <label for="section-e851bc8bb25b6d3ab16779dd8e31e163" class="flex justify-between">
+      <a role="button" class="">managed agents</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming1/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a5f1c9d05f8697fe4344602432ed2c1" class="toggle"  />
+    <label for="section-4a5f1c9d05f8697fe4344602432ed2c1" class="flex justify-between">
+      <a role="button" class="">Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/hindsight/" class="">Hindsight</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking/" class="">Openviking</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27631881d59f460a7e82415eae943524" class="toggle"  />
+    <label for="section-27631881d59f460a7e82415eae943524" class="flex justify-between">
+      <a role="button" class="">Openclaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-867db087ab84641b5d4e3bc021355890" class="toggle"  />
+    <label for="section-867db087ab84641b5d4e3bc021355890" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ca53c095705ebe6e57deb96a02c0d3e3" class="toggle"  />
+    <label for="section-ca53c095705ebe6e57deb96a02c0d3e3" class="flex justify-between">
+      <a role="button" class="">Multi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7f3cbaaa32d67178b923d0e7080ddc58" class="toggle"  />
+    <label for="section-7f3cbaaa32d67178b923d0e7080ddc58" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Kanban/" class="">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7c1e99e2bc0dea50268247820e8feb36" class="toggle"  />
+    <label for="section-7c1e99e2bc0dea50268247820e8feb36" class="flex justify-between">
+      <a role="button" class="">Multi-agent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8aff2d658582dd8082936377ce08c46d" class="toggle"  />
+    <label for="section-8aff2d658582dd8082936377ce08c46d" class="flex justify-between">
+      <a role="button" class="">subagent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/Claude-code/" class="">Claude Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/subagent/" class="">Subagent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-78862664423ffb11f8c168297456fbac" class="toggle"  />
+    <label for="section-78862664423ffb11f8c168297456fbac" class="flex justify-between">
+      <a role="button" class="">Teams *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-Teams/" class="">Claude Code Teams</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-TeamsA1/" class="">Claude Code Teams[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-504cb284e9f6a649d018a049679638f6" class="toggle"  />
+    <label for="section-504cb284e9f6a649d018a049679638f6" class="flex justify-between">
+      <a role="button" class="">Agent Tool</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b80366c67c2d447239312da68cd1ac4c" class="toggle"  />
+    <label for="section-b80366c67c2d447239312da68cd1ac4c" class="flex justify-between">
+      <a role="button" class="">Survey &amp; SFT</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-aa27abb55dc621af66ea631cd4bad469" class="toggle"  />
+    <label for="section-aa27abb55dc621af66ea631cd4bad469" class="flex justify-between">
+      <a role="button" class="">Tool 演进</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/%E6%BC%94%E8%BF%9B/fc&#43;mcp&#43;cli/" class="">Functioncall-&gt;MCP-&gt;cli &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a2630b53c4c4baf384f02ab78ef6519" class="toggle"  />
+    <label for="section-4a2630b53c4c4baf384f02ab78ef6519" class="flex justify-between">
+      <a role="button" class="">tools</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/Tools/claude-searchTool/" class="">Claude toolsearch</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8fd065cbe7dbbad30f0c4e4d0545d6c4" class="toggle"  />
+    <label for="section-8fd065cbe7dbbad30f0c4e4d0545d6c4" class="flex justify-between">
+      <a role="button" class="">MCP *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle"  />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle"  />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/openclaw-sandbox-security/" class="">Openclaw Sandbox Security</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/" class="">Openclaw Conversation State Management</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/" class="">Openclaw Tool Invocation Flow</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-406a2e1159d423500a23abb9a994a5a3" class="toggle"  />
+    <label for="section-406a2e1159d423500a23abb9a994a5a3" class="flex justify-between">
+      <a role="button" class="">Hermes Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitcture/" class="">Arcitcture</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/" class="">Skill Envolve</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/permission/" class="">Permission[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-339828cdd4ae109f0b47d6033c8220ec" class="toggle"  />
+    <label for="section-339828cdd4ae109f0b47d6033c8220ec" class="flex justify-between">
+      <a role="button" class="">Coding Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/coding-agent/Pi-Agent/" class="">Pi Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/coding-agent/Tau-Agent/" class="">Tau Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b1ceebdd7e406fc4533519c821a9e4c3" class="toggle" checked />
+    <label for="section-b1ceebdd7e406fc4533519c821a9e4c3" class="flex justify-between">
+      <a role="button" class="">Loops engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-01142eb3e9d36b255ac107cb9131d7c2" class="toggle"  />
+    <label for="section-01142eb3e9d36b255ac107cb9131d7c2" class="flex justify-between">
+      <a role="button" class="">goal</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/" class="">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="toggle" checked />
+    <label for="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="flex justify-between">
+      <a role="button" class="">loop engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loops/" class="">loops engineering[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loop-engineering1/" class="active">Loop Engineering1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b3a0ebe16d532fb38ede799ae1575c3a" class="toggle"  />
+    <label for="section-b3a0ebe16d532fb38ede799ae1575c3a" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/" class="">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/openclaw/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle"  />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering1/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering2/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-compress/" class="">Claude /compact</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/codex-context/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">context engineering[Manus]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/skill/" class="">编写高质量Skill的六大失效模式</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="toggle"  />
+    <label for="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="flex justify-between">
+      <a role="button" class="">AI Native</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeminimax/" class="">AI原生组织实践(MiniMax)</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Claude-tag/" class="">Claude tag</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Ai-nativeali/" class="">AI native与人机协作[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeclaude/" class="">Bottleneck Shift in AI-native Engineering[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Loop Engineering1</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#loop-engineering从-prompt-到系统自主">Loop Engineering：从 Prompt 到系统自主</a>
+      <ul>
+        <li><a href="#-插图索引">📊 插图索引</a></li>
+        <li><a href="#一引言为什么-loop-engineering-在-2026-年爆发">一、引言：为什么 Loop Engineering 在 2026 年爆发</a>
+          <ul>
+            <li><a href="#11-一句话定义">1.1 一句话定义</a></li>
+            <li><a href="#12-引爆点2026-年-6-月的十天">1.2 引爆点：2026 年 6 月的十天</a></li>
+            <li><a href="#13-范式转移的三段演进">1.3 范式转移的三段演进</a></li>
+            <li><a href="#14-从人用工具到系统用人">1.4 从&quot;人用工具&quot;到&quot;系统用人&quot;</a></li>
+          </ul>
+        </li>
+        <li><a href="#二核心概念拆解">二、核心概念拆解</a>
+          <ul>
+            <li><a href="#21-agent-loop-的本质">2.1 Agent Loop 的本质</a></li>
+            <li><a href="#22-agent-loop-的三层复杂度oracle-框架">2.2 Agent Loop 的三层复杂度（Oracle 框架）</a></li>
+            <li><a href="#23-loop-engineering-vs-harness-engineering">2.3 Loop Engineering vs Harness Engineering</a></li>
+            <li><a href="#24-一个完整-loop-的六大要素">2.4 一个完整 Loop 的六大要素</a></li>
+          </ul>
+        </li>
+        <li><a href="#三loop-的分层架构">三、Loop 的分层架构</a>
+          <ul>
+            <li><a href="#31-loop-1agent-loop基础循环">3.1 Loop 1：Agent Loop（基础循环）</a></li>
+            <li><a href="#32-loop-2verification-loop验证循环">3.2 Loop 2：Verification Loop（验证循环）</a></li>
+            <li><a href="#33-loop-3event-driven-loop事件驱动循环">3.3 Loop 3：Event-Driven Loop（事件驱动循环）</a></li>
+            <li><a href="#34-loop-4hill-climbing-loop爬坡循环">3.4 Loop 4：Hill Climbing Loop（爬坡循环）</a></li>
+            <li><a href="#35-四层-loop-的叠加关系">3.5 四层 Loop 的叠加关系</a></li>
+          </ul>
+        </li>
+        <li><a href="#四经典-loop-模式">四、经典 Loop 模式</a>
+          <ul>
+            <li><a href="#41-reactreason--act">4.1 ReAct（Reason + Act）</a></li>
+            <li><a href="#42-reflexion">4.2 Reflexion</a></li>
+            <li><a href="#43-evaluator-optimizer">4.3 Evaluator-Optimizer</a></li>
+            <li><a href="#44-orchestrator-workers">4.4 Orchestrator-Workers</a></li>
+            <li><a href="#45-maker-checker生产环境主导模式">4.5 Maker-Checker（生产环境主导模式）</a></li>
+            <li><a href="#46-ralph-loop">4.6 Ralph Loop</a></li>
+            <li><a href="#47-goal-原语">4.7 <code>/goal</code> 原语</a></li>
+          </ul>
+        </li>
+        <li><a href="#五实现-loop-engineering-的系统">五、实现 Loop Engineering 的系统</a>
+          <ul>
+            <li><a href="#51-claude-codeanthropic">5.1 Claude Code（Anthropic）</a></li>
+            <li><a href="#52-openai-codex">5.2 OpenAI Codex</a></li>
+            <li><a href="#53-openclaw">5.3 OpenClaw</a></li>
+            <li><a href="#54-系统对比表">5.4 系统对比表</a></li>
+            <li><a href="#55-框架层langchain">5.5 框架层：LangChain</a></li>
+            <li><a href="#56-云平台">5.6 云平台</a></li>
+          </ul>
+        </li>
+        <li><a href="#六设计模式与最佳实践">六、设计模式与最佳实践</a>
+          <ul>
+            <li><a href="#61-maker-checker-分离">6.1 Maker-Checker 分离</a></li>
+            <li><a href="#62-终止条件设计">6.2 终止条件设计</a></li>
+            <li><a href="#63-token-成本控制">6.3 Token 成本控制</a></li>
+            <li><a href="#64-human-in-the-loop">6.4 Human-in-the-loop</a></li>
+            <li><a href="#65-状态持久化">6.5 状态持久化</a></li>
+            <li><a href="#66-worktree-隔离">6.6 Worktree 隔离</a></li>
+          </ul>
+        </li>
+        <li><a href="#七挑战与风险">七、挑战与风险</a>
+          <ul>
+            <li><a href="#71-无限循环风险">7.1 无限循环风险</a></li>
+            <li><a href="#72-token-成本爆炸">7.2 Token 成本爆炸</a></li>
+            <li><a href="#73-验证器瓶颈">7.3 验证器瓶颈</a></li>
+            <li><a href="#74-早期阶段">7.4 早期阶段</a></li>
+            <li><a href="#75-何时不该用-loop">7.5 何时不该用 Loop</a></li>
+          </ul>
+        </li>
+        <li><a href="#八总结">八、总结</a>
+          <ul>
+            <li><a href="#81-核心回顾">8.1 核心回顾</a></li>
+            <li><a href="#82-能力成熟度">8.2 能力成熟度</a></li>
+            <li><a href="#83-2026-年的工程师红利">8.3 2026 年的工程师红利</a></li>
+          </ul>
+        </li>
+        <li><a href="#-参考文献">📚 参考文献</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="loop-engineering从-prompt-到系统自主">
+  Loop Engineering：从 Prompt 到系统自主
+  <a class="anchor" href="#loop-engineering%e4%bb%8e-prompt-%e5%88%b0%e7%b3%bb%e7%bb%9f%e8%87%aa%e4%b8%bb">#</a>
+</h1>
+<blockquote>
+<p><strong>摘要</strong>：2026 年 6 月，AI Agent 领域发生了一场静悄悄的范式转移。Peter Steinberger（OpenClaw 作者）发了一条推文——&ldquo;你不应该再手动给 coding agent 写 prompt 了，你应该设计让 agent 自动跑的 loop&rdquo;——这条推文获得了 830 万浏览，引爆了整个行业。Loop Engineering 从此成为 AI Agent 开发的核心技能。本文将从概念、架构、模式、系统实现和最佳实践五个维度，全面拆解 Loop Engineering。</p></blockquote>
+<hr>
+<h2 id="-插图索引">
+  📊 插图索引
+  <a class="anchor" href="#-%e6%8f%92%e5%9b%be%e7%b4%a2%e5%bc%95">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>编号</th>
+          <th>插图</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>图 1</td>
+          <td><img src="./images/fig1.png" alt="图1 传统工作模式" /></td>
+          <td>传统 Prompt 工作模式 vs Loop Engineering</td>
+      </tr>
+      <tr>
+          <td>图 2</td>
+          <td><img src="./images/fig2.png" alt="图2 系统自动循环" /></td>
+          <td>Loop Engineering 自动循环架构</td>
+      </tr>
+      <tr>
+          <td>图 3</td>
+          <td><img src="./images/fig3.png" alt="图3 Agent Loop 标准模式" /></td>
+          <td>Agent Loop：目标→行动→观察→判断</td>
+      </tr>
+      <tr>
+          <td>图 4</td>
+          <td><img src="./images/fig4.png" alt="图4 Agent Loop Level 2" /></td>
+          <td>加入记忆、评估和脚手架</td>
+      </tr>
+      <tr>
+          <td>图 5</td>
+          <td><img src="./images/fig5.png" alt="图5 完整 Loop 的六大要素" /></td>
+          <td>Addy Osmani 框架的六大组件</td>
+      </tr>
+      <tr>
+          <td>图 6</td>
+          <td><img src="./images/fig6.png" alt="图6 Loop 1 基础循环" /></td>
+          <td>基础循环：模型 + 工具</td>
+      </tr>
+      <tr>
+          <td>图 7</td>
+          <td><img src="./images/fig7.png" alt="图7 Loop 2 验证循环" /></td>
+          <td>验证循环 + Maker-Checker</td>
+      </tr>
+      <tr>
+          <td>图 8</td>
+          <td><img src="./images/fig8.png" alt="图8 Loop 3 事件驱动" /></td>
+          <td>事件驱动循环</td>
+      </tr>
+      <tr>
+          <td>图 9</td>
+          <td><img src="./images/fig9.png" alt="图9 Loop 4 爬坡循环" /></td>
+          <td>爬坡循环：自我改进</td>
+      </tr>
+      <tr>
+          <td>图 10</td>
+          <td><img src="./images/fig10.png" alt="图10 四层 Loop 叠加" /></td>
+          <td>Loopcraft：堆叠 loop 的艺术</td>
+      </tr>
+      <tr>
+          <td>图 11</td>
+          <td><img src="./images/fig11.png" alt="图11 Reflexion 模式" /></td>
+          <td>失败后自我反思模式</td>
+      </tr>
+      <tr>
+          <td>图 12</td>
+          <td><img src="./images/fig12.png" alt="图12 Orchestrator-Workers" /></td>
+          <td>编排器调度多个 Worker</td>
+      </tr>
+      <tr>
+          <td>图 13</td>
+          <td><img src="./images/fig13.png" alt="图13 Maker-Checker 模式" /></td>
+          <td>生产环境最主流模式</td>
+      </tr>
+      <tr>
+          <td>图 14</td>
+          <td><img src="./images/fig14.png" alt="图14 Human-in-the-loop" /></td>
+          <td>敏感操作人工审批流</td>
+      </tr>
+      <tr>
+          <td>图 15</td>
+          <td><img src="./images/fig15.png" alt="图15 能力成熟度" /></td>
+          <td>从手动 Prompt 到自我改进</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="一引言为什么-loop-engineering-在-2026-年爆发">
+  一、引言：为什么 Loop Engineering 在 2026 年爆发
+  <a class="anchor" href="#%e4%b8%80%e5%bc%95%e8%a8%80%e4%b8%ba%e4%bb%80%e4%b9%88-loop-engineering-%e5%9c%a8-2026-%e5%b9%b4%e7%88%86%e5%8f%91">#</a>
+</h2>
+<h3 id="11-一句话定义">
+  1.1 一句话定义
+  <a class="anchor" href="#11-%e4%b8%80%e5%8f%a5%e8%af%9d%e5%ae%9a%e4%b9%89">#</a>
+</h3>
+<p><strong>Loop Engineering 就是：不再自己手动给 Agent 写 prompt，而是设计一个系统，让系统自动给 Agent 发 prompt、检查结果、决定下一步。</strong></p>
+<p>用 Addy Osmani 的话说：</p>
+<blockquote>
+<p><em>&ldquo;Loop engineering is replacing yourself as the person who prompts the agent. You design the system that does it instead.&rdquo;</em></p></blockquote>
+<h3 id="12-引爆点2026-年-6-月的十天">
+  1.2 引爆点：2026 年 6 月的十天
+  <a class="anchor" href="#12-%e5%bc%95%e7%88%86%e7%82%b92026-%e5%b9%b4-6-%e6%9c%88%e7%9a%84%e5%8d%81%e5%a4%a9">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>日期</th>
+          <th>人物 / 来源</th>
+          <th>关键言论</th>
+          <th>影响</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>2026-06-07</td>
+          <td>Peter Steinberger (@steipete)</td>
+          <td>&ldquo;You shouldn&rsquo;t be prompting coding agents anymore. You should be designing loops that prompt your agents.&rdquo;</td>
+          <td>830 万浏览，引爆讨论</td>
+      </tr>
+      <tr>
+          <td>2026-06-08</td>
+          <td>Boris Cherny（Anthropic Claude Code 负责人）</td>
+          <td>&ldquo;My job is to write loops.&rdquo;</td>
+          <td>行业领袖背书</td>
+      </tr>
+      <tr>
+          <td>2026-06-07</td>
+          <td>Addy Osmani</td>
+          <td>发布博文 &ldquo;Loop Engineering&rdquo;，首次系统命名</td>
+          <td>广泛传播，奠定概念框架</td>
+      </tr>
+      <tr>
+          <td>2026-06-12</td>
+          <td>swyx（Latent Space）</td>
+          <td>&ldquo;Loopcraft: The Art of Stacking Loops&rdquo;</td>
+          <td>提出&quot;堆叠 loop&quot;概念</td>
+      </tr>
+      <tr>
+          <td>2026-06-16</td>
+          <td>LangChain 官方博客</td>
+          <td>&ldquo;The Art of Loop Engineering&rdquo;，四层 loop 框架</td>
+          <td>框架化、工程化</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="13-范式转移的三段演进">
+  1.3 范式转移的三段演进
+  <a class="anchor" href="#13-%e8%8c%83%e5%bc%8f%e8%bd%ac%e7%a7%bb%e7%9a%84%e4%b8%89%e6%ae%b5%e6%bc%94%e8%bf%9b">#</a>
+</h3>
+<pre tabindex="0"><code>Prompt Engineering (2022-2024)
+    ↓
+Agent Harness Engineering (2025)
+    ↓
+Loop Engineering (2026)
+</code></pre><table>
+  <thead>
+      <tr>
+          <th>阶段</th>
+          <th>核心问题</th>
+          <th>人的角色</th>
+          <th>典型做法</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Prompt Engineering</strong></td>
+          <td>怎么写一个好 prompt？</td>
+          <td>手写每一条 prompt</td>
+          <td>写 prompt → 等回复 → 写下一条</td>
+      </tr>
+      <tr>
+          <td><strong>Harness Engineering</strong></td>
+          <td>Agent 需要什么环境才能工作？</td>
+          <td>搭建工具链、上下文、安全边界</td>
+          <td>配工具、设上下文、加 guardrails</td>
+      </tr>
+      <tr>
+          <td><strong>Loop Engineering</strong></td>
+          <td>什么循环让 Agent 持续工作，何时停？</td>
+          <td>设计系统，让系统自动 prompt Agent</td>
+          <td>自动发现 → 分派 → 验证 → 记忆 → 下一轮</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="14-从人用工具到系统用人">
+  1.4 从&quot;人用工具&quot;到&quot;系统用人&quot;
+  <a class="anchor" href="#14-%e4%bb%8e%e4%ba%ba%e7%94%a8%e5%b7%a5%e5%85%b7%e5%88%b0%e7%b3%bb%e7%bb%9f%e7%94%a8%e4%ba%ba">#</a>
+</h3>
+<p>过去两年的工作模式是这样的：</p>
+<p><img src="./images/fig1.png" alt="图1 传统工作模式：人始终在循环中间" /></p>
+<p>Loop Engineering 要做的，是把人从循环中间<strong>抽出来</strong>：</p>
+<p><img src="./images/fig2.png" alt="图2 Loop Engineering：系统自动循环，人只需定义目标" /></p>
+<p><strong>核心区别</strong>：从&quot;人逐条 prompt&quot;变成&quot;人设计系统，系统自动跑&quot;。</p>
+<hr>
+<h2 id="二核心概念拆解">
+  二、核心概念拆解
+  <a class="anchor" href="#%e4%ba%8c%e6%a0%b8%e5%bf%83%e6%a6%82%e5%bf%b5%e6%8b%86%e8%a7%a3">#</a>
+</h2>
+<h3 id="21-agent-loop-的本质">
+  2.1 Agent Loop 的本质
+  <a class="anchor" href="#21-agent-loop-%e7%9a%84%e6%9c%ac%e8%b4%a8">#</a>
+</h3>
+<p>Agent Loop 是最基本的循环：<strong>模型调用工具，观察结果，再调用，直到任务完成</strong>。</p>
+<p>为什么需要循环？因为<strong>长程任务无法在一次 LLM 调用中完成</strong>。一个 LLM 调用的输出长度有限（通常几万字），而一个真实的工程任务（&ldquo;修复这个 bug 并更新相关测试&rdquo;）需要多步操作。</p>
+<p>Agent Loop 的标准模式：</p>
+<p><img src="./images/fig3.png" alt="图3 Agent Loop 标准模式：目标→行动→观察→判断→输出" /></p>
+<p>这个循环在学术上最早可追溯到 <strong>ReAct 模式</strong>（Princeton + Google，2022），它证明了&quot;Reason + Act&quot;交替比纯推理或纯行动都更有效。</p>
+<h3 id="22-agent-loop-的三层复杂度oracle-框架">
+  2.2 Agent Loop 的三层复杂度（Oracle 框架）
+  <a class="anchor" href="#22-agent-loop-%e7%9a%84%e4%b8%89%e5%b1%82%e5%a4%8d%e6%9d%82%e5%ba%a6oracle-%e6%a1%86%e6%9e%b6">#</a>
+</h3>
+<p>Agent Loop 不是一个固定模式，它随着记忆、工具、脚手架的加入而进化：</p>
+<p><strong>Level 1：简单工具调用循环</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 最基础的 agent loop</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">simple_agent_loop</span>(prompt, tools):
+</span></span><span style="display:flex;"><span>    messages <span style="color:#f92672">=</span> [{<span style="color:#e6db74">&#34;role&#34;</span>: <span style="color:#e6db74">&#34;user&#34;</span>, <span style="color:#e6db74">&#34;content&#34;</span>: prompt}]
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> <span style="color:#66d9ef">True</span>:
+</span></span><span style="display:flex;"><span>        response <span style="color:#f92672">=</span> model<span style="color:#f92672">.</span>chat(messages, tools<span style="color:#f92672">=</span>tools)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#f92672">not</span> response<span style="color:#f92672">.</span>tool_calls:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> response<span style="color:#f92672">.</span>content
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># 执行工具调用，将结果加回上下文</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> tool_call <span style="color:#f92672">in</span> response<span style="color:#f92672">.</span>tool_calls:
+</span></span><span style="display:flex;"><span>            result <span style="color:#f92672">=</span> execute_tool(tool_call)
+</span></span><span style="display:flex;"><span>            messages<span style="color:#f92672">.</span>append({<span style="color:#e6db74">&#34;role&#34;</span>: <span style="color:#e6db74">&#34;tool&#34;</span>, <span style="color:#e6db74">&#34;content&#34;</span>: result})
+</span></span></code></pre></div><ul>
+<li>没有持久化记忆，没有外部状态</li>
+<li>循环的原因：工具结果必须反馈给模型，模型才能给出最终答案</li>
+</ul>
+<p><strong>Level 2：加入记忆、评估和脚手架</strong></p>
+<p><img src="./images/fig4.png" alt="图4 Agent Loop Level 2：加入记忆、评估和脚手架" /></p>
+<p><strong>Level 3：完整系统集成</strong></p>
+<p>Agent 不再是孤立的 loop，而是整个系统的一部分——接入搜索引擎、数据库、API、CI/CD 管道等。</p>
+<h3 id="23-loop-engineering-vs-harness-engineering">
+  2.3 Loop Engineering vs Harness Engineering
+  <a class="anchor" href="#23-loop-engineering-vs-harness-engineering">#</a>
+</h3>
+<p>这是两个密切相关但不同的概念，经常被混用，但理解区别很重要：</p>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>Harness Engineering</th>
+          <th>Loop Engineering</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>关注点</strong></td>
+          <td>单个 Agent 运行的环境</td>
+          <td>多个 Agent/多轮次的时间编排</td>
+      </tr>
+      <tr>
+          <td><strong>核心问题</strong></td>
+          <td>&ldquo;Agent 需要什么才能工作？&rdquo;</td>
+          <td>&ldquo;什么循环让它持续工作，何时停？&rdquo;</td>
+      </tr>
+      <tr>
+          <td><strong>范围</strong></td>
+          <td>一个 Agent 的上下文、工具、安全</td>
+          <td>发现工作 → 分派 → 验证 → 记忆 → 下一轮</td>
+      </tr>
+      <tr>
+          <td><strong>类比</strong></td>
+          <td>给一个 Agent 造&quot;身体&quot;</td>
+          <td>造&quot;工厂&quot;——自动运转</td>
+      </tr>
+      <tr>
+          <td><strong>典型原语</strong></td>
+          <td>工具定义、上下文窗口、guardrails</td>
+          <td><code>/goal</code>、<code>/loop</code>、cron、heartbeat、sub-agent</td>
+      </tr>
+      <tr>
+          <td><strong>时间维度</strong></td>
+          <td>单次运行</td>
+          <td>跨多次运行，持续自主</td>
+      </tr>
+  </tbody>
+</table>
+<p>用一句话总结：<strong>Harness 是一个 Agent 住在哪里；Loop 是什么时候启动 Agent、给它什么任务、怎么处理它的输出。</strong></p>
+<h3 id="24-一个完整-loop-的六大要素">
+  2.4 一个完整 Loop 的六大要素
+  <a class="anchor" href="#24-%e4%b8%80%e4%b8%aa%e5%ae%8c%e6%95%b4-loop-%e7%9a%84%e5%85%ad%e5%a4%a7%e8%a6%81%e7%b4%a0">#</a>
+</h3>
+<p>Addy Osmani 提出了一个 Loop 需要的六个核心组件（外加一个记忆层）：</p>
+<p><img src="./images/fig5.png" alt="图5 完整 Loop 的六大要素：自动化调度→Worktree→Skills→连接器→Sub-agents→持久化记忆" /></p>
+<table>
+  <thead>
+      <tr>
+          <th>要素</th>
+          <th>作用</th>
+          <th>具体例子</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>⏰ 自动化调度</strong></td>
+          <td>定时发现工作、分派任务，让 loop 真正跑起来</td>
+          <td>heartbeat、cron、webhook</td>
+      </tr>
+      <tr>
+          <td><strong>🌿 Worktree 隔离</strong></td>
+          <td>多个 Agent 并行工作时不冲突</td>
+          <td>git worktree，每个 sub-agent 独立分支</td>
+      </tr>
+      <tr>
+          <td><strong>📋 Skills</strong></td>
+          <td>把项目知识固化，Agent 不用每次都猜</td>
+          <td>SKILL.md 文件，定义了项目规范和约定</td>
+      </tr>
+      <tr>
+          <td><strong>🔌 连接器</strong></td>
+          <td>接入现有工具链</td>
+          <td>MCP servers、GitHub、Slack、Linear</td>
+      </tr>
+      <tr>
+          <td><strong>🤖 Sub-agents</strong></td>
+          <td>一个干活（Maker），一个检查（Checker）</td>
+          <td><code>.claude/agents/</code> 或 <code>.codex/agents/</code></td>
+      </tr>
+      <tr>
+          <td><strong>💾 持久化记忆</strong></td>
+          <td>跨轮次记录&quot;做了什么&quot;和&quot;下一步做什么&quot;</td>
+          <td><code>progress.md</code>、Linear 看板</td>
+      </tr>
+  </tbody>
+</table>
+<blockquote>
+<p><strong>关于记忆的真相</strong>：模型每次运行之间会遗忘一切，所以记忆<strong>必须在磁盘上，不能在上下文里</strong>。Agent 会忘，Repo 不会。这是所有长程 Agent 依赖的同一个技巧。</p></blockquote>
+<hr>
+<h2 id="三loop-的分层架构">
+  三、Loop 的分层架构
+  <a class="anchor" href="#%e4%b8%89loop-%e7%9a%84%e5%88%86%e5%b1%82%e6%9e%b6%e6%9e%84">#</a>
+</h2>
+<p>LangChain 官方博客将 Loop 分成了四层，从基础自动化到自我改进，层层递进：</p>
+<h3 id="31-loop-1agent-loop基础循环">
+  3.1 Loop 1：Agent Loop（基础循环）
+  <a class="anchor" href="#31-loop-1agent-loop%e5%9f%ba%e7%a1%80%e5%be%aa%e7%8e%af">#</a>
+</h3>
+<p>这是最基本的 loop：<strong>模型 + 工具 → 循环调用直到完成</strong>。</p>
+<p><img src="./images/fig6.png" alt="图6 Loop 1：Agent Loop 基础循环" /></p>
+<p>以 LangChain 的 <code>create_agent</code> 为例，选一个模型、插上工具，你就有了一个能工作的 agent loop。</p>
+<h3 id="32-loop-2verification-loop验证循环">
+  3.2 Loop 2：Verification Loop（验证循环）
+  <a class="anchor" href="#32-loop-2verification-loop%e9%aa%8c%e8%af%81%e5%be%aa%e7%8e%af">#</a>
+</h3>
+<p>Agent 能干活了，但它第一次的输出<strong>不一定正确</strong>。当一致性很重要时，需要在 Agent 外面包一个验证循环。</p>
+<p><img src="./images/fig7.png" alt="图7 Loop 2：Verification 验证循环" /></p>
+<p>验证器可以是：</p>
+<ul>
+<li><strong>确定性检查</strong>：运行测试、lint、链接检查等</li>
+<li><strong>LLM-as-judge</strong>：用另一个 LLM 按 rubric 评分</li>
+</ul>
+<p><strong>关键原则</strong>：干活的 Agent 和检查的 Agent 必须分离。自己检查自己永远觉得没问题。这就是著名的 <strong>Maker-Checker 模式</strong>。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># LangChain 的 RubricMiddleware 示例</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> langchain.agents <span style="color:#f92672">import</span> create_agent
+</span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> langchain.middleware <span style="color:#f92672">import</span> RubricMiddleware
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>agent <span style="color:#f92672">=</span> create_agent(model<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;gpt-4o&#34;</span>, tools<span style="color:#f92672">=</span>[<span style="color:#f92672">...</span>])
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 加一个验证层：每次 agent 输出后自动检查</span>
+</span></span><span style="display:flex;"><span>agent <span style="color:#f92672">=</span> RubricMiddleware(
+</span></span><span style="display:flex;"><span>    agent,
+</span></span><span style="display:flex;"><span>    rubric<span style="color:#f92672">=</span>[
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;所有链接能正常打开&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;CI 检查通过&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;diff 范围不超过请求范围&#34;</span>
+</span></span><span style="display:flex;"><span>    ],
+</span></span><span style="display:flex;"><span>    max_retries<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span>
+</span></span><span style="display:flex;"><span>)
+</span></span></code></pre></div><h3 id="33-loop-3event-driven-loop事件驱动循环">
+  3.3 Loop 3：Event-Driven Loop（事件驱动循环）
+  <a class="anchor" href="#33-loop-3event-driven-loop%e4%ba%8b%e4%bb%b6%e9%a9%b1%e5%8a%a8%e5%be%aa%e7%8e%af">#</a>
+</h3>
+<p>Agent 不再是你手动调用的东西，而是系统里的<strong>常驻组件</strong>。</p>
+<p><img src="./images/fig8.png" alt="图8 Loop 3：Event-Driven 事件驱动循环" /></p>
+<p>OpenClaw 的 <strong>heartbeat</strong> 机制就是这个模式的典型案例：定时检查邮箱、日历、通知，有重要发现才通知用户，没事就保持安静。</p>
+<h3 id="34-loop-4hill-climbing-loop爬坡循环">
+  3.4 Loop 4：Hill Climbing Loop（爬坡循环）
+  <a class="anchor" href="#34-loop-4hill-climbing-loop%e7%88%ac%e5%9d%a1%e5%be%aa%e7%8e%af">#</a>
+</h3>
+<p>前三层 loop 自动化了<strong>工作</strong>，第四层自动化了<strong>改进</strong>。</p>
+<p><img src="./images/fig9.png" alt="图9 Loop 4：Hill Climbing 爬坡循环（自我改进）" /></p>
+<p>每一次 Agent 运行都产生 <strong>trace</strong>（模型做了什么、调了什么工具、grader 给了什么反馈）。这些 trace 里藏着高价值信号。Hill Climbing Loop 用一个分析 Agent 去读这些 trace，自动发现哪些地方工作得不好，然后<strong>自动改写配置</strong>——调整 prompt、更换工具、优化 grader。</p>
+<p>这是价值最高的一层，因为它让系统<strong>自我改进</strong>。</p>
+<h3 id="35-四层-loop-的叠加关系">
+  3.5 四层 Loop 的叠加关系
+  <a class="anchor" href="#35-%e5%9b%9b%e5%b1%82-loop-%e7%9a%84%e5%8f%a0%e5%8a%a0%e5%85%b3%e7%b3%bb">#</a>
+</h3>
+<p>swyx 称之为 <strong>&ldquo;Loopcraft：堆叠 loop 的艺术&rdquo;</strong>。四层 loop 不是互相替代，而是层层叠加：</p>
+<p><img src="./images/fig10.png" alt="图10 四层 Loop 叠加关系：从基础循环到自我改进" /></p>
+<blockquote>
+<p>swyx 原话：<em>&ldquo;The entire game of the next century is to be able to stack loops as effectively as possible.&rdquo;</em></p></blockquote>
+<hr>
+<h2 id="四经典-loop-模式">
+  四、经典 Loop 模式
+  <a class="anchor" href="#%e5%9b%9b%e7%bb%8f%e5%85%b8-loop-%e6%a8%a1%e5%bc%8f">#</a>
+</h2>
+<p>Loop Engineering 不是凭空发明的，它建立在多年的研究积累之上。以下是经过验证的经典模式：</p>
+<h3 id="41-reactreason--act">
+  4.1 ReAct（Reason + Act）
+  <a class="anchor" href="#41-reactreason--act">#</a>
+</h3>
+<ul>
+<li><strong>来源</strong>：Princeton + Google，2022 年论文</li>
+<li><strong>核心思想</strong>：推理和行动交替进行</li>
+<li><strong>结构</strong>：Thought → Action → Observation → Thought → &hellip;</li>
+</ul>
+<pre tabindex="0"><code>Thought: 我需要搜索 XX 的最新信息
+Action: search[&#34;XX 2026&#34;]
+Observation: [搜索结果]
+Thought: 根据结果，我需要进一步查阅...
+Action: fetch[&#34;https://...&#34;]
+Observation: [页面内容]
+Thought: 现在我有了足够信息，可以写总结了
+</code></pre><p>这是所有 Agent Loop 的学术先驱。</p>
+<h3 id="42-reflexion">
+  4.2 Reflexion
+  <a class="anchor" href="#42-reflexion">#</a>
+</h3>
+<ul>
+<li><strong>核心思想</strong>：失败后自我反思，带着反思重新尝试</li>
+<li><strong>结构</strong>：尝试 → 评估 → 反思（生成语言反馈）→ 带着反思重新尝试</li>
+</ul>
+<p><img src="./images/fig11.png" alt="图11 Reflexion 模式：失败后自我反思，带着反思重新尝试" /></p>
+<p>与简单重试的区别：Reflexion 会生成<strong>语言化的反思</strong>（&ldquo;我上次的搜索关键词太宽泛了&rdquo;），而不只是&quot;再试一次&quot;。</p>
+<h3 id="43-evaluator-optimizer">
+  4.3 Evaluator-Optimizer
+  <a class="anchor" href="#43-evaluator-optimizer">#</a>
+</h3>
+<ul>
+<li><strong>核心思想</strong>：评估器和优化器两个角色反复迭代</li>
+<li><strong>与 Maker-Checker 的区别</strong>：Evaluator-Optimizer 更关注<strong>质量提升</strong>（如代码性能优化），Maker-Checker 更关注<strong>正确性验证</strong>（如代码是否能跑通）</li>
+</ul>
+<h3 id="44-orchestrator-workers">
+  4.4 Orchestrator-Workers
+  <a class="anchor" href="#44-orchestrator-workers">#</a>
+</h3>
+<ul>
+<li><strong>核心思想</strong>：一个编排器（Orchestrator）将任务拆解、分派给多个专业 Worker</li>
+<li><strong>适用场景</strong>：复杂的多子任务问题</li>
+</ul>
+<p><img src="./images/fig12.png" alt="图12 Orchestrator-Workers 模式：编排器调度多个专业 Worker" /></p>
+<h3 id="45-maker-checker生产环境主导模式">
+  4.5 Maker-Checker（生产环境主导模式）
+  <a class="anchor" href="#45-maker-checker%e7%94%9f%e4%ba%a7%e7%8e%af%e5%a2%83%e4%b8%bb%e5%af%bc%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<p>这是 2026 年 Loop Engineering 中<strong>最主流</strong>的模式：</p>
+<p><img src="./images/fig13.png" alt="图13 Maker-Checker 模式：生产环境最主流的 Loop 模式" /></p>
+<p><strong>铁律</strong>：干活的 Agent 和检查的 Agent <strong>必须是不同的</strong>，最好用不同的模型。同一个模型检查自己的输出，倾向于轻易放行。</p>
+<h3 id="46-ralph-loop">
+  4.6 Ralph Loop
+  <a class="anchor" href="#46-ralph-loop">#</a>
+</h3>
+<ul>
+<li><strong>来源</strong>：Geoffrey Huntley</li>
+<li><strong>核心思想</strong>：简单粗暴——把同一个 prompt 反复喂给 Agent，直到 spec 满足</li>
+<li><strong>本质</strong>：while (spec 不满足) { 再跑一次 }</li>
+<li><strong>价值</strong>：证明了即使是最简单的 loop，加上终止条件，也能产生远超手动 prompt 的效果</li>
+</ul>
+<h3 id="47-goal-原语">
+  4.7 <code>/goal</code> 原语
+  <a class="anchor" href="#47-goal-%e5%8e%9f%e8%af%ad">#</a>
+</h3>
+<ul>
+<li><strong>来源</strong>：Claude Code / OpenAI Codex</li>
+<li><strong>核心思想</strong>：定义一个<strong>可验证的终止条件</strong>，Agent 持续工作直到条件满足</li>
+<li><strong>关键</strong>：由<strong>独立的小模型</strong>检查条件，不是干活的 Agent 自己检查</li>
+</ul>
+<pre tabindex="0"><code>/goal &#34;test/auth 所有测试通过 且 lint 无错误&#34;
+</code></pre><p>Agent 会跨多轮工作，每轮结束后独立模型检查条件，满足才停。支持 pause 和 resume。</p>
+<hr>
+<h2 id="五实现-loop-engineering-的系统">
+  五、实现 Loop Engineering 的系统
+  <a class="anchor" href="#%e4%ba%94%e5%ae%9e%e7%8e%b0-loop-engineering-%e7%9a%84%e7%b3%bb%e7%bb%9f">#</a>
+</h2>
+<p>2026 年的好消息是：<strong>这些 loop 原语不再是你自己写的一堆 bash 脚本了，它们已经内建在产品里</strong>。</p>
+<h3 id="51-claude-codeanthropic">
+  5.1 Claude Code（Anthropic）
+  <a class="anchor" href="#51-claude-codeanthropic">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>原语</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>/loop</code></td>
+          <td>按 cadence 重复运行 prompt</td>
+      </tr>
+      <tr>
+          <td><code>/goal</code></td>
+          <td>运行直到满足可验证的终止条件，独立模型检查</td>
+      </tr>
+      <tr>
+          <td><strong>子 Agent</strong></td>
+          <td><code>.claude/agents/</code> 目录下定义，支持 agent teams</td>
+      </tr>
+      <tr>
+          <td><strong>Skills</strong></td>
+          <td>SKILL.md 文件，自动匹配或手动 <code>$skill-name</code> 调用</td>
+      </tr>
+      <tr>
+          <td><strong>Hooks</strong></td>
+          <td>Agent 生命周期各阶段自动触发 shell 命令</td>
+      </tr>
+      <tr>
+          <td><strong>Worktree 隔离</strong></td>
+          <td><code>--worktree</code> 或 <code>isolation: worktree</code></td>
+      </tr>
+      <tr>
+          <td><strong>GitHub Actions</strong></td>
+          <td>整个 loop 推到 CI 上跑，合上电脑也能继续</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="52-openai-codex">
+  5.2 OpenAI Codex
+  <a class="anchor" href="#52-openai-codex">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>原语</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Automations 面板</strong></td>
+          <td>选项目、写 prompt、设 cadence、选环境；发现问题的跑到 Triage 收件箱，没发现的自动归档</td>
+      </tr>
+      <tr>
+          <td><code>/goal</code></td>
+          <td>同 Claude Code，跨轮次工作直到条件满足，支持 pause/resume</td>
+      </tr>
+      <tr>
+          <td><strong>Subagents</strong></td>
+          <td><code>.codex/agents/</code> 目录下 TOML 定义</td>
+      </tr>
+      <tr>
+          <td><strong>Agent Skills</strong></td>
+          <td>SKILL.md 格式，<code>$</code> 调用或自动匹配</td>
+      </tr>
+      <tr>
+          <td><strong>Worktree</strong></td>
+          <td>每个 thread 内建 worktree</td>
+      </tr>
+      <tr>
+          <td><strong>Connectors/MCP</strong></td>
+          <td>接入外部工具</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="53-openclaw">
+  5.3 OpenClaw
+  <a class="anchor" href="#53-openclaw">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>原语</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Heartbeat</strong></td>
+          <td>定时心跳，可配置检查任务（邮箱、日历、通知等）</td>
+      </tr>
+      <tr>
+          <td><strong>Cron</strong></td>
+          <td>精确定时任务，支持 at/every/cron 三种调度</td>
+      </tr>
+      <tr>
+          <td><strong>Sub-agent 分派</strong></td>
+          <td><code>sessions_spawn</code> 创建隔离子任务，支持 Maker-Checker 模式</td>
+      </tr>
+      <tr>
+          <td><strong>Memory 持久化</strong></td>
+          <td>MEMORY.md + memory/*.md + heartbeat-state.json</td>
+      </tr>
+      <tr>
+          <td><strong>多渠道连接器</strong></td>
+          <td>DingTalk、Discord、WhatsApp、Telegram 等</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="54-系统对比表">
+  5.4 系统对比表
+  <a class="anchor" href="#54-%e7%b3%bb%e7%bb%9f%e5%af%b9%e6%af%94%e8%a1%a8">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>能力</th>
+          <th style="text-align: center">Claude Code</th>
+          <th style="text-align: center">OpenAI Codex</th>
+          <th style="text-align: center">OpenClaw</th>
+          <th style="text-align: center">LangChain</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>定时调度</td>
+          <td style="text-align: center"><code>/loop</code>, cron, hooks, GitHub Actions</td>
+          <td style="text-align: center">Automations 面板, 调度</td>
+          <td style="text-align: center">Heartbeat, Cron</td>
+          <td style="text-align: center">Fleet schedules, cron</td>
+      </tr>
+      <tr>
+          <td>条件循环</td>
+          <td style="text-align: center"><code>/goal</code></td>
+          <td style="text-align: center"><code>/goal</code></td>
+          <td style="text-align: center">—（可自定义）</td>
+          <td style="text-align: center">RubricMiddleware</td>
+      </tr>
+      <tr>
+          <td>子 Agent</td>
+          <td style="text-align: center"><code>.claude/agents/</code></td>
+          <td style="text-align: center"><code>.codex/agents/</code> (TOML)</td>
+          <td style="text-align: center"><code>sessions_spawn</code></td>
+          <td style="text-align: center">Multi-agent</td>
+      </tr>
+      <tr>
+          <td>Skills</td>
+          <td style="text-align: center">SKILL.md</td>
+          <td style="text-align: center">SKILL.md</td>
+          <td style="text-align: center">SKILL.md</td>
+          <td style="text-align: center">—</td>
+      </tr>
+      <tr>
+          <td>Worktree 隔离</td>
+          <td style="text-align: center">✅</td>
+          <td style="text-align: center">✅</td>
+          <td style="text-align: center">—（可扩展）</td>
+          <td style="text-align: center">—</td>
+      </tr>
+      <tr>
+          <td>MCP 连接器</td>
+          <td style="text-align: center">✅</td>
+          <td style="text-align: center">✅</td>
+          <td style="text-align: center">✅</td>
+          <td style="text-align: center">✅</td>
+      </tr>
+      <tr>
+          <td>Trace 分析/自我改进</td>
+          <td style="text-align: center">—</td>
+          <td style="text-align: center">—</td>
+          <td style="text-align: center">—</td>
+          <td style="text-align: center">LangSmith Engine</td>
+      </tr>
+      <tr>
+          <td>Human-in-the-loop</td>
+          <td style="text-align: center">—</td>
+          <td style="text-align: center">—</td>
+          <td style="text-align: center">✅（审批流）</td>
+          <td style="text-align: center">✅（原生支持）</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="55-框架层langchain">
+  5.5 框架层：LangChain
+  <a class="anchor" href="#55-%e6%a1%86%e6%9e%b6%e5%b1%82langchain">#</a>
+</h3>
+<p>LangChain 提供了实现四层 loop 的完整工具链：</p>
+<ul>
+<li><strong>Loop 1</strong>：<code>create_agent(model, tools)</code> — 基础 agent</li>
+<li><strong>Loop 2</strong>：<code>RubricMiddleware</code> / <code>after_agent</code> hook — 验证</li>
+<li><strong>Loop 3</strong>：Fleet channels + schedules — 事件驱动</li>
+<li><strong>Loop 4</strong>：LangSmith Engine — trace 分析，自动优化</li>
+</ul>
+<h3 id="56-云平台">
+  5.6 云平台
+  <a class="anchor" href="#56-%e4%ba%91%e5%b9%b3%e5%8f%b0">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>平台</th>
+          <th>支持能力</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Google Vertex AI</strong></td>
+          <td>Loop agent pattern、Multi-agent loop agent pattern、终止条件、迭代优化</td>
+      </tr>
+      <tr>
+          <td><strong>Databricks</strong></td>
+          <td>Custom Agents 支持单/多 Agent loop + human-in-the-loop</td>
+      </tr>
+      <tr>
+          <td><strong>AWS Bedrock</strong></td>
+          <td>Agent 编排 + 循环工作流</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="六设计模式与最佳实践">
+  六、设计模式与最佳实践
+  <a class="anchor" href="#%e5%85%ad%e8%ae%be%e8%ae%a1%e6%a8%a1%e5%bc%8f%e4%b8%8e%e6%9c%80%e4%bd%b3%e5%ae%9e%e8%b7%b5">#</a>
+</h2>
+<h3 id="61-maker-checker-分离">
+  6.1 Maker-Checker 分离
+  <a class="anchor" href="#61-maker-checker-%e5%88%86%e7%a6%bb">#</a>
+</h3>
+<p>这是 Loop Engineering 中<strong>最重要</strong>的设计决策。</p>
+<pre tabindex="0"><code>❌ 错误做法：同一个 Agent 写完代码，自己检查
+   → 模型倾向于放过自己的输出
+
+✅ 正确做法：
+   Maker Agent（可用较强的模型）负责干活
+   Checker Agent（可用不同模型）负责检查
+   → 不同的指令、不同的视角，能发现 Maker 遗漏的问题
+</code></pre><p>这个模式也叫做 <strong>LLM-as-judge</strong>。Checker 可以是：</p>
+<ul>
+<li>另一个 LLM Agent</li>
+<li>确定性程序（测试、lint、构建）</li>
+<li>人工审批</li>
+</ul>
+<h3 id="62-终止条件设计">
+  6.2 终止条件设计
+  <a class="anchor" href="#62-%e7%bb%88%e6%ad%a2%e6%9d%a1%e4%bb%b6%e8%ae%be%e8%ae%a1">#</a>
+</h3>
+<p>终止条件是 Loop 安全的生命线。</p>
+<table>
+  <thead>
+      <tr>
+          <th>❌ 不好的终止条件</th>
+          <th>✅ 好的终止条件</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>&ldquo;跑 10 轮就停&rdquo;</td>
+          <td>&ldquo;<code>test/auth</code> 所有测试通过且 lint clean&rdquo;</td>
+      </tr>
+      <tr>
+          <td>&ldquo;写到满意为止&rdquo;</td>
+          <td>&ldquo;PR 通过 CI，所有 link 能打开&rdquo;</td>
+      </tr>
+      <tr>
+          <td>没有终止条件</td>
+          <td>&ldquo;progress.md 中记录的 5 个 issue 都 closed&rdquo;</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>关键原则</strong>：</p>
+<ul>
+<li>用<strong>可验证的条件</strong>，不要用模糊的主观判断</li>
+<li>由<strong>独立模型/程序</strong>检查，不要让干活的 Agent 自己判断</li>
+<li>设置<strong>最大轮数兜底</strong>（如 max_iterations=20），防止无限循环</li>
+</ul>
+<h3 id="63-token-成本控制">
+  6.3 Token 成本控制
+  <a class="anchor" href="#63-token-%e6%88%90%e6%9c%ac%e6%8e%a7%e5%88%b6">#</a>
+</h3>
+<p>Loop 的 token 消耗是手动 prompt 的数倍甚至数十倍。控制手段：</p>
+<ol>
+<li><strong><code>max_iterations</code></strong>：硬性上限</li>
+<li><strong>spend cap</strong>：费用上限</li>
+<li><strong>分层模型</strong>：Checker 用便宜的小模型，Maker 用强模型</li>
+<li><strong>Skills 固化</strong>：减少重复解释的 token</li>
+<li><strong>精简上下文</strong>：只传必要的信息</li>
+</ol>
+<h3 id="64-human-in-the-loop">
+  6.4 Human-in-the-loop
+  <a class="anchor" href="#64-human-in-the-loop">#</a>
+</h3>
+<p>即使在自主 loop 中，也需要人工审批的节点：</p>
+<p><img src="./images/fig14.png" alt="图14 Human-in-the-loop：敏感操作保留人工审批" /></p>
+<p>典型需要人工审批的场景：发送邮件、发布到生产环境、删除数据、对外发布内容。</p>
+<h3 id="65-状态持久化">
+  6.5 状态持久化
+  <a class="anchor" href="#65-%e7%8a%b6%e6%80%81%e6%8c%81%e4%b9%85%e5%8c%96">#</a>
+</h3>
+<blockquote>
+<p><strong>&ldquo;Agent 会忘，Repo 不会。&rdquo;</strong></p></blockquote>
+<p>Loop 跨多次运行，每次运行之间模型上下文是清空的。所以状态<strong>必须持久化在磁盘上</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 示例：用 progress.md 记录进度</span>
+</span></span><span style="display:flex;"><span>$ cat progress.md
+</span></span><span style="display:flex;"><span><span style="color:#75715e">## 已完成</span>
+</span></span><span style="display:flex;"><span>- <span style="color:#f92672">[</span>x<span style="color:#f92672">]</span> 修复 auth 模块的 token 过期问题
+</span></span><span style="display:flex;"><span>- <span style="color:#f92672">[</span>x<span style="color:#f92672">]</span> 更新相关测试用例
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">## 进行中</span>
+</span></span><span style="display:flex;"><span>- <span style="color:#f92672">[</span> <span style="color:#f92672">]</span> 更新 API 文档（#42）
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">## 待处理</span>
+</span></span><span style="display:flex;"><span>- <span style="color:#f92672">[</span> <span style="color:#f92672">]</span> 检查其他模块是否有同样问题
+</span></span></code></pre></div><p>Agent 每次启动时先读这个文件，就知道之前做了什么、接下来该做什么。</p>
+<h3 id="66-worktree-隔离">
+  6.6 Worktree 隔离
+  <a class="anchor" href="#66-worktree-%e9%9a%94%e7%a6%bb">#</a>
+</h3>
+<p>当多个 Agent 并行工作时，文件冲突是最大的失败源。</p>
+<pre tabindex="0"><code>main branch
+├── worktree-1/  ← Agent A 在此修改 auth 模块
+├── worktree-2/  ← Agent B 在此修改 UI 模块
+└── worktree-3/  ← Checker Agent 在此验证
+
+每个 worktree 有独立的分支和工作目录，互不干扰。
+</code></pre><hr>
+<h2 id="七挑战与风险">
+  七、挑战与风险
+  <a class="anchor" href="#%e4%b8%83%e6%8c%91%e6%88%98%e4%b8%8e%e9%a3%8e%e9%99%a9">#</a>
+</h2>
+<h3 id="71-无限循环风险">
+  7.1 无限循环风险
+  <a class="anchor" href="#71-%e6%97%a0%e9%99%90%e5%be%aa%e7%8e%af%e9%a3%8e%e9%99%a9">#</a>
+</h3>
+<p>终止条件定义不当 → Agent 永远无法满足条件 → 循环永不停止 → token 费用爆炸。</p>
+<p><strong>防护</strong>：</p>
+<ul>
+<li>始终设置 <code>max_iterations</code> 兜底</li>
+<li>终止条件必须是<strong>可客观验证</strong>的</li>
+<li>Checker 用独立模型/程序</li>
+</ul>
+<h3 id="72-token-成本爆炸">
+  7.2 Token 成本爆炸
+  <a class="anchor" href="#72-token-%e6%88%90%e6%9c%ac%e7%88%86%e7%82%b8">#</a>
+</h3>
+<p>弱 Loop（无 verifier、无 spend cap）= 烧钱。</p>
+<p>一次手动 prompt 可能花 $0.10，一个跑了 20 轮还没停的 loop 可能花掉 $50。</p>
+<p><strong>防护</strong>：</p>
+<ul>
+<li>spend cap 硬限制</li>
+<li>分层模型策略</li>
+<li>监控 token 用量，超阈值自动暂停</li>
+</ul>
+<h3 id="73-验证器瓶颈">
+  7.3 验证器瓶颈
+  <a class="anchor" href="#73-%e9%aa%8c%e8%af%81%e5%99%a8%e7%93%b6%e9%a2%88">#</a>
+</h3>
+<blockquote>
+<p><em>&ldquo;In any loop, the verifier is the bottleneck, not the model.&rdquo;</em> — AI Builder Club</p></blockquote>
+<p>模型能力已经很强了，真正限制 Loop 质量的是<strong>验证器够不够好</strong>。一个弱的 verifier 会让垃圾输出通过。</p>
+<h3 id="74-早期阶段">
+  7.4 早期阶段
+  <a class="anchor" href="#74-%e6%97%a9%e6%9c%9f%e9%98%b6%e6%ae%b5">#</a>
+</h3>
+<p>Loop Engineering 的概念在 2026 年 6 月才成型，到现在只有几个月。产品能力仍在快速演进，最佳实践仍在形成中。</p>
+<h3 id="75-何时不该用-loop">
+  7.5 何时不该用 Loop
+  <a class="anchor" href="#75-%e4%bd%95%e6%97%b6%e4%b8%8d%e8%af%a5%e7%94%a8-loop">#</a>
+</h3>
+<p>Loop 不是万能的。以下场景更适合手动：</p>
+<table>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>推荐方式</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>一次性任务，不会重复</td>
+          <td>手动 prompt，人工检查</td>
+      </tr>
+      <tr>
+          <td>验证成本比人工检查还高</td>
+          <td>直接手动</td>
+      </tr>
+      <tr>
+          <td>需要高度创造性、无明确标准</td>
+          <td>人工 + Agent 辅助</td>
+      </tr>
+      <tr>
+          <td>安全敏感操作，不能有自主决策</td>
+          <td>人工审批每一步</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="八总结">
+  八、总结
+  <a class="anchor" href="#%e5%85%ab%e6%80%bb%e7%bb%93">#</a>
+</h2>
+<h3 id="81-核心回顾">
+  8.1 核心回顾
+  <a class="anchor" href="#81-%e6%a0%b8%e5%bf%83%e5%9b%9e%e9%a1%be">#</a>
+</h3>
+<p>Loop Engineering 的本质可以用三句话概括：</p>
+<ol>
+<li><strong>从&quot;人用工具&quot;到&quot;系统设计&quot;</strong>：不再是人逐条 prompt Agent，而是人设计 loop，让 loop 自动 prompt Agent</li>
+<li><strong>关键技能不再是写 prompt，而是定义&quot;好&quot;和&quot;完成&quot;</strong>：Maker-Checker 分离、终止条件设计、状态持久化</li>
+<li><strong>产品已经准备好了</strong>：Claude Code、Codex、OpenClaw 都内建了 loop 原语，竞争点在于谁能更好地设计 loop</li>
+</ol>
+<h3 id="82-能力成熟度">
+  8.2 能力成熟度
+  <a class="anchor" href="#82-%e8%83%bd%e5%8a%9b%e6%88%90%e7%86%9f%e5%ba%a6">#</a>
+</h3>
+<p><img src="./images/fig15.png" alt="图15 能力成熟度演进：从手动 Prompt 到自我改进" /></p>
+<p>大部分团队现在在 A→B→C 之间，D 和 E 是前沿。</p>
+<h3 id="83-2026-年的工程师红利">
+  8.3 2026 年的工程师红利
+  <a class="anchor" href="#83-2026-%e5%b9%b4%e7%9a%84%e5%b7%a5%e7%a8%8b%e5%b8%88%e7%ba%a2%e5%88%a9">#</a>
+</h3>
+<blockquote>
+<p><em>&ldquo;The shift from &lsquo;prompt the agent&rsquo; to &lsquo;design the loop&rsquo; is the single biggest force multiplier for engineering teams in 2026.&rdquo;</em></p></blockquote>
+<p>模型能力已经足够了，工具也准备好了。真正的问题是：</p>
+<p><strong>你还在自己手动 prompt，还是已经设计了让系统自动 prompt 的 loop？</strong></p>
+<hr>
+<h2 id="-参考文献">
+  📚 参考文献
+  <a class="anchor" href="#-%e5%8f%82%e8%80%83%e6%96%87%e7%8c%ae">#</a>
+</h2>
+<ol>
+<li><strong>Peter Steinberger</strong> (@steipete) — &ldquo;You shouldn&rsquo;t be prompting coding agents anymore&rdquo;，Twitter/X，2026-06-07（830 万浏览）</li>
+<li><strong>Boris Cherny</strong> (Anthropic) — &ldquo;My job is to write loops&rdquo;，Acquired Podcast / Twitter/X，2026-06</li>
+<li><strong>Addy Osmani</strong> — &ldquo;Loop Engineering&rdquo;，https://addyosmani.com/blog/loop-engineering ，2026-06-07</li>
+<li><strong>Addy Osmani</strong> — &ldquo;Agent Harness Engineering&rdquo;，https://addyosmani.com/blog/agent-harness-engineering</li>
+<li><strong>Addy Osmani</strong> — &ldquo;Long-Running Agents&rdquo;，https://addyosmani.com/blog/long-running-agents</li>
+<li><strong>swyx</strong> — &ldquo;Loopcraft: The Art of Stacking Loops&rdquo;，Latent Space，2026-06-12</li>
+<li><strong>LangChain Blog</strong> — &ldquo;The Art of Loop Engineering&rdquo;，https://www.langchain.com/blog/the-art-of-loop-engineering ，2026-06-16</li>
+<li><strong>Oracle Developers</strong> — &ldquo;The Agent Loop Decoded: Three Levels Every Agent Engineer Must Know&rdquo;，https://blogs.oracle.com/developers/the-agent-loop-decoded ，2026-06-11</li>
+<li><strong>Cobus Greyling</strong> — &ldquo;The Core of Loop Engineering&rdquo;，Medium，2026</li>
+<li><strong>Michael Rouveure</strong> (Black Matter VC) — &ldquo;Loop Engineering: An Honest Verdict&rdquo;，https://blackmatter.vc/lab/loop-engineering-an-honest-verdict-from-someone-who-actually-runs-agent-loops</li>
+<li><strong>Shirley / AI Builder Club</strong> — &ldquo;Loop Engineering Guide (2026)&quot;，https://www.aibuilderclub.com/blog/loop-engineering-guide-2026</li>
+<li><strong>Tosea.ai</strong> — &ldquo;What Is Loop Engineering? A Complete Guide from Prompt to Harness Engineering (2026)&quot;，https://tosea.ai/blog/loop-engineering-ai-agents-complete-guide-2026</li>
+<li><strong>TrueFoundry</strong> — &ldquo;Loop Engineering at Enterprise Grade&rdquo;，https://www.truefoundry.com/blog/loop-engineering-enterprise-agent-runtime</li>
+<li><strong>MindStudio</strong> — &ldquo;Loop Engineering vs Harness Engineering&rdquo;，https://www.mindstudio.ai/blog/loop-engineering-vs-harness-engineering</li>
+<li><strong>Requesty</strong> — &ldquo;Loop Engineering: How to Build AI Agent Loops That Run Themselves&rdquo;，https://www.requesty.ai/blog/loop-engineering-how-to-build-ai-agent-loops-that-run-themselves</li>
+<li><strong>IBM Think</strong> — &ldquo;What Is Loop Engineering?&quot;，https://www.ibm.com/think/topics/loop-engineering</li>
+<li><strong>Google Cloud Architecture</strong> — &ldquo;Choose a Design Pattern for Your Agentic AI System&rdquo;，https://docs.cloud.google.com/architecture/choose-design-pattern-agentic-ai-system</li>
+<li><strong>Databricks</strong> — &ldquo;Agent System Design Patterns&rdquo;，https://docs.databricks.com/aws/en/agents/agent-system-design-patterns</li>
+<li><strong>Simon Willison</strong> — &ldquo;Designing Agentic Loops&rdquo;，2025-09</li>
+<li><strong>Andrej Karpathy</strong> — &ldquo;autoresearch&rdquo; 项目（630 行代码，夜间自动发现研究改进点）</li>
+<li><strong>AI Jason</strong> — &ldquo;Loop Engineer: Systemization and Artifacts&rdquo;（视频）</li>
+<li><strong>Andrew Ng</strong> — The Batch Newsletter，2026-06-30（Nested Three-Loop Model + Context Advantage）</li>
+<li><strong>Fareed Khan</strong> — &ldquo;Testing 17 Agentic Loop Engineering Techniques for Reliable AI Agents&rdquo;，Level Up Coding</li>
+<li><strong>Cobus Greyling</strong> — github.com/cobusgreyling/loop-engineering（MIT，生产 Loop 模式 starter kits）</li>
+<li><strong>LangChain</strong> — &ldquo;The Art of Loop Engineering: How to Build Agents That Improve Over Time&rdquo;（视频），Interrupt Conference 2026-07-23</li>
+<li><strong>Eric Roby</strong> — &ldquo;Loop Engineering: Stop Prompting Agents&rdquo;，Brain Bytes Substack</li>
+</ol>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#loop-engineering从-prompt-到系统自主">Loop Engineering：从 Prompt 到系统自主</a>
+      <ul>
+        <li><a href="#-插图索引">📊 插图索引</a></li>
+        <li><a href="#一引言为什么-loop-engineering-在-2026-年爆发">一、引言：为什么 Loop Engineering 在 2026 年爆发</a>
+          <ul>
+            <li><a href="#11-一句话定义">1.1 一句话定义</a></li>
+            <li><a href="#12-引爆点2026-年-6-月的十天">1.2 引爆点：2026 年 6 月的十天</a></li>
+            <li><a href="#13-范式转移的三段演进">1.3 范式转移的三段演进</a></li>
+            <li><a href="#14-从人用工具到系统用人">1.4 从&quot;人用工具&quot;到&quot;系统用人&quot;</a></li>
+          </ul>
+        </li>
+        <li><a href="#二核心概念拆解">二、核心概念拆解</a>
+          <ul>
+            <li><a href="#21-agent-loop-的本质">2.1 Agent Loop 的本质</a></li>
+            <li><a href="#22-agent-loop-的三层复杂度oracle-框架">2.2 Agent Loop 的三层复杂度（Oracle 框架）</a></li>
+            <li><a href="#23-loop-engineering-vs-harness-engineering">2.3 Loop Engineering vs Harness Engineering</a></li>
+            <li><a href="#24-一个完整-loop-的六大要素">2.4 一个完整 Loop 的六大要素</a></li>
+          </ul>
+        </li>
+        <li><a href="#三loop-的分层架构">三、Loop 的分层架构</a>
+          <ul>
+            <li><a href="#31-loop-1agent-loop基础循环">3.1 Loop 1：Agent Loop（基础循环）</a></li>
+            <li><a href="#32-loop-2verification-loop验证循环">3.2 Loop 2：Verification Loop（验证循环）</a></li>
+            <li><a href="#33-loop-3event-driven-loop事件驱动循环">3.3 Loop 3：Event-Driven Loop（事件驱动循环）</a></li>
+            <li><a href="#34-loop-4hill-climbing-loop爬坡循环">3.4 Loop 4：Hill Climbing Loop（爬坡循环）</a></li>
+            <li><a href="#35-四层-loop-的叠加关系">3.5 四层 Loop 的叠加关系</a></li>
+          </ul>
+        </li>
+        <li><a href="#四经典-loop-模式">四、经典 Loop 模式</a>
+          <ul>
+            <li><a href="#41-reactreason--act">4.1 ReAct（Reason + Act）</a></li>
+            <li><a href="#42-reflexion">4.2 Reflexion</a></li>
+            <li><a href="#43-evaluator-optimizer">4.3 Evaluator-Optimizer</a></li>
+            <li><a href="#44-orchestrator-workers">4.4 Orchestrator-Workers</a></li>
+            <li><a href="#45-maker-checker生产环境主导模式">4.5 Maker-Checker（生产环境主导模式）</a></li>
+            <li><a href="#46-ralph-loop">4.6 Ralph Loop</a></li>
+            <li><a href="#47-goal-原语">4.7 <code>/goal</code> 原语</a></li>
+          </ul>
+        </li>
+        <li><a href="#五实现-loop-engineering-的系统">五、实现 Loop Engineering 的系统</a>
+          <ul>
+            <li><a href="#51-claude-codeanthropic">5.1 Claude Code（Anthropic）</a></li>
+            <li><a href="#52-openai-codex">5.2 OpenAI Codex</a></li>
+            <li><a href="#53-openclaw">5.3 OpenClaw</a></li>
+            <li><a href="#54-系统对比表">5.4 系统对比表</a></li>
+            <li><a href="#55-框架层langchain">5.5 框架层：LangChain</a></li>
+            <li><a href="#56-云平台">5.6 云平台</a></li>
+          </ul>
+        </li>
+        <li><a href="#六设计模式与最佳实践">六、设计模式与最佳实践</a>
+          <ul>
+            <li><a href="#61-maker-checker-分离">6.1 Maker-Checker 分离</a></li>
+            <li><a href="#62-终止条件设计">6.2 终止条件设计</a></li>
+            <li><a href="#63-token-成本控制">6.3 Token 成本控制</a></li>
+            <li><a href="#64-human-in-the-loop">6.4 Human-in-the-loop</a></li>
+            <li><a href="#65-状态持久化">6.5 状态持久化</a></li>
+            <li><a href="#66-worktree-隔离">6.6 Worktree 隔离</a></li>
+          </ul>
+        </li>
+        <li><a href="#七挑战与风险">七、挑战与风险</a>
+          <ul>
+            <li><a href="#71-无限循环风险">7.1 无限循环风险</a></li>
+            <li><a href="#72-token-成本爆炸">7.2 Token 成本爆炸</a></li>
+            <li><a href="#73-验证器瓶颈">7.3 验证器瓶颈</a></li>
+            <li><a href="#74-早期阶段">7.4 早期阶段</a></li>
+            <li><a href="#75-何时不该用-loop">7.5 何时不该用 Loop</a></li>
+          </ul>
+        </li>
+        <li><a href="#八总结">八、总结</a>
+          <ul>
+            <li><a href="#81-核心回顾">8.1 核心回顾</a></li>
+            <li><a href="#82-能力成熟度">8.2 能力成熟度</a></li>
+            <li><a href="#83-2026-年的工程师红利">8.3 2026 年的工程师红利</a></li>
+          </ul>
+        </li>
+        <li><a href="#-参考文献">📚 参考文献</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
