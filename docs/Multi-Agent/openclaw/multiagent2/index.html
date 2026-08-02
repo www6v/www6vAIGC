@@ -71,7 +71,7 @@ GitHub： https://github.com/openclaw/openclaw
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Multi-Agent/openclaw/multiagent2/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.c446d94503815997b183ce65b43a71226e9b6d12aea97a4fe2530db5fc410cac.js" integrity="sha256-xEbZRQOBWZexg85ltDpxIm6bbRKuqXpP4lMNtfxBDKw=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.cb7b38b5e6abfc26a95d799b8637c0571546cf7347fc8b4741d650165fd04bc9.js" integrity="sha256-y3s4tear/CapXXmbhjfAVxVGz3NH/ItHQdZQFl/QS8k=" crossorigin="anonymous"></script>
 <link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Multi-Agent/openclaw/multiagent2/index.xml" title="Modern Agent" />
 <!--
 Made with Book Theme
@@ -5219,7 +5219,21 @@ https://github.com/alex-shpak/hugo-book
   <a class="anchor" href="#13-%e6%9c%ac%e6%96%87%e7%bb%93%e6%9e%84">#</a>
 </h3>
 <p>本文将从<strong>原理 → 源码 → 配置实战</strong>三个层次，完整解析 OpenClaw 的多 Agent 交互架构：</p>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph LR
+
+
+<script src="/www6vAIGC/mermaid.min.js"></script>
+
+  <script>mermaid.initialize({
+  "flowchart": {
+    "useMaxWidth":true
+  },
+  "theme": "default"
+}
+)</script>
+
+
+
+<pre class="mermaid">graph LR
     A[原理篇] --&gt; B[源码篇]
     B --&gt; C[配置实战篇]
     
@@ -5233,8 +5247,8 @@ https://github.com/alex-shpak/hugo-book
     
     C --&gt; C1[Orchestrator 模式]
     C --&gt; C2[多 Channel 绑定]
-    C --&gt; C3[混合模型降本]
-</code></pre><hr>
+    C --&gt; C3[混合模型降本]</pre>
+<hr>
 <h2 id="二openclaw-多-agent-架构总览">
   二、OpenClaw 多 Agent 架构总览
   <a class="anchor" href="#%e4%ba%8copenclaw-%e5%a4%9a-agent-%e6%9e%b6%e6%9e%84%e6%80%bb%e8%a7%88">#</a>
@@ -5246,7 +5260,8 @@ https://github.com/alex-shpak/hugo-book
 <p>在深入三种协作机制之前，先明确 OpenClaw 中 <strong>Agent</strong> 的核心组件。理解这些概念是后续所有配置和源码分析的基础。</p>
 <blockquote>
 <p><strong>配图 2：Agent 核心组件关系图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+
+<pre class="mermaid">graph TB
     subgraph Agent Core
         WS[Workspace&lt;br/&gt;文件空间]
         AD[agentDir&lt;br/&gt;状态目录]
@@ -5265,7 +5280,7 @@ https://github.com/alex-shpak/hugo-book
     subgraph External
         CH[Channels&lt;br/&gt;WhatsApp / Telegram / DingTalk / Discord]
         BD[Bindings&lt;br/&gt;路由规则]
-        SK[Skills&lt;br/&gt;workspace + shared]
+        SK[Skills&lt;br/&gt;workspace &#43; shared]
     end
     
     SOUL --&gt; WS
@@ -5280,8 +5295,8 @@ https://github.com/alex-shpak/hugo-book
     
     CH --&gt; BD
     BD --&gt; AD
-    MR --&gt; SK
-</code></pre><p>每个 Agent 拥有以下<strong>独立资源</strong>：</p>
+    MR --&gt; SK</pre>
+<p>每个 Agent 拥有以下<strong>独立资源</strong>：</p>
 <table>
   <thead>
       <tr>
@@ -5403,7 +5418,8 @@ https://github.com/alex-shpak/hugo-book
 <p>OpenClaw 的设计哲学是<strong>显式优于隐式，简单优于复杂</strong>。选择多 Agent 协作机制时，遵循以下决策树：</p>
 <blockquote>
 <p><strong>配图 3：多 Agent 选型决策树</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TD
+
+<pre class="mermaid">graph TD
     A[需要多 Agent 协作?] --&gt;|否| B[✅ 单 Agent 即可]
     A --&gt;|是| C{在同一台服务器&lt;br/&gt;同一 Gateway?}
     C --&gt;|否| D[✅ AgentToAgent&lt;br/&gt;跨实例通信]
@@ -5414,8 +5430,8 @@ https://github.com/alex-shpak/hugo-book
     style D fill:#4ECDC4
     style F fill:#4ECDC4
     style G fill:#4ECDC4
-    style B fill:#95E1D3
-</code></pre><p><strong>实战经验法则：</strong></p>
+    style B fill:#95E1D3</pre>
+<p><strong>实战经验法则：</strong></p>
 <ol>
 <li><strong>能用 SubAgent 解决的，不要上 Agent Teams</strong> — SubAgent 配置简单、调试方便、结果可追溯</li>
 <li><strong>能在单 Gateway 内解决的，不要上 AgentToAgent</strong> — 跨实例引入网络延迟和复杂性</li>
@@ -5427,7 +5443,8 @@ https://github.com/alex-shpak/hugo-book
 </h3>
 <blockquote>
 <p><strong>配图 4：OpenClaw 多 Agent 架构全景图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+
+<pre class="mermaid">graph TB
     subgraph Channel Layer
         WA[WhatsApp]
         TG[Telegram]
@@ -5482,8 +5499,8 @@ https://github.com/alex-shpak/hugo-book
     
     SA --&gt; AD_A
     AT --&gt; AD_B
-    AT --&gt; AD_C
-</code></pre><hr>
+    AT --&gt; AD_C</pre>
+<hr>
 <h2 id="三机制一subagent--父子委派架构">
   三、机制一：SubAgent — 父子委派架构
   <a class="anchor" href="#%e4%b8%89%e6%9c%ba%e5%88%b6%e4%b8%80subagent--%e7%88%b6%e5%ad%90%e5%a7%94%e6%b4%be%e6%9e%b6%e6%9e%84">#</a>
@@ -5496,7 +5513,8 @@ https://github.com/alex-shpak/hugo-book
 <p>SubAgent 的完整生命周期包含四个阶段：</p>
 <blockquote>
 <p><strong>配图 5：SubAgent 生命周期时序图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">sequenceDiagram
+
+<pre class="mermaid">sequenceDiagram
     participant User as 👤 用户
     participant Parent as Parent Agent&lt;br/&gt;(Orchestrator)
     participant Gateway as OpenClaw Gateway
@@ -5512,8 +5530,8 @@ https://github.com/alex-shpak/hugo-book
     Gateway-&gt;&gt;Parent: Completion Event 回调
     Parent-&gt;&gt;Gateway: sessions_yield&lt;br/&gt;等待子 Agent 完成
     Parent-&gt;&gt;Parent: 汇总所有子任务结果
-    Parent-&gt;&gt;User: 返回最终回复
-</code></pre><p><strong>详细拆解：</strong></p>
+    Parent-&gt;&gt;User: 返回最终回复</pre>
+<p><strong>详细拆解：</strong></p>
 <table>
   <thead>
       <tr>
@@ -5687,7 +5705,8 @@ https://github.com/alex-shpak/hugo-book
 <p>OpenClaw 的 Session Key 有明确的层级结构，这决定了 Agent 之间的嵌套深度和隔离边界。</p>
 <blockquote>
 <p><strong>配图 6：Session Key 层级树状图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TD
+
+<pre class="mermaid">graph TD
     D0[&#34;Depth 0&lt;br/&gt;agent:main:main&lt;br/&gt;👑 主 Agent&#34;]
     D1A[&#34;Depth 1&lt;br/&gt;agent:main:subagent:uuid-1&lt;br/&gt;👷 子 Agent A&#34;]
     D1B[&#34;Depth 1&lt;br/&gt;agent:main:subagent:uuid-2&lt;br/&gt;👷 子 Agent B&#34;]
@@ -5706,8 +5725,8 @@ https://github.com/alex-shpak/hugo-book
     style D1B fill:#4ECDC4
     style D1C fill:#4ECDC4
     style D2A fill:#95E1D3
-    style D2B fill:#95E1D3
-</code></pre><table>
+    style D2B fill:#95E1D3</pre>
+<table>
   <thead>
       <tr>
           <th>深度</th>
@@ -5815,7 +5834,8 @@ https://github.com/alex-shpak/hugo-book
 </h3>
 <blockquote>
 <p><strong>配图 8：Code Review 流水线架构图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+
+<pre class="mermaid">graph TB
     PR[📦 Pull Request&lt;br/&gt;到达] --&gt; ORCH[🤖 Orchestrator&lt;br/&gt;Claude Opus&lt;br/&gt;任务分解与协调]
     
     ORCH --&gt;|&#34;sessions_spawn&lt;br/&gt;task=安全扫描&#34;| SEC[🛡️ Security Agent&lt;br/&gt;Claude Sonnet&lt;br/&gt;SQL注入/XSS/CSRF]
@@ -5833,8 +5853,8 @@ https://github.com/alex-shpak/hugo-book
     style SEC fill:#4ECDC4
     style STYLE fill:#4ECDC4
     style PERF fill:#4ECDC4
-    style DEV fill:#95E1D3
-</code></pre><p><strong>工作流解析：</strong></p>
+    style DEV fill:#95E1D3</pre>
+<p><strong>工作流解析：</strong></p>
 <ol>
 <li><strong>Orchestrator</strong> 收到 PR 变更文件列表</li>
 <li><strong>并行 spawn</strong> 三个子 Agent，各自使用最适合的模型</li>
@@ -5943,7 +5963,8 @@ https://github.com/alex-shpak/hugo-book
 </table>
 <blockquote>
 <p><strong>配图 9：SubAgent vs Agent Teams 通信流向对比</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">sequenceDiagram
+
+<pre class="mermaid">sequenceDiagram
     rect rgb(200, 230, 255)
         Note over P,C1: SubAgent — 单向通信
         P-&gt;&gt;C1: delegate(task=&#34;安全扫描&#34;)
@@ -5964,15 +5985,16 @@ https://github.com/alex-shpak/hugo-book
         B-&gt;&gt;C: 补充数据
         C-&gt;&gt;B: 确认数据格式
         Note over A,C: 成员间自由通信
-    end
-</code></pre><h3 id="42-三种协调模式">
+    end</pre>
+<h3 id="42-三种协调模式">
   4.2 三种协调模式
   <a class="anchor" href="#42-%e4%b8%89%e7%a7%8d%e5%8d%8f%e8%b0%83%e6%a8%a1%e5%bc%8f">#</a>
 </h3>
 <p>Agent Teams 支持三种协调模式，适用于不同类型的团队任务：</p>
 <blockquote>
 <p><strong>配图 10：三种协调模式对比图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TD
+
+<pre class="mermaid">graph TD
     subgraph &#34;① Orchestrator 模式（星型）&#34;
         O[Orchestrator&lt;br/&gt;协调者] --&gt; W1[Worker A&lt;br/&gt;数据采集]
         O --&gt; W2[Worker B&lt;br/&gt;数据分析]
@@ -5994,8 +6016,8 @@ https://github.com/alex-shpak/hugo-book
         H2A --&gt; H3A[Worker A1]
         H2A --&gt; H3B[Worker A2]
         H2B --&gt; H3C[Worker B1]
-    end
-</code></pre><table>
+    end</pre>
+<table>
   <thead>
       <tr>
           <th>模式</th>
@@ -6131,7 +6153,8 @@ https://github.com/alex-shpak/hugo-book
 <p>Agent Teams 通过 <code>shared_memory</code> 实现成员间的状态共享。这是与 SubAgent 最本质的区别。</p>
 <blockquote>
 <p><strong>配图 11：Agent Teams 共享内存架构图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+
+<pre class="mermaid">graph TB
     subgraph &#34;Agent Team: research-team&#34;
         L[research-lead&lt;br/&gt;Orchestrator]
         W[web-scout&lt;br/&gt;数据采集]
@@ -6146,13 +6169,13 @@ https://github.com/alex-shpak/hugo-book
     
     L &lt;--&gt;|读写| SM
     W &lt;--&gt;|写入搜索结果| SM
-    A &lt;--&gt;|读取数据+写入分析| SM
+    A &lt;--&gt;|读取数据&#43;写入分析| SM
     WR &lt;--&gt;|读取分析结果| SM
     SM &lt;--&gt;|持久化| PERS
     
     style SM fill:#FFEAA7
-    style PERS fill:#DFE6E9
-</code></pre><p><strong>共享内存使用示例（概念层面）：</strong></p>
+    style PERS fill:#DFE6E9</pre>
+<p><strong>共享内存使用示例（概念层面）：</strong></p>
 <pre tabindex="0"><code>Round 1:
   web-scout -&gt; 写入搜索结果到 Shared Memory: { &#34;query&#34;: &#34;AI Agent 市场&#34;, &#34;results&#34;: [...] }
   
@@ -6207,7 +6230,8 @@ Round 4:
 </h3>
 <blockquote>
 <p><strong>配图 12：跨实例分布式协作拓扑图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+
+<pre class="mermaid">graph TB
     subgraph &#34;Gateway Instance A（公司内网）&#34;
         GA[Gateway A]
         AA1[Agent A1&lt;br/&gt;数据预处理]
@@ -6231,14 +6255,15 @@ Round 4:
     
     style AA1 fill:#4ECDC4
     style AB1 fill:#FF6B6B
-    style AC1 fill:#95E1D3
-</code></pre><h3 id="53-agenttoagent-消息协议">
+    style AC1 fill:#95E1D3</pre>
+<h3 id="53-agenttoagent-消息协议">
   5.3 AgentToAgent 消息协议
   <a class="anchor" href="#53-agenttoagent-%e6%b6%88%e6%81%af%e5%8d%8f%e8%ae%ae">#</a>
 </h3>
 <blockquote>
 <p><strong>配图 13：AgentToAgent 消息协议时序图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">sequenceDiagram
+
+<pre class="mermaid">sequenceDiagram
     participant A as Agent A&lt;br/&gt;(Gateway Instance 1)
     participant Proto as AgentToAgent&lt;br/&gt;Protocol Layer
     participant Net as Network&lt;br/&gt;(HTTPS / gRPC)
@@ -6246,7 +6271,7 @@ Round 4:
     
     A-&gt;&gt;Proto: 准备跨实例请求
     Proto-&gt;&gt;Proto: 序列化消息&lt;br/&gt;{ from, to, payload, metadata }
-    Proto-&gt;&gt;Proto: 加密（TLS + 签名）
+    Proto-&gt;&gt;Proto: 加密（TLS &#43; 签名）
     Proto-&gt;&gt;Net: 发送 HTTPS/gRPC 请求
     Net-&gt;&gt;B: 消息到达目标 Gateway
     B-&gt;&gt;B: 验证签名 &amp; 反序列化
@@ -6256,8 +6281,8 @@ Round 4:
     Proto-&gt;&gt;Proto: 序列化响应
     Proto-&gt;&gt;Net: 发送响应
     Net-&gt;&gt;A: 响应返回
-    A-&gt;&gt;A: 处理结果
-</code></pre><p><strong>消息结构（概念模型）：</strong></p>
+    A-&gt;&gt;A: 处理结果</pre>
+<p><strong>消息结构（概念模型）：</strong></p>
 <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;protocol&#34;</span>: <span style="color:#e6db74">&#34;openclaw.agent-to-agent/v1&#34;</span>,
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;from&#34;</span>: {
@@ -6356,12 +6381,13 @@ Round 4:
 <p>OpenClaw 的消息路由遵循<strong>最精确匹配优先</strong>原则。每条入站消息经过 Binding Router 后，被精确路由到目标 Agent。</p>
 <blockquote>
 <p><strong>配图 14：Gateway 消息路由流程图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TD
+
+<pre class="mermaid">graph TD
     A[Inbound Message&lt;br/&gt;from Channel] --&gt; B{Binding 匹配引擎}
     
-    B --&gt;|精确匹配&lt;br/&gt;channel + peer.id| C[路由到对应 Agent]
-    B --&gt;|peer wildcard&lt;br/&gt;channel + peer.kind| D[路由到通配 Agent]
-    B --&gt;|parent peer&lt;br/&gt;channel + parent.id| E[路由到父级 Agent]
+    B --&gt;|精确匹配&lt;br/&gt;channel &#43; peer.id| C[路由到对应 Agent]
+    B --&gt;|peer wildcard&lt;br/&gt;channel &#43; peer.kind| D[路由到通配 Agent]
+    B --&gt;|parent peer&lt;br/&gt;channel &#43; parent.id| E[路由到父级 Agent]
     B --&gt;|channel default| F[路由到 Channel 默认 Agent]
     B --&gt;|global fallback| G[路由到全局默认 Agent]
     
@@ -6375,7 +6401,7 @@ Round 4:
     H --&gt;|群聊会话| J[Group Session&lt;br/&gt;agent:agentId:group:chatId]
     H --&gt;|子 Agent| K[Subagent Session&lt;br/&gt;agent:agentId:subagent:uuid]
     
-    I --&gt; L[加载 Workspace + SOUL.md]
+    I --&gt; L[加载 Workspace &#43; SOUL.md]
     J --&gt; L
     K --&gt; L
     
@@ -6385,8 +6411,8 @@ Round 4:
     style A fill:#FFEAA7
     style C fill:#4ECDC4
     style L fill:#FF6B6B
-    style N fill:#95E1D3
-</code></pre><p><strong>路由层级详解（从高到低）：</strong></p>
+    style N fill:#95E1D3</pre>
+<p><strong>路由层级详解（从高到低）：</strong></p>
 <table>
   <thead>
       <tr>
@@ -6435,7 +6461,8 @@ Round 4:
 </h3>
 <blockquote>
 <p><strong>配图 15：sessions_spawn 源码调用链路图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TD
+
+<pre class="mermaid">graph TD
     A[Agent 调用 sessions_spawn tool] --&gt; B[Tool Handler&lt;br/&gt;解析参数 &amp; 校验]
     B --&gt; C{context 模式?}
     C --&gt;|isolated| D[创建全新 Session&lt;br/&gt;无历史上下文]
@@ -6444,7 +6471,7 @@ Round 4:
     D --&gt; F[解析 agentId&lt;br/&gt;加载对应配置]
     E --&gt; F
     
-    F --&gt; G[解析 Model 策略&lt;br/&gt;primary + fallbacks]
+    F --&gt; G[解析 Model 策略&lt;br/&gt;primary &#43; fallbacks]
     G --&gt; H[生成 Session Key&lt;br/&gt;agent:agentId:subagent:uuid]
     H --&gt; I[初始化 Agent Runtime&lt;br/&gt;workspace / skills / tools / model]
     
@@ -6460,8 +6487,8 @@ Round 4:
     style A fill:#FFEAA7
     style B fill:#4ECDC4
     style N fill:#FF6B6B
-    style P fill:#95E1D3
-</code></pre><p><strong>关键源码文件（基于 v2026.5.27）：</strong></p>
+    style P fill:#95E1D3</pre>
+<p><strong>关键源码文件（基于 v2026.5.27）：</strong></p>
 <table>
   <thead>
       <tr>
@@ -6515,7 +6542,8 @@ Round 4:
 <p>OpenClaw 使用 <strong>SQLite</strong> 作为 Session Store 的底层存储。每个 Agent 拥有独立的 SQLite 数据库，确保会话数据严格隔离。</p>
 <blockquote>
 <p><strong>配图 16：SQLite Session Store 数据模型图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">erDiagram
+
+<pre class="mermaid">erDiagram
     SESSIONS ||--o{ MESSAGES : contains
     SESSIONS ||--o{ TRANSCRIPTS : has
     SESSIONS }o--|| AGENTS : belongs_to
@@ -6557,8 +6585,8 @@ Round 4:
         text toolResults
         text thinkingBlocks
         int tokenCount
-    }
-</code></pre><p><strong>数据模型说明：</strong></p>
+    }</pre>
+<p><strong>数据模型说明：</strong></p>
 <table>
   <thead>
       <tr>
@@ -6601,7 +6629,8 @@ Round 4:
   <a class="anchor" href="#64-%e5%ad%90-agent-%e5%ae%8c%e6%88%90%e4%ba%8b%e4%bb%b6%e5%9b%9e%e4%bc%a0%e4%b8%8e-sessions_yield-%e6%9c%ba%e5%88%b6">#</a>
 </h3>
 <p><code>sessions_yield</code> 是父 Agent 等待子 Agent 完成的核心机制。与轮询不同，它是<strong>事件驱动的</strong>：</p>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">sequenceDiagram
+
+<pre class="mermaid">sequenceDiagram
     participant Parent as Parent Agent
     participant Gateway as Gateway
     participant Sub1 as SubAgent A
@@ -6625,8 +6654,8 @@ Round 4:
     Sub2-&gt;&gt;Gateway: 完成 Completion Event
     Gateway-&gt;&gt;Parent: 推送 Completion Event B
     Note over Parent: 收到 B 的结果&lt;br/&gt;继续工作流
-    Parent-&gt;&gt;Parent: 汇总结果 生成回复
-</code></pre><p><strong>关键区别：</strong></p>
+    Parent-&gt;&gt;Parent: 汇总结果 生成回复</pre>
+<p><strong>关键区别：</strong></p>
 <table>
   <thead>
       <tr>
@@ -6659,7 +6688,8 @@ Round 4:
 </h3>
 <blockquote>
 <p><strong>配图 17：安全策略配置决策图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TD
+
+<pre class="mermaid">graph TD
     A[Spawn 请求到达] --&gt; B{检查 maxSpawnDepth&lt;br/&gt;当前深度 配置值?}
     B --&gt;|超出限制| C[拒绝: 嵌套过深]
     B --&gt;|通过| D{检查 maxChildrenPerAgent&lt;br/&gt;当前子 Agent 数 上限?}
@@ -6681,8 +6711,8 @@ Round 4:
     
     style C fill:#FF6B6B
     style E fill:#FF6B6B
-    style L fill:#95E1D3
-</code></pre><p><strong>安全配置详解：</strong></p>
+    style L fill:#95E1D3</pre>
+<p><strong>安全配置详解：</strong></p>
 <table>
   <thead>
       <tr>
@@ -6768,7 +6798,8 @@ Round 4:
 </span></span><span style="display:flex;"><span>openclaw channels status --probe
 </span></span></code></pre></div><blockquote>
 <p><strong>配图 18：多 Agent 初始化工作流图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph LR
+
+<pre class="mermaid">graph LR
     A[openclaw agents add] --&gt; B[生成 Workspace&lt;br/&gt;SOUL.md / AGENTS.md]
     B --&gt; C[创建 agentDir&lt;br/&gt;SQLite Session Store]
     C --&gt; D[配置 Channel Account]
@@ -6778,8 +6809,8 @@ Round 4:
     
     style A fill:#FFEAA7
     style F fill:#FF6B6B
-    style G fill:#95E1D3
-</code></pre><h3 id="72-配置案例-1orchestrator--专业子-agent-模式">
+    style G fill:#95E1D3</pre>
+<h3 id="72-配置案例-1orchestrator--专业子-agent-模式">
   7.2 配置案例 1：Orchestrator + 专业子 Agent 模式
   <a class="anchor" href="#72-%e9%85%8d%e7%bd%ae%e6%a1%88%e4%be%8b-1orchestrator--%e4%b8%93%e4%b8%9a%e5%ad%90-agent-%e6%a8%a1%e5%bc%8f">#</a>
 </h3>
@@ -6821,7 +6852,8 @@ Round 4:
 </span></span><span style="display:flex;"><span>}
 </span></span></code></pre></div><blockquote>
 <p><strong>配图 19：Orchestrator 模式部署架构图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+
+<pre class="mermaid">graph TB
     User[用户&lt;br/&gt;发送复杂任务] --&gt; O[Orchestrator&lt;br/&gt;Claude Opus&lt;br/&gt;决策与协调]
     
     O --&gt;|sessions_spawn| C[Coder Agent&lt;br/&gt;Claude Sonnet&lt;br/&gt;代码实现]
@@ -6843,8 +6875,8 @@ Round 4:
     style O fill:#FF6B6B
     style C fill:#4ECDC4
     style R fill:#4ECDC4
-    style D fill:#4ECDC4
-</code></pre><h3 id="73-配置案例-2同-whatsapp-号码拆分多-agent">
+    style D fill:#4ECDC4</pre>
+<h3 id="73-配置案例-2同-whatsapp-号码拆分多-agent">
   7.3 配置案例 2：同 WhatsApp 号码拆分多 Agent
   <a class="anchor" href="#73-%e9%85%8d%e7%bd%ae%e6%a1%88%e4%be%8b-2%e5%90%8c-whatsapp-%e5%8f%b7%e7%a0%81%e6%8b%86%e5%88%86%e5%a4%9a-agent">#</a>
 </h3>
@@ -6874,10 +6906,11 @@ Round 4:
 </span></span><span style="display:flex;"><span>}
 </span></span></code></pre></div><blockquote>
 <p><strong>配图 20：多 Channel 绑定拓扑图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph LR
+
+<pre class="mermaid">graph LR
     subgraph WhatsApp
-    WA1[+86...0001] --&gt;|DM| A[Alex Agent]
-    WA2[+86...0002] --&gt;|DM| M[Mia Agent]
+    WA1[&#43;86...0001] --&gt;|DM| A[Alex Agent]
+    WA2[&#43;86...0002] --&gt;|DM| M[Mia Agent]
     end
     
     subgraph Telegram
@@ -6890,8 +6923,8 @@ Round 4:
     
     A -.同一 Gateway.-&gt; M
     A -.同一 Gateway.-&gt; O
-    A -.同一 Gateway.-&gt; C
-</code></pre><h3 id="74-性能调优混合模型策略">
+    A -.同一 Gateway.-&gt; C</pre>
+<h3 id="74-性能调优混合模型策略">
   7.4 性能调优：混合模型策略
   <a class="anchor" href="#74-%e6%80%a7%e8%83%bd%e8%b0%83%e4%bc%98%e6%b7%b7%e5%90%88%e6%a8%a1%e5%9e%8b%e7%ad%96%e7%95%a5">#</a>
 </h3>
@@ -7084,7 +7117,8 @@ Round 4:
 </ul>
 <blockquote>
 <p><strong>配图 22：全文知识地图</strong></p></blockquote>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">mindmap
+
+<pre class="mermaid">mindmap
   root((OpenClaw&lt;br/&gt;多 Agent 交互))
     单 Agent 瓶颈
       上下文天花板
@@ -7118,8 +7152,8 @@ Round 4:
       CLI 初始化
       Orchestrator 模式
       WhatsApp 拆分
-      混合模型降本
-</code></pre><hr>
+      混合模型降本</pre>
+<hr>
 <h2 id="附录">
   附录
   <a class="anchor" href="#%e9%99%84%e5%bd%95">#</a>

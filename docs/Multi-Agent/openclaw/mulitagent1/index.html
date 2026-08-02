@@ -43,7 +43,7 @@ OpenClaw 是一个超大规模开源个人 AI 助手项目（GitHub ⭐372K&#43;
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Multi-Agent/openclaw/mulitagent1/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.c446d94503815997b183ce65b43a71226e9b6d12aea97a4fe2530db5fc410cac.js" integrity="sha256-xEbZRQOBWZexg85ltDpxIm6bbRKuqXpP4lMNtfxBDKw=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.cb7b38b5e6abfc26a95d799b8637c0571546cf7347fc8b4741d650165fd04bc9.js" integrity="sha256-y3s4tear/CapXXmbhjfAVxVGz3NH/ItHQdZQFl/QS8k=" crossorigin="anonymous"></script>
 <link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Multi-Agent/openclaw/mulitagent1/index.xml" title="Modern Agent" />
 <!--
 Made with Book Theme
@@ -5087,7 +5087,21 @@ https://github.com/alex-shpak/hugo-book
   <a class="anchor" href="#21-%e7%b3%bb%e7%bb%9f%e6%9e%b6%e6%9e%84%e5%9b%be">#</a>
 </h3>
 <p>OpenClaw 的架构可以用三层模型来理解：</p>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+
+
+<script src="/www6vAIGC/mermaid.min.js"></script>
+
+  <script>mermaid.initialize({
+  "flowchart": {
+    "useMaxWidth":true
+  },
+  "theme": "default"
+}
+)</script>
+
+
+
+<pre class="mermaid">graph TB
     subgraph Channels
         WA[WhatsApp]
         TG[Telegram]
@@ -5144,8 +5158,8 @@ https://github.com/alex-shpak/hugo-book
     A2 --&gt; WS2
     A3 --&gt; WS3
     A1 --&gt; SES
-    subagent --&gt; REG
-</code></pre><p><strong>架构图详解：</strong></p>
+    subagent --&gt; REG</pre>
+<p><strong>架构图详解：</strong></p>
 <p>上图展示了 OpenClaw 在一个单进程 Gateway 中运行多个 Agent 的完整架构，可分为三个层次：</p>
 <p><strong>1. 接入层（Channels）</strong></p>
 <p>WhatsApp、Telegram、Slack、Discord 等外部消息通道统一接入 Gateway。关键设计决策是：<strong>通道不直接与 Agent 对话</strong>。所有消息必须先经过 Binding Router 进行路由分发。这类似于 Nginx 的反向代理——客户端不知道也不关心请求最终由哪个后端服务处理。</p>
@@ -5334,9 +5348,10 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
   <a class="anchor" href="#24-%e5%a4%9a-agent-%e4%ba%a4%e4%ba%92%e7%9a%84%e4%ba%94%e4%b8%aa%e5%b1%82%e6%ac%a1">#</a>
 </h3>
 <p>OpenClaw 的多 Agent 交互不是单一机制，而是<strong>五个层次</strong>的组合：</p>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+
+<pre class="mermaid">graph TB
     subgraph &#34;⑤ 调度层（正交 · 全局贯穿）&#34;
-        L1[Command Queue + Lanes&lt;br/&gt;Main / Subagent / Cron]
+        L1[Command Queue &#43; Lanes&lt;br/&gt;Main / Subagent / Cron]
     end
 
     subgraph &#34;消息流&#34;
@@ -5345,7 +5360,7 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
         end
 
         subgraph &#34;② 会话层（隔离存储）&#34;
-            R2[Session Key + Session Store]
+            R2[Session Key &#43; Session Store]
         end
 
         subgraph &#34;Agent 内部&#34;
@@ -5367,8 +5382,8 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
     L1 -. 并发调度 .-&gt; R1
     L1 -. 会话串行 .-&gt; R2
     L1 -. 子 Agent 槽位 .-&gt; R3
-    L1 -. A2A 队列 .-&gt; R4
-</code></pre><p><strong>各层次解读：</strong></p>
+    L1 -. A2A 队列 .-&gt; R4</pre>
+<p><strong>各层次解读：</strong></p>
 <table>
   <thead>
       <tr>
@@ -5518,12 +5533,13 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
   <a class="anchor" href="#32-%e8%b7%af%e7%94%b1%e4%bc%98%e5%85%88%e7%ba%a7%e9%93%be">#</a>
 </h3>
 <p>当多条 Binding 规则都可能匹配时，OpenClaw 采用<strong>最精确匹配优先</strong>（Most-Specific-Wins）策略。源码中（<code>src/routing/resolve-route.ts</code>）实现了一个七层优先级链：</p>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">flowchart TD
+
+<pre class="mermaid">flowchart TD
     Msg[Inbound Message] --&gt; P1{Match peer?}
     P1 --&gt;|Yes| R1[Route to Agent via peer binding]
     P1 --&gt;|No| P2{Match parentPeer?}
     P2 --&gt;|Yes| R2[Route via thread inheritance]
-    P2 --&gt;|No| P3{Match guildId + roles?}
+    P2 --&gt;|No| P3{Match guildId &#43; roles?}
     P3 --&gt;|Yes| R3[Route via Discord role]
     P3 --&gt;|No| P4{Match guildId / teamId?}
     P4 --&gt;|Yes| R4[Route via server/workspace]
@@ -5531,8 +5547,8 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
     P5 --&gt;|Yes| R5[Route to account&#39;s agent]
     P5 --&gt;|No| P6{Channel-level match?}
     P6 --&gt;|Yes| R6[Route to channel default agent]
-    P6 --&gt;|No| R7[Route to global default / main]
-</code></pre><p><strong>优先级从高到低：</strong></p>
+    P6 --&gt;|No| R7[Route to global default / main]</pre>
+<p><strong>优先级从高到低：</strong></p>
 <table>
   <thead>
       <tr>
@@ -5867,7 +5883,8 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
   <a class="anchor" href="#53-%e5%ae%8c%e6%88%90%e9%80%9a%e7%9f%a5%e6%9c%ba%e5%88%b6subagent-announcets">#</a>
 </h3>
 <p>子 Agent 完成后的通知流程是 OpenClaw 中最复杂的机制之一：</p>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">sequenceDiagram
+
+<pre class="mermaid">sequenceDiagram
     participant Parent as Parent Agent
     participant Spawn as spawnSubagent()
     participant Child as Child Agent
@@ -5894,8 +5911,8 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
     else Parent is idle
         Announce-&gt;&gt;Parent: New agent turn
     end
-    Parent--&gt;&gt;Announce: Process result
-</code></pre><p><strong>Announce 的完整生命周期</strong>：</p>
+    Parent--&gt;&gt;Announce: Process result</pre>
+<p><strong>Announce 的完整生命周期</strong>：</p>
 <ol>
 <li><strong>子 Agent 完成</strong>：子 Agent 的 run 结束（正常完成或超时/错误）</li>
 <li><strong>查找父会话</strong>：通过 Registry 查找父 Agent 的 session key</li>
@@ -6022,7 +6039,8 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
   <a class="anchor" href="#62-a2a-flowagent-to-agent-%e5%af%b9%e8%af%9d%e6%b5%81">#</a>
 </h3>
 <p><code>sessions_send</code> 最强大的特性是 <strong>Ping-Pong 对话流</strong>。当 Agent A 发送消息给 Agent B 后，Agent B 的回复可以被自动回传给 Agent A，Agent A 再回复 Agent B——如此交替，最多 N 轮。</p>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">sequenceDiagram
+
+<pre class="mermaid">sequenceDiagram
     participant A1 as Agent A (Requester)
     participant Send as sessions_send tool
     participant A2 as Agent B (Target)
@@ -6045,8 +6063,8 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 
     A2A-&gt;&gt;A2: Announce step: build final context
     A2--&gt;&gt;A2A: Final announcement text
-    A2A-&gt;&gt;A1: Deliver result (announce)
-</code></pre><p><strong>Ping-Pong 机制详解</strong>：</p>
+    A2A-&gt;&gt;A1: Deliver result (announce)</pre>
+<p><strong>Ping-Pong 机制详解</strong>：</p>
 <ol>
 <li><strong><code>maxPingPongTurns</code> 控制对话轮数</strong>：默认值为 2，防止无限对话消耗资源</li>
 <li><strong><code>buildAgentToAgentReplyContext()</code> 构建对话上下文</strong>：每次轮换时，系统会为当前发言的 Agent 构建一个特殊的上下文，包含对话历史和角色信息</li>

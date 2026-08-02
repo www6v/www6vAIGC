@@ -42,7 +42,7 @@ pi-ai：统一 LLM API 抽象层，屏蔽 OpenAI、Anthropic、Google 等不同�
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent2/pi-coding-agent-article/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.c446d94503815997b183ce65b43a71226e9b6d12aea97a4fe2530db5fc410cac.js" integrity="sha256-xEbZRQOBWZexg85ltDpxIm6bbRKuqXpP4lMNtfxBDKw=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.cb7b38b5e6abfc26a95d799b8637c0571546cf7347fc8b4741d650165fd04bc9.js" integrity="sha256-y3s4tear/CapXXmbhjfAVxVGz3NH/ItHQdZQFl/QS8k=" crossorigin="anonymous"></script>
 <!--
 Made with Book Theme
 https://github.com/alex-shpak/hugo-book
@@ -5078,7 +5078,21 @@ pi-coding-agent → 编程工具（read/edit/write/bash/find/grep）+ 会话管�
   <a class="anchor" href="#21-%e6%a0%b8%e5%bf%83%e6%9e%b6%e6%9e%84%e5%9b%be">#</a>
 </h3>
 <p>Pi 的架构清晰地分为三层，层与层之间通过明确的接口通信：</p>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+
+
+<script src="/www6vAIGC/mermaid.min.js"></script>
+
+  <script>mermaid.initialize({
+  "flowchart": {
+    "useMaxWidth":true
+  },
+  "theme": "default"
+}
+)</script>
+
+
+
+<pre class="mermaid">graph TB
     User[用户输入] --&gt; Session[AgentSession]
 
     subgraph &#34;pi-agent-core（Agent 运行时）&#34;
@@ -5113,8 +5127,8 @@ pi-coding-agent → 编程工具（read/edit/write/bash/find/grep）+ 会话管�
     Loop --&gt; Stream
     Stream --&gt; LLM
     Loop --&gt; Convert
-    Convert --&gt; LLM
-</code></pre><p><strong>各层职责</strong>：</p>
+    Convert --&gt; LLM</pre>
+<p><strong>各层职责</strong>：</p>
 <ul>
 <li><strong>pi-ai</strong>：提供统一的 <code>Context</code>、<code>Message</code>、<code>Tool</code> 接口，以及 <code>streamSimple</code> 流式推理函数。任何 LLM 厂商只需实现该接口即可接入 Pi。</li>
 <li><strong>pi-agent-core</strong>：核心循环引擎。不关心具体工具实现，只负责调度：调用 LLM → 解析 toolCall → 执行工具 → 注入结果 → 循环。</li>
@@ -5164,7 +5178,8 @@ pi-coding-agent → 编程工具（read/edit/write/bash/find/grep）+ 会话管�
   <a class="anchor" href="#31-%e6%a0%b8%e5%bf%83%e5%be%aa%e7%8e%af%e6%b5%81%e7%a8%8b">#</a>
 </h3>
 <p>Pi 的 Agent Loop 不是简单的 <code>while(true)</code>，而是一个<strong>双层循环 + 事件流</strong>架构。外层负责处理 follow-up 消息（用户在 Agent 运行时中途输入的新指令），内层负责处理工具调用（LLM 返回 toolCall → 执行 → 注入结果）。</p>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">flowchart TD
+
+<pre class="mermaid">flowchart TD
     Start[agentLoop / agentLoopContinue] --&gt; OuterLoop{外层: 检查 follow-up 消息}
     OuterLoop --&gt;|有新消息| InnerLoop{内层: 处理工具调用}
     OuterLoop --&gt;|无消息| Exit[agent_end]
@@ -5184,8 +5199,8 @@ pi-coding-agent → 编程工具（read/edit/write/bash/find/grep）+ 会话管�
     InjectError --&gt; CheckStop
 
     CheckStop --&gt;|false| InnerLoop
-    CheckStop --&gt;|true| OuterLoop
-</code></pre><p><strong>关键设计洞察</strong>：</p>
+    CheckStop --&gt;|true| OuterLoop</pre>
+<p><strong>关键设计洞察</strong>：</p>
 <ul>
 <li>内层循环保证 LLM 可以连续调用多个工具（如 <code>read</code> 多个文件，或 <code>edit</code> 后 <code>bash</code> 测试），直到返回纯文本回复。</li>
 <li>外层循环保证用户在 Agent 执行长任务时，可以中途插入新指令（steering message），而不必等待当前任务结束。</li>
@@ -5323,7 +5338,8 @@ pi-coding-agent → 编程工具（read/edit/write/bash/find/grep）+ 会话管�
   <a class="anchor" href="#41-%e5%b7%a5%e5%85%b7%e6%89%a7%e8%a1%8c%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f">#</a>
 </h3>
 <p>Pi 的工具系统不是简单的“调用函数”，而是包含完整的生命周期钩子（Hook），支持拦截、修改、审计。</p>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">sequenceDiagram
+
+<pre class="mermaid">sequenceDiagram
     participant Loop as Agent Loop
     participant Hook as beforeToolCall
     participant Tool as Tool Executor
@@ -5342,8 +5358,8 @@ pi-coding-agent → 编程工具（read/edit/write/bash/find/grep）+ 会话管�
         Loop-&gt;&gt;After: afterToolCall(toolCall, result)
         After--&gt;&gt;Loop: { content?, terminate? }
         Loop-&gt;&gt;Ctx: 注入 tool result
-    end
-</code></pre><p><strong>Hook 的作用</strong>：</p>
+    end</pre>
+<p><strong>Hook 的作用</strong>：</p>
 <ul>
 <li><strong><code>beforeToolCall</code></strong>：可用于权限检查（如拦截 <code>rm -rf /</code>）、参数修正、缓存命中跳过执行。</li>
 <li><strong><code>afterToolCall</code></strong>：可用于修改工具返回内容（如脱敏）、触发副作用（如自动 commit）、或设置 <code>terminate: true</code> 提前结束循环。</li>
@@ -5612,15 +5628,16 @@ pi-coding-agent → 编程工具（read/edit/write/bash/find/grep）+ 会话管�
   <a class="anchor" href="#71-runtime-%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f">#</a>
 </h3>
 <p>Pi 的会话不是简单的“对话历史”，而是一个<strong>完整的运行时环境</strong>，绑定到特定的工作目录（cwd），包含文件系统访问、工具注册、模型配置、扩展状态等。</p>
-<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">flowchart LR
+
+<pre class="mermaid">flowchart LR
     Create[CreateAgentSessionRuntime] --&gt; Init[初始化 cwd-bound 服务]
-    Init --&gt; Load[加载 system prompt + tools]
+    Init --&gt; Load[加载 system prompt &#43; tools]
     Load --&gt; Ready[Session Ready]
     Ready --&gt; Loop[agentLoop 执行]
     Loop --&gt; Switch[session_before_switch]
     Switch --&gt;|替换/新建| Shutdown[session_shutdown]
-    Shutdown --&gt; Create
-</code></pre><h3 id="72-核心组件">
+    Shutdown --&gt; Create</pre>
+<h3 id="72-核心组件">
   7.2 核心组件
   <a class="anchor" href="#72-%e6%a0%b8%e5%bf%83%e7%bb%84%e4%bb%b6">#</a>
 </h3>
