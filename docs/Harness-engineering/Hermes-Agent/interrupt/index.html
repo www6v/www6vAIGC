@@ -4,26 +4,66 @@
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="
-  Hermes Arch
+  Hermes Agent Loop 中止机制全解析
   #
 
-Hermes Arch">
+
+  一、核心数据结构：中断信号是线程安全的
+  #
+
+整个中断机制的核心在 tools/interrupt.py，它实现了一个线程级别的中断信号表：
+# tools/interrupt.py
+_interrupted_threads: set[int] = set()   # 被标记中断的线程 ID 集合
+_lock = threading.Lock()
+
+def set_interrupt(active: bool, thread_id: int | None = None):
+    &#34;&#34;&#34;将某个线程标记为中断/清除中断&#34;&#34;&#34;
+    tid = thread_id or threading.current_thread().ident
+    with _lock:
+        if active:
+            _interrupted_threads.add(tid)
+        else:
+            _interrupted_threads.discard(tid)
+
+def is_interrupted() -&gt; bool:
+    &#34;&#34;&#34;当前线程是否被标记中断&#34;&#34;&#34;
+    return threading.current_thread().ident in _interrupted_threads
+关键设计：按线程隔离。Gateway 中多个 agent 会话并发运行在同一进程中，中断一个会话不会影响其他会话。
+
+  二、Agent 侧的中断接口：interrupt() 方法
+  #
+
+AIAgent 类（run_agent.py）暴露了两个关键方法：
+# run_agent.py:2237
+def interrupt(self, message: str = None):
+    &#34;&#34;&#34;请求中断当前工具调用循环&#34;&#34;&#34;
+    self._interrupt_requested = True     # 标志位
+    self._interrupt_message = message    # 附带的新消息
+    # 向当前执行线程发送中断信号
+    _set_interrupt(True, self._execution_thread_id)
+    # 传播给所有子 agent（delegate_task 创建的子任务）
+    for child in self._running_children:
+        child.interrupt(message)
+clear_interrupt() 做相反操作：清除标志、清除线程信号、清理子 agent。">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
-<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitcture/">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes-Agent/interrupt/">
   <meta property="og:site_name" content="Modern Agent">
   <meta property="og:title" content="Modern Agent">
-  <meta property="og:description" content="Hermes Arch # Hermes Arch">
+  <meta property="og:description" content="Hermes Agent Loop 中止机制全解析 # 一、核心数据结构：中断信号是线程安全的 # 整个中断机制的核心在 tools/interrupt.py，它实现了一个线程级别的中断信号表：
+# tools/interrupt.py _interrupted_threads: set[int] = set() # 被标记中断的线程 ID 集合 _lock = threading.Lock() def set_interrupt(active: bool, thread_id: int | None = None): &#34;&#34;&#34;将某个线程标记为中断/清除中断&#34;&#34;&#34; tid = thread_id or threading.current_thread().ident with _lock: if active: _interrupted_threads.add(tid) else: _interrupted_threads.discard(tid) def is_interrupted() -&gt; bool: &#34;&#34;&#34;当前线程是否被标记中断&#34;&#34;&#34; return threading.current_thread().ident in _interrupted_threads 关键设计：按线程隔离。Gateway 中多个 agent 会话并发运行在同一进程中，中断一个会话不会影响其他会话。
+二、Agent 侧的中断接口：interrupt() 方法 # AIAgent 类（run_agent.py）暴露了两个关键方法：
+# run_agent.py:2237 def interrupt(self, message: str = None): &#34;&#34;&#34;请求中断当前工具调用循环&#34;&#34;&#34; self._interrupt_requested = True # 标志位 self._interrupt_message = message # 附带的新消息 # 向当前执行线程发送中断信号 _set_interrupt(True, self._execution_thread_id) # 传播给所有子 agent（delegate_task 创建的子任务） for child in self._running_children: child.interrupt(message) clear_interrupt() 做相反操作：清除标志、清除线程信号、清理子 agent。">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="website">
-<title>Arcitcture | Modern Agent</title>
+<title>Interrupt | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
-<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitcture/">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes-Agent/interrupt/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.cc1a69cc3cedb7fd607317bb81afce481210182e3d04d8ea01af863c9b64c289.js" integrity="sha256-zBppzDztt/1gcxe7ga/OSBIQGC49BNjqAa&#43;GPJtkwok=" crossorigin="anonymous"></script>
-<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitcture/index.xml" title="Modern Agent" />
+  <script defer src="/www6vAIGC/en.search.min.00080a67e80af74cc24dbdffd3b4561d5b15059701aa857f24c4d16ce6391cdf.js" integrity="sha256-AAgKZ&#43;gK90zCTb3/07RWHVsVBZcBqoV/JMTRbOY5HN8=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes-Agent/interrupt/index.xml" title="Modern Agent" />
 <!--
 Made with Book Theme
 https://github.com/alex-shpak/hugo-book
@@ -1050,6 +1090,81 @@ https://github.com/alex-shpak/hugo-book
 
   
     <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/opensource/" class="">Opensource</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-42ab09fd6e839492b699ee2fa4656e2f" class="toggle"  />
+    <label for="section-42ab09fd6e839492b699ee2fa4656e2f" class="flex justify-between">
+      <a role="button" class="">SDK</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk-%E5%85%BC%E5%AE%B9%E6%80%A7/" class="">Sdk 兼容性 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk-%E5%85%BC%E5%AE%B9%E6%80%A7-1/" class="">Sdk 兼容性 1</a>
   
 
           
@@ -2666,7 +2781,43 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitcture/" class="active">Arcitcture</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/apiwebhook/" class="">Api&amp;webhook</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitctureA1/" class="">Arcitcture[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/interrupt/" class="active">Interrupt</a>
   
 
           
@@ -4566,7 +4717,7 @@ https://github.com/alex-shpak/hugo-book
     <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
   </label>
 
-  <h3>Arcitcture</h3>
+  <h3>Interrupt</h3>
 
   <label for="toc-control">
     
@@ -4582,7 +4733,19 @@ https://github.com/alex-shpak/hugo-book
   
 <nav id="TableOfContents">
   <ul>
-    <li><a href="#hermes-arch">Hermes Arch</a></li>
+    <li><a href="#hermes-agent-loop-中止机制全解析">Hermes Agent Loop 中止机制全解析</a>
+      <ul>
+        <li><a href="#一核心数据结构中断信号是线程安全的">一、核心数据结构：中断信号是线程安全的</a></li>
+        <li><a href="#二agent-侧的中断接口interrupt-方法">二、Agent 侧的中断接口：<code>interrupt()</code> 方法</a></li>
+        <li><a href="#三主循环中的中断检查点">三、主循环中的中断检查点</a></li>
+        <li><a href="#四api-调用级别的中断最精妙的部分">四、API 调用级别的中断（最精妙的部分）</a></li>
+        <li><a href="#五工具执行中的中断">五、工具执行中的中断</a></li>
+        <li><a href="#六触发中断的用户入口">六、触发中断的用户入口</a></li>
+        <li><a href="#七中断后的处理流程">七、中断后的处理流程</a></li>
+        <li><a href="#八与普通-steer-的区别">八、与普通 <code>/steer</code> 的区别</a></li>
+        <li><a href="#总结">总结</a></li>
+      </ul>
+    </li>
   </ul>
 </nav>
 
@@ -4595,11 +4758,204 @@ https://github.com/alex-shpak/hugo-book
 
       
       
-  <article class="markdown book-article"><h1 id="hermes-arch">
-  Hermes Arch
-  <a class="anchor" href="#hermes-arch">#</a>
+  <article class="markdown book-article"><h1 id="hermes-agent-loop-中止机制全解析">
+  Hermes Agent Loop 中止机制全解析
+  <a class="anchor" href="#hermes-agent-loop-%e4%b8%ad%e6%ad%a2%e6%9c%ba%e5%88%b6%e5%85%a8%e8%a7%a3%e6%9e%90">#</a>
 </h1>
-<p><a href="https://shanji.dingtalk.com/app/transcribes/76327569643335343133303432355f3232353934343633395f32">Hermes Arch</a></p>
+<h2 id="一核心数据结构中断信号是线程安全的">
+  一、核心数据结构：中断信号是线程安全的
+  <a class="anchor" href="#%e4%b8%80%e6%a0%b8%e5%bf%83%e6%95%b0%e6%8d%ae%e7%bb%93%e6%9e%84%e4%b8%ad%e6%96%ad%e4%bf%a1%e5%8f%b7%e6%98%af%e7%ba%bf%e7%a8%8b%e5%ae%89%e5%85%a8%e7%9a%84">#</a>
+</h2>
+<p>整个中断机制的核心在 <code>tools/interrupt.py</code>，它实现了一个<strong>线程级别的中断信号表</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># tools/interrupt.py</span>
+</span></span><span style="display:flex;"><span>_interrupted_threads: set[int] <span style="color:#f92672">=</span> set()   <span style="color:#75715e"># 被标记中断的线程 ID 集合</span>
+</span></span><span style="display:flex;"><span>_lock <span style="color:#f92672">=</span> threading<span style="color:#f92672">.</span>Lock()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">set_interrupt</span>(active: bool, thread_id: int <span style="color:#f92672">|</span> <span style="color:#66d9ef">None</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;将某个线程标记为中断/清除中断&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    tid <span style="color:#f92672">=</span> thread_id <span style="color:#f92672">or</span> threading<span style="color:#f92672">.</span>current_thread()<span style="color:#f92672">.</span>ident
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> _lock:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> active:
+</span></span><span style="display:flex;"><span>            _interrupted_threads<span style="color:#f92672">.</span>add(tid)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>            _interrupted_threads<span style="color:#f92672">.</span>discard(tid)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">is_interrupted</span>() <span style="color:#f92672">-&gt;</span> bool:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;当前线程是否被标记中断&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> threading<span style="color:#f92672">.</span>current_thread()<span style="color:#f92672">.</span>ident <span style="color:#f92672">in</span> _interrupted_threads
+</span></span></code></pre></div><p><strong>关键设计</strong>：按线程隔离。Gateway 中多个 agent 会话并发运行在同一进程中，中断一个会话不会影响其他会话。</p>
+<h2 id="二agent-侧的中断接口interrupt-方法">
+  二、Agent 侧的中断接口：<code>interrupt()</code> 方法
+  <a class="anchor" href="#%e4%ba%8cagent-%e4%be%a7%e7%9a%84%e4%b8%ad%e6%96%ad%e6%8e%a5%e5%8f%a3interrupt-%e6%96%b9%e6%b3%95">#</a>
+</h2>
+<p><code>AIAgent</code> 类（<code>run_agent.py</code>）暴露了两个关键方法：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># run_agent.py:2237</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">interrupt</span>(self, message: str <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;请求中断当前工具调用循环&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    self<span style="color:#f92672">.</span>_interrupt_requested <span style="color:#f92672">=</span> <span style="color:#66d9ef">True</span>     <span style="color:#75715e"># 标志位</span>
+</span></span><span style="display:flex;"><span>    self<span style="color:#f92672">.</span>_interrupt_message <span style="color:#f92672">=</span> message    <span style="color:#75715e"># 附带的新消息</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 向当前执行线程发送中断信号</span>
+</span></span><span style="display:flex;"><span>    _set_interrupt(<span style="color:#66d9ef">True</span>, self<span style="color:#f92672">.</span>_execution_thread_id)
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 传播给所有子 agent（delegate_task 创建的子任务）</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> child <span style="color:#f92672">in</span> self<span style="color:#f92672">.</span>_running_children:
+</span></span><span style="display:flex;"><span>        child<span style="color:#f92672">.</span>interrupt(message)
+</span></span></code></pre></div><p><code>clear_interrupt()</code> 做相反操作：清除标志、清除线程信号、清理子 agent。</p>
+<h2 id="三主循环中的中断检查点">
+  三、主循环中的中断检查点
+  <a class="anchor" href="#%e4%b8%89%e4%b8%bb%e5%be%aa%e7%8e%af%e4%b8%ad%e7%9a%84%e4%b8%ad%e6%96%ad%e6%a3%80%e6%9f%a5%e7%82%b9">#</a>
+</h2>
+<p>主循环在 <code>agent/conversation_loop.py:run_conversation()</code> 中，有多层中断检测：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 1. 循环入口检测</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">while</span> (api_call_count <span style="color:#f92672">&lt;</span> agent<span style="color:#f92672">.</span>max_iterations <span style="color:#f92672">and</span> agent<span style="color:#f92672">.</span>iteration_budget<span style="color:#f92672">.</span>remaining <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>) \
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">or</span> agent<span style="color:#f92672">.</span>_budget_grace_call:
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># ★ 每次循环迭代开始都检查</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> agent<span style="color:#f92672">.</span>_interrupt_requested:
+</span></span><span style="display:flex;"><span>        interrupted <span style="color:#f92672">=</span> <span style="color:#66d9ef">True</span>
+</span></span><span style="display:flex;"><span>        _turn_exit_reason <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;interrupted_by_user&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    api_call_count <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># ... 调用 LLM、执行工具调用、处理结果 ...</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 2. 工具调用结果处理中也检查（约 1569 行）</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> agent<span style="color:#f92672">.</span>_interrupt_requested:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 3. 资源清理前检查（约 2706 行）</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> agent<span style="color:#f92672">.</span>_interrupt_requested:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">break</span>
+</span></span></code></pre></div><h2 id="四api-调用级别的中断最精妙的部分">
+  四、API 调用级别的中断（最精妙的部分）
+  <a class="anchor" href="#%e5%9b%9bapi-%e8%b0%83%e7%94%a8%e7%ba%a7%e5%88%ab%e7%9a%84%e4%b8%ad%e6%96%ad%e6%9c%80%e7%b2%be%e5%a6%99%e7%9a%84%e9%83%a8%e5%88%86">#</a>
+</h2>
+<p>API 调用在 <code>agent/chat_completion_helpers.py</code> 中实现了<strong>可中断的后台线程模式</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">interruptible_api_call</span>(agent, api_kwargs):
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;在后台线程中执行 API 调用，允许主循环检测中断&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    result <span style="color:#f92672">=</span> {<span style="color:#e6db74">&#34;response&#34;</span>: <span style="color:#66d9ef">None</span>, <span style="color:#e6db74">&#34;error&#34;</span>: <span style="color:#66d9ef">None</span>}
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_call</span>():
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;实际 API 调用在子线程中运行&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>            client <span style="color:#f92672">=</span> _set_request_client(create_client(<span style="color:#f92672">...</span>))
+</span></span><span style="display:flex;"><span>            result[<span style="color:#e6db74">&#34;response&#34;</span>] <span style="color:#f92672">=</span> client<span style="color:#f92672">.</span>chat<span style="color:#f92672">.</span>completions<span style="color:#f92672">.</span>create(<span style="color:#f92672">**</span>api_kwargs)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>            result[<span style="color:#e6db74">&#34;error&#34;</span>] <span style="color:#f92672">=</span> e
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># ★ 启动后台线程</span>
+</span></span><span style="display:flex;"><span>    worker <span style="color:#f92672">=</span> threading<span style="color:#f92672">.</span>Thread(target<span style="color:#f92672">=</span>_call)
+</span></span><span style="display:flex;"><span>    worker<span style="color:#f92672">.</span>start()
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># ★ 主线程轮询中断信号</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> worker<span style="color:#f92672">.</span>is_alive():
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> agent<span style="color:#f92672">.</span>_interrupt_requested:
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># 关闭 HTTP 连接，让后台线程的 recv() 收到 EPIPE</span>
+</span></span><span style="display:flex;"><span>            _close_request_client_once(<span style="color:#e6db74">&#34;interrupt_abort&#34;</span>)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>        worker<span style="color:#f92672">.</span>join(timeout<span style="color:#f92672">=</span><span style="color:#ae81ff">0.5</span>)  <span style="color:#75715e"># 每 0.5 秒检查一次</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> result
+</span></span></code></pre></div><p><strong>设计要点</strong>：</p>
+<ul>
+<li>API 调用在独立线程中执行</li>
+<li>主线程每 0.5 秒检查一次 <code>_interrupt_requested</code></li>
+<li>中断时通过关闭 HTTP socket 让后台线程的 <code>recv()</code> 阻塞提前返回</li>
+<li>避免了直接 <code>Thread._stop()</code> 导致的资源泄漏（FD 回收、SSL BIO 写坏等）</li>
+</ul>
+<p>流式调用（<code>interruptible_streaming_api_call</code>）同理，在 SSE 事件循环中也会检查中断信号。</p>
+<h2 id="五工具执行中的中断">
+  五、工具执行中的中断
+  <a class="anchor" href="#%e4%ba%94%e5%b7%a5%e5%85%b7%e6%89%a7%e8%a1%8c%e4%b8%ad%e7%9a%84%e4%b8%ad%e6%96%ad">#</a>
+</h2>
+<p>工具在执行长操作时（如 <code>terminal</code> 后台进程、网络请求），通过 <code>is_interrupted()</code> 主动检测：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 任何工具内部都可以这样检测</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> tools.interrupt <span style="color:#f92672">import</span> is_interrupted
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> is_interrupted():
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> json<span style="color:#f92672">.</span>dumps({<span style="color:#e6db74">&#34;output&#34;</span>: <span style="color:#e6db74">&#34;[interrupted]&#34;</span>, <span style="color:#e6db74">&#34;returncode&#34;</span>: <span style="color:#ae81ff">130</span>})
+</span></span></code></pre></div><h2 id="六触发中断的用户入口">
+  六、触发中断的用户入口
+  <a class="anchor" href="#%e5%85%ad%e8%a7%a6%e5%8f%91%e4%b8%ad%e6%96%ad%e7%9a%84%e7%94%a8%e6%88%b7%e5%85%a5%e5%8f%a3">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>触发方式</th>
+          <th>代码路径</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>CLI 中 Ctrl+C</strong></td>
+          <td><code>cli.py</code> 信号处理器 → <code>agent.interrupt()</code></td>
+          <td>键盘中断</td>
+      </tr>
+      <tr>
+          <td><strong><code>/new</code> 或 <code>/reset</code></strong></td>
+          <td><code>cli.py</code> / <code>gateway/run.py</code></td>
+          <td>新会话会先 interrupt 当前 agent</td>
+      </tr>
+      <tr>
+          <td><strong><code>/stop</code></strong></td>
+          <td>gateway 的 Level-2 handler</td>
+          <td>中止后台进程 + interrupt agent</td>
+      </tr>
+      <tr>
+          <td><strong>Gateway 收到新消息</strong></td>
+          <td><code>gateway/run.py:18617</code></td>
+          <td>用户发来新消息 → interrupt 当前 turn → 处理新消息</td>
+      </tr>
+      <tr>
+          <td><strong>超时自动中断</strong></td>
+          <td><code>gateway/run.py:18858</code></td>
+          <td>超时后自动 interrupt + 清理</td>
+      </tr>
+      <tr>
+          <td><strong><code>delegate_task</code> 子任务</strong></td>
+          <td><code>run_agent.py:2299</code></td>
+          <td>父 agent 中断时传播给所有子 agent</td>
+      </tr>
+  </tbody>
+</table>
+<h2 id="七中断后的处理流程">
+  七、中断后的处理流程
+  <a class="anchor" href="#%e4%b8%83%e4%b8%ad%e6%96%ad%e5%90%8e%e7%9a%84%e5%a4%84%e7%90%86%e6%b5%81%e7%a8%8b">#</a>
+</h2>
+<pre tabindex="0"><code>中断触发
+  ↓
+agent._interrupt_requested = True
+  ↓
+_set_interrupt(True, execution_thread_id)
+  ↓
+传播给所有子 agent
+  ↓
+主循环在下一个检查点 break
+  ↓
+记录 _turn_exit_reason = &#34;interrupted_by_user&#34;
+  ↓
+执行资源清理（VM、浏览器、终端进程）
+  ↓
+clear_interrupt() 清理状态
+  ↓
+如果附带新消息 → 作为下一条 user message 继续
+如果 /new → 开启全新会话
+</code></pre><h2 id="八与普通-steer-的区别">
+  八、与普通 <code>/steer</code> 的区别
+  <a class="anchor" href="#%e5%85%ab%e4%b8%8e%e6%99%ae%e9%80%9a-steer-%e7%9a%84%e5%8c%ba%e5%88%ab">#</a>
+</h2>
+<p>Hermes 还提供了 <code>/steer</code> 命令（注入消息但<strong>不中断</strong>）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">steer</span>(self, text: str):
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;注入消息到下一个 tool result 中，不打断当前执行&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    self<span style="color:#f92672">.</span>_steer_message <span style="color:#f92672">=</span> text
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 注意：这里不调用 interrupt()</span>
+</span></span></code></pre></div><p><code>/steer</code> 适用于“想给建议但不打断当前工具调用”的场景，而 <code>/new</code> 和新消息触发的是<strong>软中断（soft interrupt）</strong>，会优雅地中止当前循环。</p>
+<h2 id="总结">
+  总结
+  <a class="anchor" href="#%e6%80%bb%e7%bb%93">#</a>
+</h2>
+<p>Hermes 的中止机制是一个<strong>线程安全的标志位 + 多检查点轮询 + HTTP 连接优雅关闭</strong>的组合方案，保证了即使 API 调用卡住或工具执行耗时，也能在数秒内安全退出，且不影响其他并发会话。</p>
 </article>
  
       
@@ -4641,7 +4997,19 @@ https://github.com/alex-shpak/hugo-book
   
 <nav id="TableOfContents">
   <ul>
-    <li><a href="#hermes-arch">Hermes Arch</a></li>
+    <li><a href="#hermes-agent-loop-中止机制全解析">Hermes Agent Loop 中止机制全解析</a>
+      <ul>
+        <li><a href="#一核心数据结构中断信号是线程安全的">一、核心数据结构：中断信号是线程安全的</a></li>
+        <li><a href="#二agent-侧的中断接口interrupt-方法">二、Agent 侧的中断接口：<code>interrupt()</code> 方法</a></li>
+        <li><a href="#三主循环中的中断检查点">三、主循环中的中断检查点</a></li>
+        <li><a href="#四api-调用级别的中断最精妙的部分">四、API 调用级别的中断（最精妙的部分）</a></li>
+        <li><a href="#五工具执行中的中断">五、工具执行中的中断</a></li>
+        <li><a href="#六触发中断的用户入口">六、触发中断的用户入口</a></li>
+        <li><a href="#七中断后的处理流程">七、中断后的处理流程</a></li>
+        <li><a href="#八与普通-steer-的区别">八、与普通 <code>/steer</code> 的区别</a></li>
+        <li><a href="#总结">总结</a></li>
+      </ul>
+    </li>
   </ul>
 </nav>
 

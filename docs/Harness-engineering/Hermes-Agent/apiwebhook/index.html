@@ -1,0 +1,5516 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  Hermes Agent 远程接入指南：API Server 与 Webhook
+  #
+
+
+本文档详细介绍如何通过 API Server 和 Webhook 两种方式，让远程应用程序连接到 Hermes Agent。
+
+
+  一、API Server — OpenAI 兼容的 HTTP API
+  #
+
+
+  1.1 概述
+  #
+
+API Server 是 Hermes 提供的 OpenAI 兼容 HTTP 接口。任何支持 OpenAI API 格式的客户端（Open WebUI、LobeChat、LibreChat、自定义程序等）都可以直接对接。
+本质上，它把 Hermes Agent（具备完整工具调用能力）包装成了一个 OpenAI-compatible endpoint。
+
+  1.2 启动方式
+  #
+
+# 1. 配置 API Server
+hermes gateway setup          # 选择 &#34;API Server&#34; 平台
+# 会要求设置：
+#   - 监听端口（默认 8642）
+#   - API Server Key（用于鉴权）
+
+# 2. 前台运行（测试用）
+hermes gateway run
+
+# 3. 安装为后台服务（生产用）
+hermes gateway install
+hermes gateway start
+
+# 4. 检查状态
+hermes gateway status
+配置会写入 ~/.hermes/config.yaml 的 api_server 段。">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes-Agent/apiwebhook/">
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="Hermes Agent 远程接入指南：API Server 与 Webhook # 本文档详细介绍如何通过 API Server 和 Webhook 两种方式，让远程应用程序连接到 Hermes Agent。
+一、API Server — OpenAI 兼容的 HTTP API # 1.1 概述 # API Server 是 Hermes 提供的 OpenAI 兼容 HTTP 接口。任何支持 OpenAI API 格式的客户端（Open WebUI、LobeChat、LibreChat、自定义程序等）都可以直接对接。
+本质上，它把 Hermes Agent（具备完整工具调用能力）包装成了一个 OpenAI-compatible endpoint。
+1.2 启动方式 # # 1. 配置 API Server hermes gateway setup # 选择 &#34;API Server&#34; 平台 # 会要求设置： # - 监听端口（默认 8642） # - API Server Key（用于鉴权） # 2. 前台运行（测试用） hermes gateway run # 3. 安装为后台服务（生产用） hermes gateway install hermes gateway start # 4. 检查状态 hermes gateway status 配置会写入 ~/.hermes/config.yaml 的 api_server 段。">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>Api&amp;webhook | Modern Agent</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes-Agent/apiwebhook/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.00080a67e80af74cc24dbdffd3b4561d5b15059701aa857f24c4d16ce6391cdf.js" integrity="sha256-AAgKZ&#43;gK90zCTb3/07RWHVsVBZcBqoV/JMTRbOY5HN8=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/Hermes-Agent/apiwebhook/index.xml" title="Modern Agent" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall/" class="">Rag Recall</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/" class="">Rag Recall 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cc96aa92b1fe4deb19f2780a910b3a84" class="toggle"  />
+    <label for="section-cc96aa92b1fe4deb19f2780a910b3a84" class="flex justify-between">
+      <a role="button" class="">Dify</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="toggle"  />
+    <label for="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="flex justify-between">
+      <a role="button" class="">产品</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/list/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="toggle"  />
+    <label for="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="flex justify-between">
+      <a role="button" class="">Sandbox</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/opensource/" class="">Opensource</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-42ab09fd6e839492b699ee2fa4656e2f" class="toggle"  />
+    <label for="section-42ab09fd6e839492b699ee2fa4656e2f" class="flex justify-between">
+      <a role="button" class="">SDK</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk-%E5%85%BC%E5%AE%B9%E6%80%A7/" class="">Sdk 兼容性 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk-%E5%85%BC%E5%AE%B9%E6%80%A7-1/" class="">Sdk 兼容性 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f52d73da99d8a76b38639b3169b9c30" class="toggle"  />
+    <label for="section-9f52d73da99d8a76b38639b3169b9c30" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E4%BC%98%E5%8C%96/" class="">Claude Platform 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent2/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent3/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E8%A7%A3%E8%AF%BB/" class="">脑和手的解耦</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E5%8E%9F%E6%96%87/" class="">原文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fa07d823cbbab8a5cb211097d19a8b0f" class="toggle"  />
+    <label for="section-fa07d823cbbab8a5cb211097d19a8b0f" class="flex justify-between">
+      <a role="button" class="">Reflection</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91cb2f81fbf96ec25f68405674241162" class="toggle"  />
+    <label for="section-91cb2f81fbf96ec25f68405674241162" class="flex justify-between">
+      <a role="button" class="">Planning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b95bbb7a37b62a6b524cdc440bea4bea" class="toggle"  />
+    <label for="section-b95bbb7a37b62a6b524cdc440bea4bea" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c6918aab8d4437c8353af1df185685d7" class="toggle"  />
+    <label for="section-c6918aab8d4437c8353af1df185685d7" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4bd94f7e5788f6f6b717b9411d5219d7" class="toggle"  />
+    <label for="section-4bd94f7e5788f6f6b717b9411d5219d7" class="flex justify-between">
+      <a role="button" class="">Hermes</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes1/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes2/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes/" class="">Hermes Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e851bc8bb25b6d3ab16779dd8e31e163" class="toggle"  />
+    <label for="section-e851bc8bb25b6d3ab16779dd8e31e163" class="flex justify-between">
+      <a role="button" class="">managed agents</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming1/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a5f1c9d05f8697fe4344602432ed2c1" class="toggle"  />
+    <label for="section-4a5f1c9d05f8697fe4344602432ed2c1" class="flex justify-between">
+      <a role="button" class="">Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/hindsight/" class="">Hindsight</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking/" class="">Openviking</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27631881d59f460a7e82415eae943524" class="toggle"  />
+    <label for="section-27631881d59f460a7e82415eae943524" class="flex justify-between">
+      <a role="button" class="">Openclaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-867db087ab84641b5d4e3bc021355890" class="toggle"  />
+    <label for="section-867db087ab84641b5d4e3bc021355890" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ca53c095705ebe6e57deb96a02c0d3e3" class="toggle"  />
+    <label for="section-ca53c095705ebe6e57deb96a02c0d3e3" class="flex justify-between">
+      <a role="button" class="">Multi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7f3cbaaa32d67178b923d0e7080ddc58" class="toggle"  />
+    <label for="section-7f3cbaaa32d67178b923d0e7080ddc58" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Kanban/" class="">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7c1e99e2bc0dea50268247820e8feb36" class="toggle"  />
+    <label for="section-7c1e99e2bc0dea50268247820e8feb36" class="flex justify-between">
+      <a role="button" class="">Multi-agent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8aff2d658582dd8082936377ce08c46d" class="toggle"  />
+    <label for="section-8aff2d658582dd8082936377ce08c46d" class="flex justify-between">
+      <a role="button" class="">subagent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/Claude-code/" class="">Claude Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/subagent/" class="">Subagent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-78862664423ffb11f8c168297456fbac" class="toggle"  />
+    <label for="section-78862664423ffb11f8c168297456fbac" class="flex justify-between">
+      <a role="button" class="">Teams *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-Teams/" class="">Claude Code Teams</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-TeamsA1/" class="">Claude Code Teams[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-504cb284e9f6a649d018a049679638f6" class="toggle"  />
+    <label for="section-504cb284e9f6a649d018a049679638f6" class="flex justify-between">
+      <a role="button" class="">Agent Tool</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b80366c67c2d447239312da68cd1ac4c" class="toggle"  />
+    <label for="section-b80366c67c2d447239312da68cd1ac4c" class="flex justify-between">
+      <a role="button" class="">Survey &amp; SFT</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-aa27abb55dc621af66ea631cd4bad469" class="toggle"  />
+    <label for="section-aa27abb55dc621af66ea631cd4bad469" class="flex justify-between">
+      <a role="button" class="">Tool 演进</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/%E6%BC%94%E8%BF%9B/fc&#43;mcp&#43;cli/" class="">Functioncall-&gt;MCP-&gt;cli &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a2630b53c4c4baf384f02ab78ef6519" class="toggle"  />
+    <label for="section-4a2630b53c4c4baf384f02ab78ef6519" class="flex justify-between">
+      <a role="button" class="">tools</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/Tools/claude-searchTool/" class="">Claude toolsearch</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8fd065cbe7dbbad30f0c4e4d0545d6c4" class="toggle"  />
+    <label for="section-8fd065cbe7dbbad30f0c4e4d0545d6c4" class="flex justify-between">
+      <a role="button" class="">MCP *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle" checked />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle"  />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/openclaw-sandbox-security/" class="">Openclaw Sandbox Security</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/" class="">Openclaw Conversation State Management</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/" class="">Openclaw Tool Invocation Flow</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-406a2e1159d423500a23abb9a994a5a3" class="toggle" checked />
+    <label for="section-406a2e1159d423500a23abb9a994a5a3" class="flex justify-between">
+      <a role="button" class="">Hermes Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/apiwebhook/" class="active">Api&amp;webhook</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitctureA1/" class="">Arcitcture[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/interrupt/" class="">Interrupt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/" class="">Skill Envolve</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/permission/" class="">Permission[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-339828cdd4ae109f0b47d6033c8220ec" class="toggle"  />
+    <label for="section-339828cdd4ae109f0b47d6033c8220ec" class="flex justify-between">
+      <a role="button" class="">Coding Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/coding-agent/Pi-Agent/" class="">Pi Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/coding-agent/Tau-Agent/" class="">Tau Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b1ceebdd7e406fc4533519c821a9e4c3" class="toggle"  />
+    <label for="section-b1ceebdd7e406fc4533519c821a9e4c3" class="flex justify-between">
+      <a role="button" class="">Loops engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-01142eb3e9d36b255ac107cb9131d7c2" class="toggle"  />
+    <label for="section-01142eb3e9d36b255ac107cb9131d7c2" class="flex justify-between">
+      <a role="button" class="">goal</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/" class="">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="toggle"  />
+    <label for="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="flex justify-between">
+      <a role="button" class="">loop engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loops/" class="">loops engineering[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loop-engineering1/" class="">Loop Engineering1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b3a0ebe16d532fb38ede799ae1575c3a" class="toggle"  />
+    <label for="section-b3a0ebe16d532fb38ede799ae1575c3a" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/" class="">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/openclaw/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle"  />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering1/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering2/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-compress/" class="">Claude /compact</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/codex-context/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">context engineering[Manus]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/skill/" class="">编写高质量Skill的六大失效模式</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="toggle"  />
+    <label for="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="flex justify-between">
+      <a role="button" class="">AI Native</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeminimax/" class="">AI原生组织实践(MiniMax)</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Claude-tag/" class="">Claude tag</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Ai-nativeali/" class="">AI native与人机协作[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeclaude/" class="">Bottleneck Shift in AI-native Engineering[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Api&amp;webhook</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#hermes-agent-远程接入指南api-server-与-webhook">Hermes Agent 远程接入指南：API Server 与 Webhook</a>
+      <ul>
+        <li><a href="#一api-server--openai-兼容的-http-api">一、API Server — OpenAI 兼容的 HTTP API</a>
+          <ul>
+            <li><a href="#11-概述">1.1 概述</a></li>
+            <li><a href="#12-启动方式">1.2 启动方式</a></li>
+            <li><a href="#13-鉴权">1.3 鉴权</a></li>
+            <li><a href="#14-完整端点列表">1.4 完整端点列表</a></li>
+            <li><a href="#15-使用示例">1.5 使用示例</a></li>
+            <li><a href="#16-关键特性">1.6 关键特性</a></li>
+            <li><a href="#17-对接-open-webui示例">1.7 对接 Open WebUI（示例）</a></li>
+          </ul>
+        </li>
+        <li><a href="#二webhook--事件驱动的-http-回调">二、Webhook — 事件驱动的 HTTP 回调</a>
+          <ul>
+            <li><a href="#21-概述">2.1 概述</a></li>
+            <li><a href="#22-启动方式">2.2 启动方式</a></li>
+            <li><a href="#23-配置格式">2.3 配置格式</a></li>
+            <li><a href="#24-动态路由运行时创建">2.4 动态路由（运行时创建）</a></li>
+            <li><a href="#25-使用示例">2.5 使用示例</a></li>
+            <li><a href="#26-安全特性">2.6 安全特性</a></li>
+            <li><a href="#27-可用的投递目标deliver">2.7 可用的投递目标（deliver）</a></li>
+          </ul>
+        </li>
+        <li><a href="#三api-server-vs-webhook-对比">三、API Server vs Webhook 对比</a></li>
+        <li><a href="#四快速选择指南">四、快速选择指南</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="hermes-agent-远程接入指南api-server-与-webhook">
+  Hermes Agent 远程接入指南：API Server 与 Webhook
+  <a class="anchor" href="#hermes-agent-%e8%bf%9c%e7%a8%8b%e6%8e%a5%e5%85%a5%e6%8c%87%e5%8d%97api-server-%e4%b8%8e-webhook">#</a>
+</h1>
+<blockquote>
+<p>本文档详细介绍如何通过 <strong>API Server</strong> 和 <strong>Webhook</strong> 两种方式，让远程应用程序连接到 Hermes Agent。</p></blockquote>
+<hr>
+<h2 id="一api-server--openai-兼容的-http-api">
+  一、API Server — OpenAI 兼容的 HTTP API
+  <a class="anchor" href="#%e4%b8%80api-server--openai-%e5%85%bc%e5%ae%b9%e7%9a%84-http-api">#</a>
+</h2>
+<h3 id="11-概述">
+  1.1 概述
+  <a class="anchor" href="#11-%e6%a6%82%e8%bf%b0">#</a>
+</h3>
+<p>API Server 是 Hermes 提供的 <strong>OpenAI 兼容 HTTP 接口</strong>。任何支持 OpenAI API 格式的客户端（Open WebUI、LobeChat、LibreChat、自定义程序等）都可以直接对接。</p>
+<p>本质上，它把 Hermes Agent（具备完整工具调用能力）包装成了一个 OpenAI-compatible endpoint。</p>
+<h3 id="12-启动方式">
+  1.2 启动方式
+  <a class="anchor" href="#12-%e5%90%af%e5%8a%a8%e6%96%b9%e5%bc%8f">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 1. 配置 API Server</span>
+</span></span><span style="display:flex;"><span>hermes gateway setup          <span style="color:#75715e"># 选择 &#34;API Server&#34; 平台</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 会要求设置：</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#   - 监听端口（默认 8642）</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#   - API Server Key（用于鉴权）</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 2. 前台运行（测试用）</span>
+</span></span><span style="display:flex;"><span>hermes gateway run
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 3. 安装为后台服务（生产用）</span>
+</span></span><span style="display:flex;"><span>hermes gateway install
+</span></span><span style="display:flex;"><span>hermes gateway start
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 4. 检查状态</span>
+</span></span><span style="display:flex;"><span>hermes gateway status
+</span></span></code></pre></div><p>配置会写入 <code>~/.hermes/config.yaml</code> 的 <code>api_server</code> 段。</p>
+<h3 id="13-鉴权">
+  1.3 鉴权
+  <a class="anchor" href="#13-%e9%89%b4%e6%9d%83">#</a>
+</h3>
+<p>所有 API 请求需要在 Header 中携带 API Key：</p>
+<pre tabindex="0"><code>Authorization: Bearer &lt;API_SERVER_KEY&gt;
+</code></pre><p>API Key 在配置时设定，保存在 <code>~/.hermes/.env</code> 或 <code>config.yaml</code> 中。</p>
+<h3 id="14-完整端点列表">
+  1.4 完整端点列表
+  <a class="anchor" href="#14-%e5%ae%8c%e6%95%b4%e7%ab%af%e7%82%b9%e5%88%97%e8%a1%a8">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>方法</th>
+          <th>端点</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>POST</code></td>
+          <td><code>/v1/chat/completions</code></td>
+          <td>OpenAI 对话接口（支持 tool calling）</td>
+      </tr>
+      <tr>
+          <td><code>POST</code></td>
+          <td><code>/v1/responses</code></td>
+          <td>OpenAI Responses API 格式（有状态）</td>
+      </tr>
+      <tr>
+          <td><code>GET</code></td>
+          <td><code>/v1/responses/{id}</code></td>
+          <td>获取已存储的响应</td>
+      </tr>
+      <tr>
+          <td><code>DELETE</code></td>
+          <td><code>/v1/responses/{id}</code></td>
+          <td>删除已存储的响应</td>
+      </tr>
+      <tr>
+          <td><code>GET</code></td>
+          <td><code>/v1/models</code></td>
+          <td>列出可用模型</td>
+      </tr>
+      <tr>
+          <td><code>GET</code></td>
+          <td><code>/v1/capabilities</code></td>
+          <td>机器可读的 API 能力描述</td>
+      </tr>
+      <tr>
+          <td><code>GET</code></td>
+          <td><code>/api/sessions</code></td>
+          <td>列出所有会话</td>
+      </tr>
+      <tr>
+          <td><code>POST</code></td>
+          <td><code>/api/sessions</code></td>
+          <td>创建空会话</td>
+      </tr>
+      <tr>
+          <td><code>GET/PATCH/DELETE</code></td>
+          <td><code>/api/sessions/{id}</code></td>
+          <td>读取/更新/删除会话</td>
+      </tr>
+      <tr>
+          <td><code>GET</code></td>
+          <td><code>/api/sessions/{id}/messages</code></td>
+          <td>读取会话消息历史</td>
+      </tr>
+      <tr>
+          <td><code>POST</code></td>
+          <td><code>/api/sessions/{id}/fork</code></td>
+          <td>分支会话</td>
+      </tr>
+      <tr>
+          <td><code>POST</code></td>
+          <td><code>/api/sessions/{id}/chat</code></td>
+          <td>向会话发送消息（普通）</td>
+      </tr>
+      <tr>
+          <td><code>POST</code></td>
+          <td><code>/api/sessions/{id}/chat/stream</code></td>
+          <td>向会话发送消息（流式）</td>
+      </tr>
+      <tr>
+          <td><code>POST</code></td>
+          <td><code>/v1/runs</code></td>
+          <td>启动一个异步运行（立即返回 run_id）</td>
+      </tr>
+      <tr>
+          <td><code>GET</code></td>
+          <td><code>/v1/runs/{id}</code></td>
+          <td>查询运行状态</td>
+      </tr>
+      <tr>
+          <td><code>GET</code></td>
+          <td><code>/v1/runs/{id}/events</code></td>
+          <td>SSE 流式获取结构化事件</td>
+      </tr>
+      <tr>
+          <td><code>POST</code></td>
+          <td><code>/v1/runs/{id}/approval</code></td>
+          <td>处理待审批的命令</td>
+      </tr>
+      <tr>
+          <td><code>POST</code></td>
+          <td><code>/v1/runs/{id}/stop</code></td>
+          <td>中断正在运行的 Agent</td>
+      </tr>
+      <tr>
+          <td><code>GET</code></td>
+          <td><code>/health</code></td>
+          <td>健康检查</td>
+      </tr>
+      <tr>
+          <td><code>GET</code></td>
+          <td><code>/health/detailed</code></td>
+          <td>详细状态（用于仪表盘）</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="15-使用示例">
+  1.5 使用示例
+  <a class="anchor" href="#15-%e4%bd%bf%e7%94%a8%e7%a4%ba%e4%be%8b">#</a>
+</h3>
+<h4 id="示例-1curl-调用聊天openai-兼容格式">
+  示例 1：curl 调用聊天（OpenAI 兼容格式）
+  <a class="anchor" href="#%e7%a4%ba%e4%be%8b-1curl-%e8%b0%83%e7%94%a8%e8%81%8a%e5%a4%a9openai-%e5%85%bc%e5%ae%b9%e6%a0%bc%e5%bc%8f">#</a>
+</h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>curl -X POST http://localhost:8642/v1/chat/completions <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Authorization: Bearer YOUR_API_KEY&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -d <span style="color:#e6db74">&#39;{
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;model&#34;: &#34;hermes-agent&#34;,
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;messages&#34;: [
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">      {&#34;role&#34;: &#34;user&#34;, &#34;content&#34;: &#34;帮我分析服务器上最近10条Nginx错误日志&#34;}
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    ],
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;stream&#34;: false
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  }&#39;</span>
+</span></span></code></pre></div><h4 id="示例-2保持会话连续性">
+  示例 2：保持会话连续性
+  <a class="anchor" href="#%e7%a4%ba%e4%be%8b-2%e4%bf%9d%e6%8c%81%e4%bc%9a%e8%af%9d%e8%bf%9e%e7%bb%ad%e6%80%a7">#</a>
+</h4>
+<p>通过 <code>X-Hermes-Session-Id</code> 头保持同一会话上下文：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 第一次请求</span>
+</span></span><span style="display:flex;"><span>curl -X POST http://localhost:8642/v1/chat/completions <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Authorization: Bearer YOUR_API_KEY&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;X-Hermes-Session-Id: my-project-001&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -d <span style="color:#e6db74">&#39;{
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;model&#34;: &#34;hermes-agent&#34;,
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;messages&#34;: [
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">      {&#34;role&#34;: &#34;user&#34;, &#34;content&#34;: &#34;检查 /var/log 目录的磁盘使用情况&#34;}
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    ]
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  }&#39;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 后续请求 — 同一会话，保持上下文</span>
+</span></span><span style="display:flex;"><span>curl -X POST http://localhost:8642/v1/chat/completions <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Authorization: Bearer YOUR_API_KEY&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;X-Hermes-Session-Id: my-project-001&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -d <span style="color:#e6db74">&#39;{
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;model&#34;: &#34;hermes-agent&#34;,
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;messages&#34;: [
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">      {&#34;role&#34;: &#34;user&#34;, &#34;content&#34;: &#34;基于上面的结果，清理最占空间的目录&#34;}
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    ]
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  }&#39;</span>
+</span></span></code></pre></div><h4 id="示例-3python-客户端使用-openai-sdk">
+  示例 3：Python 客户端（使用 OpenAI SDK）
+  <a class="anchor" href="#%e7%a4%ba%e4%be%8b-3python-%e5%ae%a2%e6%88%b7%e7%ab%af%e4%bd%bf%e7%94%a8-openai-sdk">#</a>
+</h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> openai <span style="color:#f92672">import</span> OpenAI
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>client <span style="color:#f92672">=</span> OpenAI(
+</span></span><span style="display:flex;"><span>    base_url<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;http://localhost:8642/v1&#34;</span>,
+</span></span><span style="display:flex;"><span>    api_key<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;YOUR_API_KEY&#34;</span>
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>response <span style="color:#f92672">=</span> client<span style="color:#f92672">.</span>chat<span style="color:#f92672">.</span>completions<span style="color:#f92672">.</span>create(
+</span></span><span style="display:flex;"><span>    model<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;hermes-agent&#34;</span>,
+</span></span><span style="display:flex;"><span>    messages<span style="color:#f92672">=</span>[{<span style="color:#e6db74">&#34;role&#34;</span>: <span style="color:#e6db74">&#34;user&#34;</span>, <span style="color:#e6db74">&#34;content&#34;</span>: <span style="color:#e6db74">&#34;列出当前系统运行的所有进程&#34;</span>}],
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>print(response<span style="color:#f92672">.</span>choices[<span style="color:#ae81ff">0</span>]<span style="color:#f92672">.</span>message<span style="color:#f92672">.</span>content)
+</span></span></code></pre></div><h4 id="示例-4异步-run适合长时间任务">
+  示例 4：异步 Run（适合长时间任务）
+  <a class="anchor" href="#%e7%a4%ba%e4%be%8b-4%e5%bc%82%e6%ad%a5-run%e9%80%82%e5%90%88%e9%95%bf%e6%97%b6%e9%97%b4%e4%bb%bb%e5%8a%a1">#</a>
+</h4>
+<p>Hermes Agent 可能执行多步工具调用（几分钟），使用 Run API 避免 HTTP 超时：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 启动运行 — 立即返回 run_id</span>
+</span></span><span style="display:flex;"><span>curl -X POST http://localhost:8642/v1/runs <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Authorization: Bearer YOUR_API_KEY&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -d <span style="color:#e6db74">&#39;{
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;message&#34;: &#34;分析项目代码库，生成架构报告保存到 ~/report.md&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  }&#39;</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 返回: {&#34;run_id&#34;: &#34;abc123&#34;, &#34;status&#34;: &#34;running&#34;}</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 轮询状态</span>
+</span></span><span style="display:flex;"><span>curl http://localhost:8642/v1/runs/abc123 <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Authorization: Bearer YOUR_API_KEY&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 返回: {&#34;run_id&#34;: &#34;abc123&#34;, &#34;status&#34;: &#34;completed&#34;, &#34;response&#34;: &#34;...&#34;}</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 或通过 SSE 实时流式获取事件</span>
+</span></span><span style="display:flex;"><span>curl http://localhost:8642/v1/runs/abc123/events <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Authorization: Bearer YOUR_API_KEY&#34;</span>
+</span></span></code></pre></div><h4 id="示例-5处理命令审批">
+  示例 5：处理命令审批
+  <a class="anchor" href="#%e7%a4%ba%e4%be%8b-5%e5%a4%84%e7%90%86%e5%91%bd%e4%bb%a4%e5%ae%a1%e6%89%b9">#</a>
+</h4>
+<p>当 Agent 需要执行危险命令（如 <code>rm -rf</code>）时，会进入审批状态：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 查看待审批的命令</span>
+</span></span><span style="display:flex;"><span>curl http://localhost:8642/v1/runs/abc123 <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Authorization: Bearer YOUR_API_KEY&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 返回: {&#34;status&#34;: &#34;pending_approval&#34;, &#34;approval_request&#34;: &#34;...&#34;}</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 批准</span>
+</span></span><span style="display:flex;"><span>curl -X POST http://localhost:8642/v1/runs/abc123/approval <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Authorization: Bearer YOUR_API_KEY&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -d <span style="color:#e6db74">&#39;{&#34;action&#34;: &#34;approve&#34;}&#39;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 拒绝</span>
+</span></span><span style="display:flex;"><span>curl -X POST http://localhost:8642/v1/runs/abc123/approval <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Authorization: Bearer YOUR_API_KEY&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -d <span style="color:#e6db74">&#39;{&#34;action&#34;: &#34;deny&#34;}&#39;</span>
+</span></span></code></pre></div><h3 id="16-关键特性">
+  1.6 关键特性
+  <a class="anchor" href="#16-%e5%85%b3%e9%94%ae%e7%89%b9%e6%80%a7">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>特性</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Tool Calling</strong></td>
+          <td>完整支持，Agent 可以调用终端、文件、搜索等工具</td>
+      </tr>
+      <tr>
+          <td><strong>流式输出</strong></td>
+          <td>支持 SSE 流式响应（<code>stream: true</code>）</td>
+      </tr>
+      <tr>
+          <td><strong>会话持久化</strong></td>
+          <td>通过 <code>X-Hermes-Session-Id</code> 保持上下文</td>
+      </tr>
+      <tr>
+          <td><strong>多模态</strong></td>
+          <td>支持图片输入（image_url / data URI）</td>
+      </tr>
+      <tr>
+          <td><strong>异步 Run</strong></td>
+          <td>长时间任务不阻塞 HTTP 连接</td>
+      </tr>
+      <tr>
+          <td><strong>命令审批</strong></td>
+          <td>远程审批/拒绝 Agent 的危险操作</td>
+      </tr>
+      <tr>
+          <td><strong>前端兼容</strong></td>
+          <td>任何 OpenAI 兼容 UI 可直接对接</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="17-对接-open-webui示例">
+  1.7 对接 Open WebUI（示例）
+  <a class="anchor" href="#17-%e5%af%b9%e6%8e%a5-open-webui%e7%a4%ba%e4%be%8b">#</a>
+</h3>
+<ol>
+<li>启动 Hermes API Server</li>
+<li>在 Open WebUI 中添加连接：
+<ul>
+<li>URL: <code>http://YOUR_SERVER_IP:8642/v1</code></li>
+<li>API Key: <code>YOUR_API_KEY</code></li>
+</ul>
+</li>
+<li>选择模型 <code>hermes-agent</code></li>
+<li>即可在 Web 界面中与 Hermes 交互</li>
+</ol>
+<hr>
+<h2 id="二webhook--事件驱动的-http-回调">
+  二、Webhook — 事件驱动的 HTTP 回调
+  <a class="anchor" href="#%e4%ba%8cwebhook--%e4%ba%8b%e4%bb%b6%e9%a9%b1%e5%8a%a8%e7%9a%84-http-%e5%9b%9e%e8%b0%83">#</a>
+</h2>
+<h3 id="21-概述">
+  2.1 概述
+  <a class="anchor" href="#21-%e6%a6%82%e8%bf%b0">#</a>
+</h3>
+<p>Webhook 是 <strong>事件驱动</strong> 的接入方式。外部系统通过 HTTP POST 触发 Hermes 执行，Hermes 处理后可将结果回传到指定平台（钉钉、Telegram、GitHub Issue 评论等），或直接返回 HTTP 响应。</p>
+<p><strong>适用场景：</strong></p>
+<ul>
+<li>CI/CD 流水线触发代码审查</li>
+<li>监控告警自动分析日志</li>
+<li>GitHub/GitLab 事件自动响应</li>
+<li>定时任务/外部系统通知触发</li>
+<li>多 Agent 之间互相通信</li>
+</ul>
+<h3 id="22-启动方式">
+  2.2 启动方式
+  <a class="anchor" href="#22-%e5%90%af%e5%8a%a8%e6%96%b9%e5%bc%8f">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 1. 配置 Webhook</span>
+</span></span><span style="display:flex;"><span>hermes gateway setup          <span style="color:#75715e"># 选择 &#34;Webhook&#34; 平台</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 会要求设置：</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#   - 监听端口（默认 8644）</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#   - HMAC Secret（签名验证密钥）</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 2. 运行</span>
+</span></span><span style="display:flex;"><span>hermes gateway run            <span style="color:#75715e"># 前台</span>
+</span></span><span style="display:flex;"><span>hermes gateway install        <span style="color:#75715e"># 后台服务</span>
+</span></span><span style="display:flex;"><span>hermes gateway start
+</span></span></code></pre></div><h3 id="23-配置格式">
+  2.3 配置格式
+  <a class="anchor" href="#23-%e9%85%8d%e7%bd%ae%e6%a0%bc%e5%bc%8f">#</a>
+</h3>
+<p>Webhook 路由配置在 <code>~/.hermes/config.yaml</code> 中：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">webhook</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">host</span>: <span style="color:#e6db74">&#34;0.0.0.0&#34;</span>        <span style="color:#75715e"># 监听地址（0.0.0.0 = 公开，127.0.0.1 = 仅本地）</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">port</span>: <span style="color:#ae81ff">8644</span>              <span style="color:#75715e"># 监听端口</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">secret</span>: <span style="color:#e6db74">&#34;YOUR_SECRET&#34;</span>   <span style="color:#75715e"># 全局 HMAC 密钥（推荐）</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">rate_limit</span>: <span style="color:#ae81ff">30</span>          <span style="color:#75715e"># 每分钟最大请求数</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">max_body_bytes</span>: <span style="color:#ae81ff">1048576</span> <span style="color:#75715e"># 请求体大小限制（1MB）</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">routes</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">ci-review</span>:            <span style="color:#75715e"># 路由名称</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">events</span>: [<span style="color:#e6db74">&#34;push&#34;</span>, <span style="color:#e6db74">&#34;pull_request&#34;</span>]  <span style="color:#75715e"># 接受的事件类型（可选）</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">secret</span>: <span style="color:#e6db74">&#34;CI_SECRET&#34;</span>               <span style="color:#75715e"># 路由级 HMAC 密钥</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">prompt</span>: <span style="color:#e6db74">&#34;收到CI事件: {{payload}}，请审查代码变更&#34;</span>  <span style="color:#75715e"># 提示词模板</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">skills</span>: [<span style="color:#e6db74">&#34;github-code-review&#34;</span>]    <span style="color:#75715e"># 可选：预加载技能</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">deliver</span>: <span style="color:#e6db74">&#34;dingtalk&#34;</span>               <span style="color:#75715e"># 结果投递目标</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">deliver_extra</span>:                    <span style="color:#75715e"># 投递额外参数</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">chat_id</span>: <span style="color:#e6db74">&#34;YOUR_CHAT_ID&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">log-analysis</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">events</span>: []
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">secret</span>: <span style="color:#e6db74">&#34;LOG_SECRET&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">prompt</span>: <span style="color:#e6db74">&#34;分析以下日志并给出建议: {{payload}}&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">deliver</span>: <span style="color:#e6db74">&#34;log&#34;</span>                    <span style="color:#75715e"># 仅记录日志，不投递</span>
+</span></span></code></pre></div><h3 id="24-动态路由运行时创建">
+  2.4 动态路由（运行时创建）
+  <a class="anchor" href="#24-%e5%8a%a8%e6%80%81%e8%b7%af%e7%94%b1%e8%bf%90%e8%a1%8c%e6%97%b6%e5%88%9b%e5%bb%ba">#</a>
+</h3>
+<p>除了在 config.yaml 中静态配置，还可以通过命令动态创建路由：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 创建一个 webhook 订阅</span>
+</span></span><span style="display:flex;"><span>hermes webhook subscribe my-service
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 会生成 /webhooks/my-service 端点</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 查看所有订阅</span>
+</span></span><span style="display:flex;"><span>hermes webhook list
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 测试</span>
+</span></span><span style="display:flex;"><span>hermes webhook test my-service
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 删除</span>
+</span></span><span style="display:flex;"><span>hermes webhook remove my-service
+</span></span></code></pre></div><h3 id="25-使用示例">
+  2.5 使用示例
+  <a class="anchor" href="#25-%e4%bd%bf%e7%94%a8%e7%a4%ba%e4%be%8b">#</a>
+</h3>
+<h4 id="示例-1curl-触发-webhook">
+  示例 1：curl 触发 Webhook
+  <a class="anchor" href="#%e7%a4%ba%e4%be%8b-1curl-%e8%a7%a6%e5%8f%91-webhook">#</a>
+</h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>curl -X POST http://YOUR_SERVER:8644/webhooks/ci-review <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -H <span style="color:#e6db74">&#34;X-Hub-Signature-256: sha256=&lt;HMAC_SIGNATURE&gt;&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  -d <span style="color:#e6db74">&#39;{
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;action&#34;: &#34;opened&#34;,
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;pull_request&#34;: {
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">      &#34;number&#34;: 42,
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">      &#34;title&#34;: &#34;Fix authentication bug&#34;,
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">      &#34;head&#34;: {&#34;sha&#34;: &#34;abc123&#34;}
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    }
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  }&#39;</span>
+</span></span></code></pre></div><p><strong>签名计算（以 GitHub 为例）：</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># Python 示例</span>
+</span></span><span style="display:flex;"><span>import hmac, hashlib, json
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>secret <span style="color:#f92672">=</span> b<span style="color:#e6db74">&#34;CI_SECRET&#34;</span>
+</span></span><span style="display:flex;"><span>body <span style="color:#f92672">=</span> json.dumps<span style="color:#f92672">(</span>payload<span style="color:#f92672">)</span>.encode<span style="color:#f92672">()</span>
+</span></span><span style="display:flex;"><span>signature <span style="color:#f92672">=</span> hmac.new<span style="color:#f92672">(</span>secret, body, hashlib.sha256<span style="color:#f92672">)</span>.hexdigest<span style="color:#f92672">()</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Header: X-Hub-Signature-256: sha256=&lt;signature&gt;</span>
+</span></span></code></pre></div><p><strong>测试模式（跳过签名验证）：</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">routes</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">test-route</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">secret</span>: <span style="color:#e6db74">&#34;INSECURE_NO_AUTH&#34;</span>    <span style="color:#75715e"># 仅用于本地测试！</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">prompt</span>: <span style="color:#e6db74">&#34;测试消息: {{payload}}&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">deliver</span>: <span style="color:#e6db74">&#34;log&#34;</span>
+</span></span></code></pre></div><blockquote>
+<p>⚠️ <code>INSECURE_NO_AUTH</code> 仅在 <code>host: &quot;127.0.0.1&quot;</code> 时允许，绑定 <code>0.0.0.0</code> 会被拒绝启动。</p></blockquote>
+<h4 id="示例-2github-webhook-自动代码审查">
+  示例 2：GitHub Webhook 自动代码审查
+  <a class="anchor" href="#%e7%a4%ba%e4%be%8b-2github-webhook-%e8%87%aa%e5%8a%a8%e4%bb%a3%e7%a0%81%e5%ae%a1%e6%9f%a5">#</a>
+</h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">webhook</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">routes</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">github-pr</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">secret</span>: <span style="color:#e6db74">&#34;GITHUB_WEBHOOK_SECRET&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">prompt</span>: |<span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        GitHub PR 事件收到：
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        仓库: {{payload.repository.full_name}}
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        PR #{{payload.pull_request.number}}: {{payload.pull_request.title}}
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        请审查此 PR 的代码变更，重点关注安全性和性能问题。</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">skills</span>: [<span style="color:#e6db74">&#34;github-code-review&#34;</span>]
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">deliver</span>: <span style="color:#e6db74">&#34;github_comment&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">deliver_extra</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">repo</span>: <span style="color:#e6db74">&#34;{{payload.repository.full_name}}&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">pr_number</span>: <span style="color:#e6db74">&#34;{{payload.pull_request.number}}&#34;</span>
+</span></span></code></pre></div><p>当 GitHub 推送 PR 事件到 <code>http://YOUR_SERVER:8644/webhooks/github-pr</code> 时，Hermes 会自动审查代码并将评论发布到 PR 上。</p>
+<h4 id="示例-3监控告警--自动分析--推送到钉钉">
+  示例 3：监控告警 → 自动分析 → 推送到钉钉
+  <a class="anchor" href="#%e7%a4%ba%e4%be%8b-3%e7%9b%91%e6%8e%a7%e5%91%8a%e8%ad%a6--%e8%87%aa%e5%8a%a8%e5%88%86%e6%9e%90--%e6%8e%a8%e9%80%81%e5%88%b0%e9%92%89%e9%92%89">#</a>
+</h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">webhook</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">routes</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">alert-handler</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">secret</span>: <span style="color:#e6db74">&#34;ALERT_SECRET&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">prompt</span>: |<span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        收到监控告警，请分析原因并给出修复建议：
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        {{payload}}</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">deliver</span>: <span style="color:#e6db74">&#34;dingtalk&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">deliver_extra</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">chat_id</span>: <span style="color:#e6db74">&#34;YOUR_DINGTALK_CHAT_ID&#34;</span>
+</span></span></code></pre></div><p>远程监控系统 POST 告警到 Webhook → Hermes 分析 → 结果推送到钉钉群。</p>
+<h4 id="示例-4纯通知模式不经过-agent零-llm-成本">
+  示例 4：纯通知模式（不经过 Agent，零 LLM 成本）
+  <a class="anchor" href="#%e7%a4%ba%e4%be%8b-4%e7%ba%af%e9%80%9a%e7%9f%a5%e6%a8%a1%e5%bc%8f%e4%b8%8d%e7%bb%8f%e8%bf%87-agent%e9%9b%b6-llm-%e6%88%90%e6%9c%ac">#</a>
+</h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">webhook</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">routes</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">deploy-notify</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">secret</span>: <span style="color:#e6db74">&#34;DEPLOY_SECRET&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">prompt</span>: <span style="color:#e6db74">&#34;🚀 部署完成：{{payload.environment}} - {{payload.status}}&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">deliver_only</span>: <span style="color:#66d9ef">true</span>          <span style="color:#75715e"># 跳过 Agent，直接投递</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">deliver</span>: <span style="color:#e6db74">&#34;dingtalk&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">deliver_extra</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">chat_id</span>: <span style="color:#e6db74">&#34;YOUR_DINGTALK_CHAT_ID&#34;</span>
+</span></span></code></pre></div><p><code>deliver_only: true</code> 时，渲染后的 prompt 直接作为消息投递，<strong>不经过 LLM</strong>，适合快速通知。</p>
+<h3 id="26-安全特性">
+  2.6 安全特性
+  <a class="anchor" href="#26-%e5%ae%89%e5%85%a8%e7%89%b9%e6%80%a7">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>安全机制</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>HMAC 签名</strong></td>
+          <td>每个路由必须配置 secret，验证请求来源</td>
+      </tr>
+      <tr>
+          <td><strong>速率限制</strong></td>
+          <td>每路由固定窗口限流（默认 30 次/分钟）</td>
+      </tr>
+      <tr>
+          <td><strong>幂等性缓存</strong></td>
+          <td>防止 webhook 重试导致重复执行（TTL 1小时）</td>
+      </tr>
+      <tr>
+          <td><strong>请求体大小限制</strong></td>
+          <td>默认 1MB，防止大请求攻击</td>
+      </tr>
+      <tr>
+          <td><strong>启动时验证</strong></td>
+          <td>无 secret 的路由会拒绝启动</td>
+      </tr>
+      <tr>
+          <td><strong>INSECURE_NO_AUTH 限制</strong></td>
+          <td>仅在 loopback 地址上允许</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="27-可用的投递目标deliver">
+  2.7 可用的投递目标（deliver）
+  <a class="anchor" href="#27-%e5%8f%af%e7%94%a8%e7%9a%84%e6%8a%95%e9%80%92%e7%9b%ae%e6%a0%87deliver">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>投递目标</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>log</code></td>
+          <td>仅记录到日志（默认）</td>
+      </tr>
+      <tr>
+          <td><code>dingtalk</code></td>
+          <td>推送到钉钉</td>
+      </tr>
+      <tr>
+          <td><code>telegram</code></td>
+          <td>推送到 Telegram</td>
+      </tr>
+      <tr>
+          <td><code>discord</code></td>
+          <td>推送到 Discord</td>
+      </tr>
+      <tr>
+          <td><code>slack</code></td>
+          <td>推送到 Slack</td>
+      </tr>
+      <tr>
+          <td><code>github_comment</code></td>
+          <td>发布为 GitHub PR/Issue 评论</td>
+      </tr>
+      <tr>
+          <td><code>email</code></td>
+          <td>发送邮件</td>
+      </tr>
+      <tr>
+          <td>其他 IM 平台</td>
+          <td>所有已配置的 Hermes 平台</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="三api-server-vs-webhook-对比">
+  三、API Server vs Webhook 对比
+  <a class="anchor" href="#%e4%b8%89api-server-vs-webhook-%e5%af%b9%e6%af%94">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>API Server</th>
+          <th>Webhook</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>通信模式</strong></td>
+          <td>请求-响应（同步/异步）</td>
+          <td>事件驱动（POST 触发）</td>
+      </tr>
+      <tr>
+          <td><strong>协议兼容</strong></td>
+          <td>OpenAI API 格式</td>
+          <td>自定义 JSON POST</td>
+      </tr>
+      <tr>
+          <td><strong>会话管理</strong></td>
+          <td>支持（Session ID）</td>
+          <td>每次独立触发</td>
+      </tr>
+      <tr>
+          <td><strong>流式输出</strong></td>
+          <td>✅ SSE 流式</td>
+          <td>❌ 结果投递到其他平台</td>
+      </tr>
+      <tr>
+          <td><strong>长时间任务</strong></td>
+          <td>✅ Run API（异步）</td>
+          <td>✅ 后台执行，完成后投递</td>
+      </tr>
+      <tr>
+          <td><strong>命令审批</strong></td>
+          <td>✅ 远程审批</td>
+          <td>❌ 需配置 approvals.mode</td>
+      </tr>
+      <tr>
+          <td><strong>签名验证</strong></td>
+          <td>Bearer Token</td>
+          <td>HMAC Signature</td>
+      </tr>
+      <tr>
+          <td><strong>适合场景</strong></td>
+          <td>聊天界面、API 集成</td>
+          <td>事件触发、自动化流水线</td>
+      </tr>
+      <tr>
+          <td><strong>默认端口</strong></td>
+          <td>8642</td>
+          <td>8644</td>
+      </tr>
+      <tr>
+          <td><strong>LLM 成本</strong></td>
+          <td>每次调用都有</td>
+          <td>deliver_only 模式可零成本</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="四快速选择指南">
+  四、快速选择指南
+  <a class="anchor" href="#%e5%9b%9b%e5%bf%ab%e9%80%9f%e9%80%89%e6%8b%a9%e6%8c%87%e5%8d%97">#</a>
+</h2>
+<p><strong>选 API Server 如果：</strong></p>
+<ul>
+<li>你要构建聊天界面（Web/App）</li>
+<li>需要会话上下文保持</li>
+<li>需要流式输出</li>
+<li>你的客户端已经支持 OpenAI API 格式</li>
+<li>需要远程审批 Agent 的命令执行</li>
+</ul>
+<p><strong>选 Webhook 如果：</strong></p>
+<ul>
+<li>你的应用是事件驱动的（CI/CD、监控、通知）</li>
+<li>需要第三方服务（GitHub、JIRA、Stripe）触发 Agent</li>
+<li>需要结果自动投递到钉钉/Telegram 等 IM</li>
+<li>需要零 LLM 成本的快速通知（deliver_only）</li>
+<li>多个 Agent 之间互相通信</li>
+</ul>
+<hr>
+<p><em>生成时间：2026-07-12 | Hermes Agent 版本：基于当前安装版本</em></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#hermes-agent-远程接入指南api-server-与-webhook">Hermes Agent 远程接入指南：API Server 与 Webhook</a>
+      <ul>
+        <li><a href="#一api-server--openai-兼容的-http-api">一、API Server — OpenAI 兼容的 HTTP API</a>
+          <ul>
+            <li><a href="#11-概述">1.1 概述</a></li>
+            <li><a href="#12-启动方式">1.2 启动方式</a></li>
+            <li><a href="#13-鉴权">1.3 鉴权</a></li>
+            <li><a href="#14-完整端点列表">1.4 完整端点列表</a></li>
+            <li><a href="#15-使用示例">1.5 使用示例</a></li>
+            <li><a href="#16-关键特性">1.6 关键特性</a></li>
+            <li><a href="#17-对接-open-webui示例">1.7 对接 Open WebUI（示例）</a></li>
+          </ul>
+        </li>
+        <li><a href="#二webhook--事件驱动的-http-回调">二、Webhook — 事件驱动的 HTTP 回调</a>
+          <ul>
+            <li><a href="#21-概述">2.1 概述</a></li>
+            <li><a href="#22-启动方式">2.2 启动方式</a></li>
+            <li><a href="#23-配置格式">2.3 配置格式</a></li>
+            <li><a href="#24-动态路由运行时创建">2.4 动态路由（运行时创建）</a></li>
+            <li><a href="#25-使用示例">2.5 使用示例</a></li>
+            <li><a href="#26-安全特性">2.6 安全特性</a></li>
+            <li><a href="#27-可用的投递目标deliver">2.7 可用的投递目标（deliver）</a></li>
+          </ul>
+        </li>
+        <li><a href="#三api-server-vs-webhook-对比">三、API Server vs Webhook 对比</a></li>
+        <li><a href="#四快速选择指南">四、快速选择指南</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
