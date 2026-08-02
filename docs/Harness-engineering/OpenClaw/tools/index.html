@@ -63,7 +63,7 @@ OpenClaw 的工具调用系统是其 Agent 能力的核心。模型输出 tool_c
 OpenClaw 的工具来自 4 个渠道：">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
-<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/">
   <meta property="og:site_name" content="Modern Agent">
   <meta property="og:title" content="Modern Agent">
   <meta property="og:description" content="OpenClaw 工具调用全流程：从模型输出到结果回传的源码级拆解 # 基于 OpenClaw v2026.4.21 源码深度分析 作者：小伟 | 2026-04-30
@@ -71,15 +71,15 @@ OpenClaw 的工具来自 4 个渠道：">
 本文将从源码级别完整拆解这一流程。
 1. 总览：工具调用架构图 # ┌─────────────────────────────────────────────────────────────────────┐ │ OpenClaw Gateway │ │ │ │ ┌─────────┐ ┌──────────────┐ ┌──────────────────────────┐ │ │ │ Model │───▶│ Tool Policy │───▶│ Tool Definition │ │ │ │ Stream │ │ Pipeline │ │ Builder │ │ │ └─────────┘ └──────────────┘ └──────────────────────────┘ │ │ │ │ │ ▼ │ │ ┌─────────────────────────────────────────────────────────────┐ │ │ │ Agent Loop (selection-DmkxuIQC.js) │ │ │ │ │ │ │ │ 1. 接收 assistant tool_calls │ │ │ │ 2. buildEmbeddedAttemptToolRunContext() 构建执行上下文 │ │ │ │ 3. before_tool_call 钩子（loop 检测、诊断） │ │ │ │ 4. dispatchToolExecution() 分类分发执行 │ │ │ │ 5. sanitizeToolResult() 结果清洗 &#43; truncation │ │ │ │ 6. after_tool_call 钩子 │ │ │ │ 7. 写入 session transcript (JSONL) │ │ │ │ 8. 触发下一轮 LLM 调用 │ │ │ └─────────────────────────────────────────────────────────────┘ │ │ │ │ │ ▼ │ │ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │ │ │ exec │ │ read │ │ message │ │ channel tools │ │ │ │ process │ │ write │ │ send │ │ MCP / plugin │ │ │ └──────────┘ └──────────┘ └──────────┘ └──────────────────┘ │ │ │ └─────────────────────────────────────────────────────────────────────┘ 2. 工具发现与注册 # 2.1 工具来源分类 # OpenClaw 的工具来自 4 个渠道：">
   <meta property="og:locale" content="en">
-  <meta property="og:type" content="article">
-    <meta property="article:section" content="docs">
-<title>Openclaw Tool Invocation Flow | Modern Agent</title>
+  <meta property="og:type" content="website">
+<title>Tools | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
-<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.00080a67e80af74cc24dbdffd3b4561d5b15059701aa857f24c4d16ce6391cdf.js" integrity="sha256-AAgKZ&#43;gK90zCTb3/07RWHVsVBZcBqoV/JMTRbOY5HN8=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.f20540581441b095df41f9c678bfb7b2833a70df812a864329c0d0b071602ea7.js" integrity="sha256-8gVAWBRBsJXfQfnGeL&#43;3soM6cN&#43;BKoZDKcDQsHFgLqc=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/index.xml" title="Modern Agent" />
 <!--
 Made with Book Theme
 https://github.com/alex-shpak/hugo-book
@@ -2685,8 +2685,31 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
   
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+  
+
+          
+  <ul>
+    
+  </ul>
 
         </li>
       
@@ -2737,8 +2760,13 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/openclaw-sandbox-security/" class="">Openclaw Sandbox Security</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/" class="">State</a>
   
+
+          
+  <ul>
+    
+  </ul>
 
         </li>
       
@@ -2750,8 +2778,13 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/" class="">Openclaw Conversation State Management</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/" class="active">Tools</a>
   
+
+          
+  <ul>
+    
+  </ul>
 
         </li>
       
@@ -2763,8 +2796,49 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/" class="active">Openclaw Tool Invocation Flow</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/" class="">Security</a>
   
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%811/" class="">OpenClaw 生态1 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%812/" class="">OpenClaw 生态2 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
 
         </li>
       
@@ -2908,7 +2982,25 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1/" class="">Cloud Code 架构[A1]</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Prompting-caching/" class="">Claude Prompt Cache [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1A1/" class="">Cloud Code 架构[A1]</a>
   
 
           
@@ -4733,7 +4825,7 @@ https://github.com/alex-shpak/hugo-book
     <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
   </label>
 
-  <h3>Openclaw Tool Invocation Flow</h3>
+  <h3>Tools</h3>
 
   <label for="toc-control">
     

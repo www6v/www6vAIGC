@@ -67,7 +67,7 @@
 OpenClaw 使用两种文件格式来管理对话状态：">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
-<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/state/">
   <meta property="og:site_name" content="Modern Agent">
   <meta property="og:title" content="Modern Agent">
   <meta property="og:description" content="OpenClaw 对话状态管理：从 Session 存储到 Context Engine 的源码级拆解 # 基于 OpenClaw v2026.4.21 源码深度分析 作者：小伟 | 2026-04-30
@@ -75,15 +75,15 @@ OpenClaw 使用两种文件格式来管理对话状态：">
 本文将从源码级别完整拆解这一架构。
 1. 总览：对话状态管理架构 # ┌──────────────────────────────────────────────────────────────────────────┐ │ OpenClaw 对话状态管理体系 │ │ │ │ ┌────────────────────────────────────────────────────────────────────┐ │ │ │ 存储层：持久化 │ │ │ │ Session Store (sessions.json) &#43; JSONL Transcript (session.jsonl) │ │ │ │ &#43; Session Store Cache &#43; Session Write Lock │ │ │ └────────────────────────────────┬───────────────────────────────────┘ │ │ │ │ │ ┌────────────────────────────────▼───────────────────────────────────┐ │ │ │ 会话层：Session 生命周期 │ │ │ │ Session 创建 / 路由 / 分组 / 维护（prune/rotate/maintenance） │ │ │ └────────────────────────────────┬───────────────────────────────────┘ │ │ │ │ │ ┌────────────────────────────────▼───────────────────────────────────┐ │ │ │ 引擎层：Session Manager &#43; Context Engine │ │ │ │ SessionManager (pi-coding-agent) &#43; Context Engine (assemble/ingest)│ │ │ │ &#43; Context Window Guard &#43; Token Estimation │ │ │ └────────────────────────────────┬───────────────────────────────────┘ │ │ │ │ │ ┌────────────────────────────────▼───────────────────────────────────┐ │ │ │ 维护层：Compaction &#43; Maintenance │ │ │ │ Context Engine Maintenance &#43; Compaction &#43; Session Truncation │ │ │ │ &#43; Transcript Rewrite &#43; Tool Result Truncation │ │ │ └────────────────────────────────┬───────────────────────────────────┘ │ │ │ │ │ ┌────────────────────────────────▼───────────────────────────────────┐ │ │ │ 安全层：Repair &#43; Guard │ │ │ │ Session File Repair &#43; Tool Result Context Guard │ │ │ │ &#43; Tool Use/Result Pairing Sanitize &#43; Thinking Block Repair │ │ │ └────────────────────────────────────────────────────────────────────┘ │ │ │ └──────────────────────────────────────────────────────────────────────────┘ 2. 存储层：Session Store &#43; JSONL Transcript # 2.1 双存储结构 # OpenClaw 使用两种文件格式来管理对话状态：">
   <meta property="og:locale" content="en">
-  <meta property="og:type" content="article">
-    <meta property="article:section" content="docs">
-<title>Openclaw Conversation State Management | Modern Agent</title>
+  <meta property="og:type" content="website">
+<title>State | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
-<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/state/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.00080a67e80af74cc24dbdffd3b4561d5b15059701aa857f24c4d16ce6391cdf.js" integrity="sha256-AAgKZ&#43;gK90zCTb3/07RWHVsVBZcBqoV/JMTRbOY5HN8=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.f20540581441b095df41f9c678bfb7b2833a70df812a864329c0d0b071602ea7.js" integrity="sha256-8gVAWBRBsJXfQfnGeL&#43;3soM6cN&#43;BKoZDKcDQsHFgLqc=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/state/index.xml" title="Modern Agent" />
 <!--
 Made with Book Theme
 https://github.com/alex-shpak/hugo-book
@@ -2689,8 +2689,31 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/harness-engineering-deep-dive/" class="">Harness Engineering Deep Dive</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
   
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+  
+
+          
+  <ul>
+    
+  </ul>
 
         </li>
       
@@ -2741,8 +2764,13 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/openclaw-sandbox-security/" class="">Openclaw Sandbox Security</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/" class="active">State</a>
   
+
+          
+  <ul>
+    
+  </ul>
 
         </li>
       
@@ -2754,8 +2782,13 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/openclaw-conversation-state-management/" class="active">Openclaw Conversation State Management</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/" class="">Tools</a>
   
+
+          
+  <ul>
+    
+  </ul>
 
         </li>
       
@@ -2767,8 +2800,49 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/openclaw-tool-invocation-flow/" class="">Openclaw Tool Invocation Flow</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/" class="">Security</a>
   
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%811/" class="">OpenClaw 生态1 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%812/" class="">OpenClaw 生态2 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
 
         </li>
       
@@ -2912,7 +2986,25 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1/" class="">Cloud Code 架构[A1]</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Prompting-caching/" class="">Claude Prompt Cache [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1A1/" class="">Cloud Code 架构[A1]</a>
   
 
           
@@ -4737,7 +4829,7 @@ https://github.com/alex-shpak/hugo-book
     <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
   </label>
 
-  <h3>Openclaw Conversation State Management</h3>
+  <h3>State</h3>
 
   <label for="toc-control">
     
