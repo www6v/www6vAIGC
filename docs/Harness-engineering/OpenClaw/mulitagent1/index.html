@@ -1,0 +1,6966 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  OpenClaw 多 Agent 交互：原理、源码实现与应用配置
+  #
+
+
+OpenClaw 是一个超大规模开源个人 AI 助手项目（GitHub ⭐372K&#43;），支持在一个 Gateway 进程中运行多个完全隔离的 Agent，并通过 Binding 路由、Session 通信、Sub-Agent 委派、Agent-to-Agent 对话等多层机制实现灵活的 Agent 间交互。本文从源码层面深度拆解其设计原理、核心实现与配置模式。
+
+
+  一、引言
+  #
+
+
+&ldquo;The greatest value of a picture is when it forces us to notice what we never expected to see.&rdquo; — John Tukey
+在 AI Agent 的发展轨迹中，我们经历了一个有趣的钟摆运动：从早期的单一体 Agent（&ldquo;一个大脑做所有事&rdquo;），到后来的多 Agent 协作（&ldquo;一群大脑分工合作&rdquo;），再到如今对隔离与协作平衡的重新审视。
+
+  1.1 为什么需要多 Agent 交互
+  #
+
+单一 Agent 模式在实践中暴露出三个核心问题：
+上下文污染：当一个 Agent 同时服务于家庭群聊和工作群聊时，家庭群的对话历史可能泄露到工作场景中，或者工作相关的敏感信息被意外带入家庭对话。这不是概率问题——LLM 的上下文窗口是一个线性序列，所有历史消息平等地参与注意力计算，没有任何内置的隔离边界。
+角色混淆：同一个 Agent 在面对不同受众时，需要切换语气、知识深度、工具权限。一个用于编程助手的 Agent 被要求写菜谱时，其系统提示中的专业术语和代码执行权限反而成为干扰。这类似于操作系统中 root 用户和普通用户的区别——权限混用是安全漏洞的温床。">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/mulitagent1/">
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="OpenClaw 多 Agent 交互：原理、源码实现与应用配置 # OpenClaw 是一个超大规模开源个人 AI 助手项目（GitHub ⭐372K&#43;），支持在一个 Gateway 进程中运行多个完全隔离的 Agent，并通过 Binding 路由、Session 通信、Sub-Agent 委派、Agent-to-Agent 对话等多层机制实现灵活的 Agent 间交互。本文从源码层面深度拆解其设计原理、核心实现与配置模式。
+一、引言 # “The greatest value of a picture is when it forces us to notice what we never expected to see.” — John Tukey
+在 AI Agent 的发展轨迹中，我们经历了一个有趣的钟摆运动：从早期的单一体 Agent（“一个大脑做所有事”），到后来的多 Agent 协作（“一群大脑分工合作”），再到如今对隔离与协作平衡的重新审视。
+1.1 为什么需要多 Agent 交互 # 单一 Agent 模式在实践中暴露出三个核心问题：
+上下文污染：当一个 Agent 同时服务于家庭群聊和工作群聊时，家庭群的对话历史可能泄露到工作场景中，或者工作相关的敏感信息被意外带入家庭对话。这不是概率问题——LLM 的上下文窗口是一个线性序列，所有历史消息平等地参与注意力计算，没有任何内置的隔离边界。
+角色混淆：同一个 Agent 在面对不同受众时，需要切换语气、知识深度、工具权限。一个用于编程助手的 Agent 被要求写菜谱时，其系统提示中的专业术语和代码执行权限反而成为干扰。这类似于操作系统中 root 用户和普通用户的区别——权限混用是安全漏洞的温床。">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>Mulitagent1 | Modern Agent</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/mulitagent1/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.77f02e3aa712c2c8d6fd06cfc3786527995ea21b63634afa67fe7b181404e87e.js" integrity="sha256-d/AuOqcSwsjW/QbPw3hlJ5leohtjY0r6Z/57GBQE6H4=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/mulitagent1/index.xml" title="Modern Agent" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall/" class="">Rag Recall</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/" class="">Rag Recall 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cc96aa92b1fe4deb19f2780a910b3a84" class="toggle"  />
+    <label for="section-cc96aa92b1fe4deb19f2780a910b3a84" class="flex justify-between">
+      <a role="button" class="">Dify</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="toggle"  />
+    <label for="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="flex justify-between">
+      <a role="button" class="">产品</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/list/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="toggle"  />
+    <label for="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="flex justify-between">
+      <a role="button" class="">Sandbox</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/opensource/" class="">Opensource</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-42ab09fd6e839492b699ee2fa4656e2f" class="toggle"  />
+    <label for="section-42ab09fd6e839492b699ee2fa4656e2f" class="flex justify-between">
+      <a role="button" class="">SDK</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk-%E5%85%BC%E5%AE%B9%E6%80%A7/" class="">Sdk 兼容性 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk-%E5%85%BC%E5%AE%B9%E6%80%A7-1/" class="">Sdk 兼容性 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f52d73da99d8a76b38639b3169b9c30" class="toggle"  />
+    <label for="section-9f52d73da99d8a76b38639b3169b9c30" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E4%BC%98%E5%8C%96/" class="">Claude Platform 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent2/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent3/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E8%A7%A3%E8%AF%BB/" class="">脑和手的解耦</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E5%8E%9F%E6%96%87/" class="">原文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fa07d823cbbab8a5cb211097d19a8b0f" class="toggle"  />
+    <label for="section-fa07d823cbbab8a5cb211097d19a8b0f" class="flex justify-between">
+      <a role="button" class="">Reflection</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91cb2f81fbf96ec25f68405674241162" class="toggle"  />
+    <label for="section-91cb2f81fbf96ec25f68405674241162" class="flex justify-between">
+      <a role="button" class="">Planning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b95bbb7a37b62a6b524cdc440bea4bea" class="toggle"  />
+    <label for="section-b95bbb7a37b62a6b524cdc440bea4bea" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c6918aab8d4437c8353af1df185685d7" class="toggle"  />
+    <label for="section-c6918aab8d4437c8353af1df185685d7" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4bd94f7e5788f6f6b717b9411d5219d7" class="toggle"  />
+    <label for="section-4bd94f7e5788f6f6b717b9411d5219d7" class="flex justify-between">
+      <a role="button" class="">Hermes</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes1/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes2/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes/" class="">Hermes Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e851bc8bb25b6d3ab16779dd8e31e163" class="toggle"  />
+    <label for="section-e851bc8bb25b6d3ab16779dd8e31e163" class="flex justify-between">
+      <a role="button" class="">managed agents</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming1/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a5f1c9d05f8697fe4344602432ed2c1" class="toggle"  />
+    <label for="section-4a5f1c9d05f8697fe4344602432ed2c1" class="flex justify-between">
+      <a role="button" class="">Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/hindsight/" class="">Hindsight</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking/" class="">Openviking</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27631881d59f460a7e82415eae943524" class="toggle"  />
+    <label for="section-27631881d59f460a7e82415eae943524" class="flex justify-between">
+      <a role="button" class="">Openclaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-867db087ab84641b5d4e3bc021355890" class="toggle"  />
+    <label for="section-867db087ab84641b5d4e3bc021355890" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ca53c095705ebe6e57deb96a02c0d3e3" class="toggle"  />
+    <label for="section-ca53c095705ebe6e57deb96a02c0d3e3" class="flex justify-between">
+      <a role="button" class="">Multi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7f3cbaaa32d67178b923d0e7080ddc58" class="toggle"  />
+    <label for="section-7f3cbaaa32d67178b923d0e7080ddc58" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Kanban/" class="">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7c1e99e2bc0dea50268247820e8feb36" class="toggle"  />
+    <label for="section-7c1e99e2bc0dea50268247820e8feb36" class="flex justify-between">
+      <a role="button" class="">Multi-agent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8aff2d658582dd8082936377ce08c46d" class="toggle"  />
+    <label for="section-8aff2d658582dd8082936377ce08c46d" class="flex justify-between">
+      <a role="button" class="">subagent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/Claude-code/" class="">Claude Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/subagent/" class="">Subagent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-78862664423ffb11f8c168297456fbac" class="toggle"  />
+    <label for="section-78862664423ffb11f8c168297456fbac" class="flex justify-between">
+      <a role="button" class="">Teams *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-Teams/" class="">Claude Code Teams</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-TeamsA1/" class="">Claude Code Teams[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-504cb284e9f6a649d018a049679638f6" class="toggle"  />
+    <label for="section-504cb284e9f6a649d018a049679638f6" class="flex justify-between">
+      <a role="button" class="">Agent Tool</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b80366c67c2d447239312da68cd1ac4c" class="toggle"  />
+    <label for="section-b80366c67c2d447239312da68cd1ac4c" class="flex justify-between">
+      <a role="button" class="">Survey &amp; SFT</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-aa27abb55dc621af66ea631cd4bad469" class="toggle"  />
+    <label for="section-aa27abb55dc621af66ea631cd4bad469" class="flex justify-between">
+      <a role="button" class="">Tool 演进</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/%E6%BC%94%E8%BF%9B/fc&#43;mcp&#43;cli/" class="">Functioncall-&gt;MCP-&gt;cli &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a2630b53c4c4baf384f02ab78ef6519" class="toggle"  />
+    <label for="section-4a2630b53c4c4baf384f02ab78ef6519" class="flex justify-between">
+      <a role="button" class="">tools</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/Tools/claude-searchTool/" class="">Claude toolsearch</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8fd065cbe7dbbad30f0c4e4d0545d6c4" class="toggle"  />
+    <label for="section-8fd065cbe7dbbad30f0c4e4d0545d6c4" class="flex justify-between">
+      <a role="button" class="">MCP *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle" checked />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle" checked />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/" class="">State</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/" class="">Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/" class="">Security</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%811/" class="">OpenClaw 生态1 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%812/" class="">OpenClaw 生态2 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/mulitagent1/" class="active">Mulitagent1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/multiagent2/" class="">Multiagent2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-406a2e1159d423500a23abb9a994a5a3" class="toggle"  />
+    <label for="section-406a2e1159d423500a23abb9a994a5a3" class="flex justify-between">
+      <a role="button" class="">Hermes Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/apiwebhook/" class="">Api&amp;webhook</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitctureA1/" class="">Arcitcture[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/interrupt/" class="">Interrupt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/" class="">Skill Envolve</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Prompting-caching/" class="">Claude Prompt Cache [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1A1/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/permission/" class="">Permission[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/source-code/" class="">claude code 源码 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-86069d54ccd932a89a9e23b7736965ee" class="toggle"  />
+    <label for="section-86069d54ccd932a89a9e23b7736965ee" class="flex justify-between">
+      <a role="button" class="">Pi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent/" class="">Pi Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent1/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent2/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Tau-Agent/" class="">Tau Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-2e3eee3f31d4bf9a6c3f87751db4d681" class="toggle"  />
+    <label for="section-2e3eee3f31d4bf9a6c3f87751db4d681" class="flex justify-between">
+      <a role="button" class="">实战</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b1ceebdd7e406fc4533519c821a9e4c3" class="toggle"  />
+    <label for="section-b1ceebdd7e406fc4533519c821a9e4c3" class="flex justify-between">
+      <a role="button" class="">Loops engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-01142eb3e9d36b255ac107cb9131d7c2" class="toggle"  />
+    <label for="section-01142eb3e9d36b255ac107cb9131d7c2" class="flex justify-between">
+      <a role="button" class="">goal</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/" class="">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="toggle"  />
+    <label for="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="flex justify-between">
+      <a role="button" class="">loop engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loops/" class="">loops engineering[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loop-engineering1/" class="">Loop Engineering1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b3a0ebe16d532fb38ede799ae1575c3a" class="toggle"  />
+    <label for="section-b3a0ebe16d532fb38ede799ae1575c3a" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/" class="">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/openclaw/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle"  />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering1/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering2/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-compress/" class="">Claude /compact</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/codex-context/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">context engineering[Manus]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/skill/" class="">编写高质量Skill的六大失效模式</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="toggle"  />
+    <label for="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="flex justify-between">
+      <a role="button" class="">AI Native</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeminimax/" class="">AI原生组织实践(MiniMax)</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Claude-tag/" class="">Claude tag</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Ai-nativeali/" class="">AI native与人机协作[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeclaude/" class="">Bottleneck Shift in AI-native Engineering[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Mulitagent1</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openclaw-多-agent-交互原理源码实现与应用配置">OpenClaw 多 Agent 交互：原理、源码实现与应用配置</a>
+      <ul>
+        <li><a href="#一引言">一、引言</a>
+          <ul>
+            <li><a href="#11-为什么需要多-agent-交互">1.1 为什么需要多 Agent 交互</a></li>
+            <li><a href="#12-openclaw-的多-agent-哲学">1.2 OpenClaw 的多 Agent 哲学</a></li>
+            <li><a href="#13-本文结构">1.3 本文结构</a></li>
+          </ul>
+        </li>
+        <li><a href="#二多-agent-架构全景">二、多 Agent 架构全景</a>
+          <ul>
+            <li><a href="#21-系统架构图">2.1 系统架构图</a></li>
+            <li><a href="#22-一个-agent--一个完整的大脑">2.2 一个 Agent = 一个完整的&quot;大脑&quot;</a></li>
+            <li><a href="#23-单-agent-vs-多-agent-模式">2.3 单 Agent vs 多 Agent 模式</a></li>
+            <li><a href="#24-多-agent-交互的五个层次">2.4 多 Agent 交互的五个层次</a></li>
+          </ul>
+        </li>
+        <li><a href="#三路由层消息如何找到正确的-agent">三、路由层：消息如何找到正确的 Agent</a>
+          <ul>
+            <li><a href="#31-binding-配置模型">3.1 Binding 配置模型</a></li>
+            <li><a href="#32-路由优先级链">3.2 路由优先级链</a></li>
+            <li><a href="#33-session-key-的生成与解析">3.3 Session Key 的生成与解析</a></li>
+          </ul>
+        </li>
+        <li><a href="#四会话层agent-隔离的本质">四、会话层：Agent 隔离的本质</a>
+          <ul>
+            <li><a href="#41-session-存储模型">4.1 Session 存储模型</a></li>
+            <li><a href="#42-会话隔离的安全边界">4.2 会话隔离的安全边界</a></li>
+            <li><a href="#43-跨-agent-记忆搜索qmd-机制">4.3 跨 Agent 记忆搜索（QMD 机制）</a></li>
+          </ul>
+        </li>
+        <li><a href="#五委派层sub-agent-机制">五、委派层：Sub-Agent 机制</a>
+          <ul>
+            <li><a href="#51-sub-agent-的两种模式">5.1 Sub-Agent 的两种模式</a></li>
+            <li><a href="#52-源码拆解subagent-spawnts">5.2 源码拆解：subagent-spawn.ts</a></li>
+            <li><a href="#53-完成通知机制subagent-announcets">5.3 完成通知机制：subagent-announce.ts</a></li>
+            <li><a href="#54-嵌套深度与并发控制">5.4 嵌套深度与并发控制</a></li>
+          </ul>
+        </li>
+        <li><a href="#六对等层agent-to-agent-通信">六、对等层：Agent-to-Agent 通信</a>
+          <ul>
+            <li><a href="#61-sessions_send-工具">6.1 sessions_send 工具</a></li>
+            <li><a href="#62-a2a-flowagent-to-agent-对话流">6.2 A2A Flow（Agent-to-Agent 对话流）</a></li>
+            <li><a href="#63-安全门控">6.3 安全门控</a></li>
+            <li><a href="#64-announce-投递">6.4 Announce 投递</a></li>
+          </ul>
+        </li>
+        <li><a href="#七调度层command-queue-与-lanes">七、调度层：Command Queue 与 Lanes</a>
+          <ul>
+            <li><a href="#71-lane-模型">7.1 Lane 模型</a></li>
+            <li><a href="#72-queue-模式">7.2 Queue 模式</a></li>
+            <li><a href="#73-并发控制">7.3 并发控制</a></li>
+            <li><a href="#74-specialist-lanes-模式">7.4 Specialist Lanes 模式</a></li>
+          </ul>
+        </li>
+        <li><a href="#八配置实战">八、配置实战</a>
+          <ul>
+            <li><a href="#81-场景-1家庭群--工作群隔离--agent-间协作">8.1 场景 1：家庭群 + 工作群隔离 + Agent 间协作</a></li>
+            <li><a href="#82-场景-2coordinator--workers-编排模式">8.2 场景 2：Coordinator + Workers 编排模式</a></li>
+            <li><a href="#83-场景-3多频道--多模型--按需路由">8.3 场景 3：多频道 + 多模型 + 按需路由</a></li>
+            <li><a href="#84-场景-4定时工作流--多-agent-协作">8.4 场景 4：定时工作流 + 多 Agent 协作</a></li>
+          </ul>
+        </li>
+        <li><a href="#九源码关键文件索引">九、源码关键文件索引</a></li>
+        <li><a href="#十总结与展望">十、总结与展望</a>
+          <ul>
+            <li><a href="#101-核心设计原则回顾">10.1 核心设计原则回顾</a></li>
+            <li><a href="#102-与-hermes-agent-的多-agent-对比">10.2 与 Hermes Agent 的多 Agent 对比</a></li>
+            <li><a href="#103-未来趋势">10.3 未来趋势</a></li>
+            <li><a href="#104-最佳实践清单">10.4 最佳实践清单</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="openclaw-多-agent-交互原理源码实现与应用配置">
+  OpenClaw 多 Agent 交互：原理、源码实现与应用配置
+  <a class="anchor" href="#openclaw-%e5%a4%9a-agent-%e4%ba%a4%e4%ba%92%e5%8e%9f%e7%90%86%e6%ba%90%e7%a0%81%e5%ae%9e%e7%8e%b0%e4%b8%8e%e5%ba%94%e7%94%a8%e9%85%8d%e7%bd%ae">#</a>
+</h1>
+<blockquote>
+<p>OpenClaw 是一个超大规模开源个人 AI 助手项目（GitHub ⭐372K+），支持在一个 Gateway 进程中运行多个完全隔离的 Agent，并通过 Binding 路由、Session 通信、Sub-Agent 委派、Agent-to-Agent 对话等多层机制实现灵活的 Agent 间交互。本文从源码层面深度拆解其设计原理、核心实现与配置模式。</p></blockquote>
+<hr>
+<h2 id="一引言">
+  一、引言
+  <a class="anchor" href="#%e4%b8%80%e5%bc%95%e8%a8%80">#</a>
+</h2>
+<blockquote>
+<p>&ldquo;The greatest value of a picture is when it forces us to notice what we never expected to see.&rdquo; — John Tukey</p></blockquote>
+<p>在 AI Agent 的发展轨迹中，我们经历了一个有趣的钟摆运动：从早期的单一体 Agent（&ldquo;一个大脑做所有事&rdquo;），到后来的多 Agent 协作（&ldquo;一群大脑分工合作&rdquo;），再到如今对<strong>隔离与协作平衡</strong>的重新审视。</p>
+<h3 id="11-为什么需要多-agent-交互">
+  1.1 为什么需要多 Agent 交互
+  <a class="anchor" href="#11-%e4%b8%ba%e4%bb%80%e4%b9%88%e9%9c%80%e8%a6%81%e5%a4%9a-agent-%e4%ba%a4%e4%ba%92">#</a>
+</h3>
+<p>单一 Agent 模式在实践中暴露出三个核心问题：</p>
+<p><strong>上下文污染</strong>：当一个 Agent 同时服务于家庭群聊和工作群聊时，家庭群的对话历史可能泄露到工作场景中，或者工作相关的敏感信息被意外带入家庭对话。这不是概率问题——LLM 的上下文窗口是一个线性序列，所有历史消息平等地参与注意力计算，没有任何内置的隔离边界。</p>
+<p><strong>角色混淆</strong>：同一个 Agent 在面对不同受众时，需要切换语气、知识深度、工具权限。一个用于编程助手的 Agent 被要求写菜谱时，其系统提示中的专业术语和代码执行权限反而成为干扰。这类似于操作系统中 root 用户和普通用户的区别——权限混用是安全漏洞的温床。</p>
+<p><strong>能力边界</strong>：不同任务对模型能力的需求差异巨大。代码审查需要强推理能力（Opus/Claude Sonnet 级别），而日常闲聊只需要快速响应（Haiku/GPT-4o-mini 级别）。用同一模型处理所有任务，要么过度消耗 token，要么在关键任务上力不从心。</p>
+<h3 id="12-openclaw-的多-agent-哲学">
+  1.2 OpenClaw 的多 Agent 哲学
+  <a class="anchor" href="#12-openclaw-%e7%9a%84%e5%a4%9a-agent-%e5%93%b2%e5%ad%a6">#</a>
+</h3>
+<p>OpenClaw 给出了一个清晰的答案：<strong>隔离优先，显式交互</strong>。</p>
+<p>这与 Unix 哲学中的&quot;做一件事，做好&quot;（Do One Thing and Do It Well）不谋而合。每个 Agent 是一个完整的、自洽的单元——独立的 workspace、独立的 session 历史、独立的模型配置、独立的工具集。Agent 之间默认<strong>不共享任何状态</strong>，交互必须通过<strong>显式机制</strong>（<code>sessions_spawn</code>、<code>sessions_send</code>）完成。</p>
+<p>这种设计选择背后是一种深层的架构判断：<strong>隔离是默认的安全态，协作是需要审计的特权操作</strong>。这与微服务架构中的&quot;默认拒绝，显式授权&quot;原则如出一辙。</p>
+<h3 id="13-本文结构">
+  1.3 本文结构
+  <a class="anchor" href="#13-%e6%9c%ac%e6%96%87%e7%bb%93%e6%9e%84">#</a>
+</h3>
+<p>本文将从外到内、从宏观到微观，逐层拆解 OpenClaw 的多 Agent 机制：</p>
+<pre tabindex="0"><code>外部消息 → ①路由层 → ②会话层 → ③委派层/④对等层
+                    ↕
+              ⑤调度层（正交贯穿）
+</code></pre><ul>
+<li><strong>路由层</strong>：消息如何找到正确的 Agent</li>
+<li><strong>会话层</strong>：Agent 隔离的本质</li>
+<li><strong>委派层</strong>：父 Agent 如何创建和管理子 Agent</li>
+<li><strong>对等层</strong>：Agent 之间如何双向通信</li>
+<li><strong>调度层</strong>：并发控制与资源管理（贯穿所有层）</li>
+</ul>
+<p>每层都有对应的源码文件、配置模式和最佳实践。最后，我们将通过四个典型场景的完整配置，展示如何将这些机制组合成生产级方案。</p>
+<hr>
+<h2 id="二多-agent-架构全景">
+  二、多 Agent 架构全景
+  <a class="anchor" href="#%e4%ba%8c%e5%a4%9a-agent-%e6%9e%b6%e6%9e%84%e5%85%a8%e6%99%af">#</a>
+</h2>
+<h3 id="21-系统架构图">
+  2.1 系统架构图
+  <a class="anchor" href="#21-%e7%b3%bb%e7%bb%9f%e6%9e%b6%e6%9e%84%e5%9b%be">#</a>
+</h3>
+<p>OpenClaw 的架构可以用三层模型来理解：</p>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+    subgraph Channels
+        WA[WhatsApp]
+        TG[Telegram]
+        SL[Slack]
+        DS[Discord]
+    end
+
+    subgraph Gateway_Process
+        Bind[Binding Router]
+        Q[Command Queue]
+        subgraph Lanes
+            L1[Main Lane]
+            L2[Subagent Lane]
+            L3[Cron Lane]
+        end
+        subagent[Subagent Orchestrator]
+        a2a[A2A Engine]
+
+        subgraph Agents
+            A1[Agent: main]
+            A2[Agent: work]
+            A3[Agent: family]
+        end
+    end
+
+    subgraph Storage
+        WS1[Workspace: main]
+        WS2[Workspace: work]
+        WS3[Workspace: family]
+        SES[(Sessions SQLite)]
+        REG[(Subagent Registry)]
+    end
+
+    WA --&gt; Bind
+    TG --&gt; Bind
+    SL --&gt; Bind
+    DS --&gt; Bind
+
+    Bind --&gt; Q
+    Q --&gt; L1
+    Q --&gt; L2
+    Q --&gt; L3
+    L1 --&gt; A1
+    L2 --&gt; subagent
+    L3 --&gt; A1
+
+    subagent -. spawn/announce .-&gt; A2
+    subagent -. spawn/announce .-&gt; A3
+
+    A1 -. sessions_send .-&gt; a2a -. route .-&gt; A2
+    A1 -. sessions_send .-&gt; a2a -. route .-&gt; A3
+
+    A1 --&gt; WS1
+    A2 --&gt; WS2
+    A3 --&gt; WS3
+    A1 --&gt; SES
+    subagent --&gt; REG
+</code></pre><p><strong>架构图详解：</strong></p>
+<p>上图展示了 OpenClaw 在一个单进程 Gateway 中运行多个 Agent 的完整架构，可分为三个层次：</p>
+<p><strong>1. 接入层（Channels）</strong></p>
+<p>WhatsApp、Telegram、Slack、Discord 等外部消息通道统一接入 Gateway。关键设计决策是：<strong>通道不直接与 Agent 对话</strong>。所有消息必须先经过 Binding Router 进行路由分发。这类似于 Nginx 的反向代理——客户端不知道也不关心请求最终由哪个后端服务处理。</p>
+<p>这种解耦带来了两个好处：</p>
+<ul>
+<li><strong>透明路由</strong>：用户发送消息时不需要指定目标 Agent，系统根据配置自动匹配</li>
+<li><strong>灵活扩展</strong>：新增通道（如 Signal、Matrix）或新增 Agent 都不需要修改对方</li>
+</ul>
+<p><strong>2. 核心处理层（Gateway Process）</strong></p>
+<p>这是 OpenClaw 的&quot;中枢神经系统&quot;，包含五个核心组件：</p>
+<table>
+  <thead>
+      <tr>
+          <th>组件</th>
+          <th>职责</th>
+          <th>类比</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Binding Router</strong></td>
+          <td>根据配置将消息匹配到目标 Agent</td>
+          <td>邮局分拣机</td>
+      </tr>
+      <tr>
+          <td><strong>Command Queue + Lanes</strong></td>
+          <td>按优先级和类型调度消息执行</td>
+          <td>机场跑道调度</td>
+      </tr>
+      <tr>
+          <td><strong>Subagent Orchestrator</strong></td>
+          <td>创建/管理子 Agent，处理完成回调</td>
+          <td>项目经理</td>
+      </tr>
+      <tr>
+          <td><strong>A2A Engine</strong></td>
+          <td>Agent 间双向通信（sessions_send + ping-pong）</td>
+          <td>内部通讯系统</td>
+      </tr>
+      <tr>
+          <td><strong>Agents</strong></td>
+          <td>每个 Agent 是独立的&quot;大脑&quot;，有自己的模型、工具、记忆</td>
+          <td>部门员工</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>Binding Router</strong> 根据 <code>bindings</code> 配置（channel、peer、guildId、accountId 等维度）将消息匹配到目标 Agent，实现&quot;最精确匹配优先&quot;的路由策略。</p>
+<p><strong>Command Queue + Lanes</strong> 确保同一 Session 的消息串行执行（避免并发导致的上下文竞争），但不同 Agent 的消息可以并行处理。这类似于数据库中的行级锁——同一行的写操作必须串行，但不同行可以并发。</p>
+<p><strong>Subagent Orchestrator</strong> 负责 <code>spawnSubagent()</code> 创建子 Agent、管理注册表、处理完成后的 Announce 回调。子 Agent 是一次性任务执行者（&ldquo;帮我调研 X 并返回结果&rdquo;），完成后自动通知父 Agent。</p>
+<p><strong>A2A Engine</strong> 处理 Agent 间的双向通信。与 Subagent 的&quot;一次性&quot;不同，A2A 支持持续的对话式交互——Agent A 发消息给 Agent B，Agent B 回复，Agent A 再回复，最多 N 轮（由 <code>maxPingPongTurns</code> 控制）。</p>
+<p><strong>3. 存储层（Storage）</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>存储</th>
+          <th>内容</th>
+          <th>隔离级别</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Workspace</strong></td>
+          <td>每个 Agent 的独立文件目录，代码执行和文件读写都在此目录内</td>
+          <td>物理隔离（不同目录）</td>
+      </tr>
+      <tr>
+          <td><strong>Sessions SQLite</strong></td>
+          <td>会话历史、配置覆盖（modelOverride、authProfileOverride）</td>
+          <td>逻辑隔离（session key 前缀）</td>
+      </tr>
+      <tr>
+          <td><strong>Subagent Registry</strong></td>
+          <td>子 Agent 的创建时间、父 session、运行状态、完成结果</td>
+          <td>全局共享，按 runId 索引</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>关键数据流：</strong></p>
+<pre tabindex="0"><code>外部消息 → Channels → Binding Router → Command Queue → Lane → Agent
+Agent spawn 子 Agent → Subagent Orchestrator → Registry → Announce 回调父 Agent
+Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong → Announce 回 A
+</code></pre><p>这三条数据流覆盖了 OpenClaw 中所有 Agent 间交互的模式。</p>
+<h3 id="22-一个-agent--一个完整的大脑">
+  2.2 一个 Agent = 一个完整的&quot;大脑&quot;
+  <a class="anchor" href="#22-%e4%b8%80%e4%b8%aa-agent--%e4%b8%80%e4%b8%aa%e5%ae%8c%e6%95%b4%e7%9a%84%e5%a4%a7%e8%84%91">#</a>
+</h3>
+<p>理解 OpenClaw 多 Agent 机制的关键，在于理解<strong>一个 Agent 到底是什么</strong>。</p>
+<p>在 OpenClaw 的源码中（<code>src/agents/agent-scope.ts</code>），一个 Agent 不是一个简单的&quot;模型实例&quot;，而是一个<strong>完整的作用域（scope）</strong>，包含以下维度：</p>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>含义</th>
+          <th>隔离效果</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>workspace</code></td>
+          <td>文件系统的独立工作目录</td>
+          <td>文件操作互不干扰</td>
+      </tr>
+      <tr>
+          <td><code>agentDir</code></td>
+          <td>Agent 的专属配置目录</td>
+          <td>配置互不影响</td>
+      </tr>
+      <tr>
+          <td><code>sessionStore</code></td>
+          <td>会话历史的存储位置</td>
+          <td>记忆互不泄露</td>
+      </tr>
+      <tr>
+          <td><code>authProfiles</code></td>
+          <td>认证凭据（API keys、OAuth tokens）</td>
+          <td>安全边界</td>
+      </tr>
+      <tr>
+          <td><code>skills</code></td>
+          <td>技能/工作流定义</td>
+          <td>能力差异化</td>
+      </tr>
+      <tr>
+          <td><code>tools</code></td>
+          <td>可调用的工具集</td>
+          <td>操作权限隔离</td>
+      </tr>
+      <tr>
+          <td><code>model</code></td>
+          <td>使用的 LLM 模型和参数</td>
+          <td>成本/能力差异化</td>
+      </tr>
+  </tbody>
+</table>
+<p>源码入口 <code>resolveSessionAgentIds()</code> 函数从 session key 解析 agentId 的完整链路：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/agent-scope.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveSessionAgentIds</span>(<span style="color:#a6e22e">sessionKey</span>: <span style="color:#66d9ef">string</span>)<span style="color:#f92672">:</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">agentId</span>: <span style="color:#66d9ef">string</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">requestKey</span>: <span style="color:#66d9ef">string</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">mainKey</span>: <span style="color:#66d9ef">string</span>;
+</span></span><span style="display:flex;"><span>} {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// sessionKey 格式: &#34;agent:&lt;agentId&gt;:&lt;requestKey&gt;:&lt;mainKey&gt;&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// 例如: &#34;agent:work:telegram:+1234567890:abc123&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">parts</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">sessionKey</span>.<span style="color:#a6e22e">split</span>(<span style="color:#e6db74">&#34;:&#34;</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">agentId</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">parts</span>[<span style="color:#ae81ff">1</span>];      <span style="color:#75715e">// &#34;work&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">requestKey</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">parts</span>[<span style="color:#ae81ff">2</span>];   <span style="color:#75715e">// &#34;telegram&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">mainKey</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">parts</span>.<span style="color:#a6e22e">slice</span>(<span style="color:#ae81ff">3</span>).<span style="color:#a6e22e">join</span>(<span style="color:#e6db74">&#34;:&#34;</span>); <span style="color:#75715e">// &#34;+1234567890:abc123&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">agentId</span>, <span style="color:#a6e22e">requestKey</span>, <span style="color:#a6e22e">mainKey</span> };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>这意味着，<strong>session key 是 Agent 身份的唯一标识</strong>。所有后续的配置解析、存储路由、权限检查都基于这个 agentId。</p>
+<h3 id="23-单-agent-vs-多-agent-模式">
+  2.3 单 Agent vs 多 Agent 模式
+  <a class="anchor" href="#23-%e5%8d%95-agent-vs-%e5%a4%9a-agent-%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<p>OpenClaw 默认运行在单 Agent 模式：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># 默认配置（隐式）</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 等价于:</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">list</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;main&#34;</span>
+</span></span></code></pre></div><p>此时所有消息都由 <code>agentId = &quot;main&quot;</code> 的 Agent 处理，session key 格式为 <code>agent:main:&lt;mainKey&gt;</code>。</p>
+<p>当配置多个 Agent 时：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">list</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;main&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/openclaw-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;work&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-opus-4&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/work-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">sandbox</span>: { <span style="color:#f92672">mode</span>: <span style="color:#e6db74">&#34;all&#34;</span> }
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;family&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-haiku&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/family-workspace&#34;</span>
+</span></span></code></pre></div><p>源码中，<code>resolveDefaultAgentId()</code> 和 <code>listAgentIds()</code> 构成了一个 fallback 链：</p>
+<pre tabindex="0"><code>1. 如果 bindings 中指定了 agentId → 使用指定的 agentId
+2. 如果 agents.list 只有一个 Agent → 使用那个 Agent
+3. 否则 → 使用 &#34;main&#34;（如果存在）或第一个 Agent
+</code></pre><p>这个 fallback 链确保了两件事：</p>
+<ul>
+<li><strong>向后兼容</strong>：没有多 Agent 配置时，行为与旧版本完全一致</li>
+<li><strong>安全降级</strong>：即使配置错误，也不会让消息&quot;无处可去&quot;</li>
+</ul>
+<h3 id="24-多-agent-交互的五个层次">
+  2.4 多 Agent 交互的五个层次
+  <a class="anchor" href="#24-%e5%a4%9a-agent-%e4%ba%a4%e4%ba%92%e7%9a%84%e4%ba%94%e4%b8%aa%e5%b1%82%e6%ac%a1">#</a>
+</h3>
+<p>OpenClaw 的多 Agent 交互不是单一机制，而是<strong>五个层次</strong>的组合：</p>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+    subgraph &#34;⑤ 调度层（正交 · 全局贯穿）&#34;
+        L1[Command Queue + Lanes&lt;br/&gt;Main / Subagent / Cron]
+    end
+
+    subgraph &#34;消息流&#34;
+        subgraph &#34;① 路由层（入口分发）&#34;
+            R1[Binding Router → resolve-route]
+        end
+
+        subgraph &#34;② 会话层（隔离存储）&#34;
+            R2[Session Key + Session Store]
+        end
+
+        subgraph &#34;Agent 内部&#34;
+            direction LR
+            subgraph &#34;③ 委派层（纵向 · 父子）&#34;
+                R3[Parent Agent → spawnSubagent → Child Agent]
+            end
+
+            subgraph &#34;④ 对等层（横向 · 兄弟）&#34;
+                R4[Agent A ↔ sessions_send ↔ Agent B]
+            end
+        end
+
+        R1 --&gt;|路由匹配| R2
+        R2 --&gt;|加载隔离上下文| R3
+        R3 -. 兄弟 Agent 通信 .-&gt; R4
+    end
+
+    L1 -. 并发调度 .-&gt; R1
+    L1 -. 会话串行 .-&gt; R2
+    L1 -. 子 Agent 槽位 .-&gt; R3
+    L1 -. A2A 队列 .-&gt; R4
+</code></pre><p><strong>各层次解读：</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>层次</th>
+          <th>机制</th>
+          <th>交互方向</th>
+          <th>类比</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>① <strong>路由层</strong></td>
+          <td>Binding + resolve-route</td>
+          <td>Channel → Agent（单向）</td>
+          <td>前台接待员</td>
+      </tr>
+      <tr>
+          <td>② <strong>会话层</strong></td>
+          <td>Session key + 隔离存储</td>
+          <td>Agent 内部（自洽）</td>
+          <td>个人办公室</td>
+      </tr>
+      <tr>
+          <td>③ <strong>委派层</strong></td>
+          <td>sessions_spawn + subagent</td>
+          <td>父 Agent → 子 Agent（单向 + announce 回调）</td>
+          <td>经理分配任务给下属</td>
+      </tr>
+      <tr>
+          <td>④ <strong>对等层</strong></td>
+          <td>sessions_send + A2A flow</td>
+          <td>Agent ↔ Agent（双向 ping-pong）</td>
+          <td>同事间讨论</td>
+      </tr>
+      <tr>
+          <td>⑤ <strong>调度层</strong></td>
+          <td>Command queue + lanes</td>
+          <td>全局并发控制（正交）</td>
+          <td>交通信号灯</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>关键设计洞察：</strong></p>
+<ol>
+<li>
+<p><strong>路由层和会话层是基础</strong>：没有它们，Agent 间交互无从谈起。它们确保&quot;消息找到正确的 Agent&quot;且&quot;Agent 只看到自己的历史&quot;。</p>
+</li>
+<li>
+<p><strong>委派层和对等层是交互的核心</strong>：委派层用于&quot;上级给下级派活&quot;（父子关系），对等层用于&quot;同事间协作&quot;（平等关系）。</p>
+</li>
+<li>
+<p><strong>调度层是正交的</strong>：它不定义&quot;谁和谁交互&quot;，而是定义&quot;交互的顺序和并发度&quot;。无论使用哪种交互模式，调度层都在后台工作。</p>
+</li>
+<li>
+<p><strong>层次之间是依赖关系，不是替代关系</strong>：委派层和对等层都依赖于路由层和会话层。调度层则为所有层提供并发控制。</p>
+</li>
+</ol>
+<p>这种分层设计与 TCP/IP 协议栈有异曲同工之妙——每一层解决一个特定问题，层与层之间通过明确定义的接口通信。</p>
+<hr>
+<h2 id="三路由层消息如何找到正确的-agent">
+  三、路由层：消息如何找到正确的 Agent
+  <a class="anchor" href="#%e4%b8%89%e8%b7%af%e7%94%b1%e5%b1%82%e6%b6%88%e6%81%af%e5%a6%82%e4%bd%95%e6%89%be%e5%88%b0%e6%ad%a3%e7%a1%ae%e7%9a%84-agent">#</a>
+</h2>
+<blockquote>
+<p>&ldquo;Any sufficiently advanced routing logic is indistinguishable from a postal sorting machine.&rdquo; — 改编自 Clarke 第三定律</p></blockquote>
+<h3 id="31-binding-配置模型">
+  3.1 Binding 配置模型
+  <a class="anchor" href="#31-binding-%e9%85%8d%e7%bd%ae%e6%a8%a1%e5%9e%8b">#</a>
+</h3>
+<p>Binding 是 OpenClaw 路由系统的核心抽象。它的本质是一张<strong>匹配规则表</strong>，将外部消息的特征映射到目标 Agent：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">bindings</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 精确匹配 peer（特定用户）</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;family&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">peer</span>: <span style="color:#e6db74">&#34;+15551234567&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 匹配频道 + 群组</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;work&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">channel</span>: <span style="color:#e6db74">&#34;telegram&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">guildId</span>: <span style="color:#e6db74">&#34;-1001234567890&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 匹配频道级别（所有 Telegram 消息默认路由）</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;main&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">channel</span>: <span style="color:#e6db74">&#34;telegram&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 全局默认（兜底）</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;main&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>: {}
+</span></span></code></pre></div><p><code>match</code> 字段支持以下维度的组合：</p>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>含义</th>
+          <th>示例</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>channel</code></td>
+          <td>消息来源平台</td>
+          <td><code>&quot;telegram&quot;</code>、<code>&quot;whatsapp&quot;</code>、<code>&quot;discord&quot;</code></td>
+      </tr>
+      <tr>
+          <td><code>accountId</code></td>
+          <td>特定账号</td>
+          <td>多账号场景下区分不同 Bot 账号</td>
+      </tr>
+      <tr>
+          <td><code>peer</code></td>
+          <td>发送者 ID</td>
+          <td>个人用户 ID、群聊 ID</td>
+      </tr>
+      <tr>
+          <td><code>guildId</code></td>
+          <td>Discord/Slack 服务器 ID</td>
+          <td>区分不同 workspace</td>
+      </tr>
+      <tr>
+          <td><code>teamId</code></td>
+          <td>Slack Team ID</td>
+          <td>多团队场景</td>
+      </tr>
+      <tr>
+          <td><code>roles</code></td>
+          <td>Discord 角色</td>
+          <td>按角色路由到不同 Agent</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>关键设计决策</strong>：<code>match</code> 字段使用 <strong>AND 语义</strong>——所有指定的条件必须同时满足。这意味着：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># 这条规则匹配：来自 Telegram + 特定群组的消息</span>
+</span></span><span style="display:flex;"><span>- <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;work&#34;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">match</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">channel</span>: <span style="color:#e6db74">&#34;telegram&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">guildId</span>: <span style="color:#e6db74">&#34;-1001234567890&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 这条规则匹配：来自 Discord + 特定角色的消息</span>
+</span></span><span style="display:flex;"><span>- <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;admin&#34;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">match</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">channel</span>: <span style="color:#e6db74">&#34;discord&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">roles</span>: [<span style="color:#e6db74">&#34;admin&#34;</span>, <span style="color:#e6db74">&#34;moderator&#34;</span>]
+</span></span></code></pre></div><h3 id="32-路由优先级链">
+  3.2 路由优先级链
+  <a class="anchor" href="#32-%e8%b7%af%e7%94%b1%e4%bc%98%e5%85%88%e7%ba%a7%e9%93%be">#</a>
+</h3>
+<p>当多条 Binding 规则都可能匹配时，OpenClaw 采用<strong>最精确匹配优先</strong>（Most-Specific-Wins）策略。源码中（<code>src/routing/resolve-route.ts</code>）实现了一个七层优先级链：</p>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">flowchart TD
+    Msg[Inbound Message] --&gt; P1{Match peer?}
+    P1 --&gt;|Yes| R1[Route to Agent via peer binding]
+    P1 --&gt;|No| P2{Match parentPeer?}
+    P2 --&gt;|Yes| R2[Route via thread inheritance]
+    P2 --&gt;|No| P3{Match guildId + roles?}
+    P3 --&gt;|Yes| R3[Route via Discord role]
+    P3 --&gt;|No| P4{Match guildId / teamId?}
+    P4 --&gt;|Yes| R4[Route via server/workspace]
+    P4 --&gt;|No| P5{Match accountId?}
+    P5 --&gt;|Yes| R5[Route to account&#39;s agent]
+    P5 --&gt;|No| P6{Channel-level match?}
+    P6 --&gt;|Yes| R6[Route to channel default agent]
+    P6 --&gt;|No| R7[Route to global default / main]
+</code></pre><p><strong>优先级从高到低：</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>优先级</th>
+          <th>匹配维度</th>
+          <th>精确度</th>
+          <th>典型场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td><code>peer</code></td>
+          <td>最高</td>
+          <td>特定用户专属 Agent</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td><code>parentPeer</code></td>
+          <td>极高</td>
+          <td>Thread 继承父会话的 Agent</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td><code>guildId + roles</code></td>
+          <td>很高</td>
+          <td>Discord 按角色路由</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td><code>guildId / teamId</code></td>
+          <td>高</td>
+          <td>特定群组/服务器专属 Agent</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td><code>accountId</code></td>
+          <td>中</td>
+          <td>多账号场景</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td><code>channel</code></td>
+          <td>低</td>
+          <td>频道默认 Agent</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td>全局默认</td>
+          <td>最低</td>
+          <td>兜底 Agent</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>Tie-breaking 规则</strong>：当两条规则精确度相同时，OpenClaw 使用配置中的<strong>声明顺序</strong>（先声明优先）作为决胜条件。这与 CSS 的选择器优先级规则类似——当特异性相同时，后声明的覆盖先声明的，但 OpenClaw 选择了相反的策略（先声明优先），理由是<strong>配置的显式性越高，越应该优先匹配</strong>。</p>
+<h3 id="33-session-key-的生成与解析">
+  3.3 Session Key 的生成与解析
+  <a class="anchor" href="#33-session-key-%e7%9a%84%e7%94%9f%e6%88%90%e4%b8%8e%e8%a7%a3%e6%9e%90">#</a>
+</h3>
+<p>Session Key 是 OpenClaw 中<strong>最核心的身份标识</strong>。它的格式设计直接决定了多 Agent 的隔离粒度：</p>
+<pre tabindex="0"><code>agent:&lt;agentId&gt;:&lt;requestKey&gt;:&lt;mainKey&gt;
+</code></pre><p>各字段含义：</p>
+<table>
+  <thead>
+      <tr>
+          <th>字段</th>
+          <th>示例</th>
+          <th>含义</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>agentId</code></td>
+          <td><code>&quot;work&quot;</code></td>
+          <td>目标 Agent 的 ID</td>
+      </tr>
+      <tr>
+          <td><code>requestKey</code></td>
+          <td><code>&quot;telegram&quot;</code></td>
+          <td>请求来源的通道标识</td>
+      </tr>
+      <tr>
+          <td><code>mainKey</code></td>
+          <td><code>&quot;+15551234567:abc123&quot;</code></td>
+          <td>主会话标识（用户 + 会话 ID）</td>
+      </tr>
+  </tbody>
+</table>
+<p>源码解析（<code>src/routing/session-key.ts</code>）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// parseAgentSessionKey: 从 session key 中提取 agentId
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">parseAgentSessionKey</span>(<span style="color:#a6e22e">key</span>: <span style="color:#66d9ef">string</span>)<span style="color:#f92672">:</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">agentId</span>: <span style="color:#66d9ef">string</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">requestKey</span>: <span style="color:#66d9ef">string</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">mainKey</span>: <span style="color:#66d9ef">string</span>;
+</span></span><span style="display:flex;"><span>} <span style="color:#f92672">|</span> <span style="color:#66d9ef">null</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">key</span>.<span style="color:#a6e22e">startsWith</span>(<span style="color:#e6db74">&#34;agent:&#34;</span>)) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">null</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">parts</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">key</span>.<span style="color:#a6e22e">split</span>(<span style="color:#e6db74">&#34;:&#34;</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// parts: [&#34;agent&#34;, &#34;work&#34;, &#34;telegram&#34;, &#34;+1555...&#34;, &#34;abc123&#34;]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">agentId</span>: <span style="color:#66d9ef">parts</span>[<span style="color:#ae81ff">1</span>],
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">requestKey</span>: <span style="color:#66d9ef">parts</span>[<span style="color:#ae81ff">2</span>],
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">mainKey</span>: <span style="color:#66d9ef">parts.slice</span>(<span style="color:#ae81ff">3</span>).<span style="color:#a6e22e">join</span>(<span style="color:#e6db74">&#34;:&#34;</span>),
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>DM Collapse 机制</strong>：当用户在 DM（私聊）中首次与某个 Agent 对话时，OpenClaw 会将该 DM 会话&quot;折叠&quot;（collapse）到 Agent 的 main session 中。这意味着同一个用户在不同通道的 DM 可能共享同一个会话上下文——这是一个需要谨慎对待的设计，因为它可能导致跨通道的上下文泄露。</p>
+<hr>
+<h2 id="四会话层agent-隔离的本质">
+  四、会话层：Agent 隔离的本质
+  <a class="anchor" href="#%e5%9b%9b%e4%bc%9a%e8%af%9d%e5%b1%82agent-%e9%9a%94%e7%a6%bb%e7%9a%84%e6%9c%ac%e8%b4%a8">#</a>
+</h2>
+<blockquote>
+<p>&ldquo;The essence of isolation is not separation, but controlled communication.&rdquo; — 改编自分布式系统理论</p></blockquote>
+<h3 id="41-session-存储模型">
+  4.1 Session 存储模型
+  <a class="anchor" href="#41-session-%e5%ad%98%e5%82%a8%e6%a8%a1%e5%9e%8b">#</a>
+</h3>
+<p>每个 Agent 的会话数据存储在独立的目录结构中：</p>
+<pre tabindex="0"><code>~/.openclaw/agents/&lt;agentId&gt;/sessions/
+├── telegram/
+│   └── &lt;sessionId&gt;.jsonl    # 会话历史（JSON Lines 格式）
+├── whatsapp/
+│   └── &lt;sessionId&gt;.jsonl
+└── sessions.db              # SQLite 数据库（元数据）
+</code></pre><p>Session Entry 的数据结构包含丰富的覆盖配置：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">interface</span> <span style="color:#a6e22e">SessionEntry</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">key</span>: <span style="color:#66d9ef">string</span>;                    <span style="color:#75715e">// session key
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">agentId</span>: <span style="color:#66d9ef">string</span>;                <span style="color:#75715e">// 所属 Agent
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">providerOverride?</span>: <span style="color:#66d9ef">string</span>;      <span style="color:#75715e">// 覆盖默认 provider
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">modelOverride?</span>: <span style="color:#66d9ef">string</span>;         <span style="color:#75715e">// 覆盖默认 model
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">authProfileOverride?</span>: <span style="color:#66d9ef">string</span>;   <span style="color:#75715e">// 覆盖默认认证配置
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">workspaceOverride?</span>: <span style="color:#66d9ef">string</span>;     <span style="color:#75715e">// 覆盖默认 workspace
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">createdAt</span>: <span style="color:#66d9ef">Date</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">lastActiveAt</span>: <span style="color:#66d9ef">Date</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>这种设计允许在<strong>会话级别</strong>临时覆盖 Agent 的默认配置。例如：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># 场景：某个 Telegram 会话临时切换到更强的模型</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 用户发送 /model opus 后，该会话的 modelOverride 被设置为 &#34;anthropic/claude-opus-4&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 其他会话仍然使用 Agent 默认的 &#34;anthropic/claude-sonnet-4&#34;</span>
+</span></span></code></pre></div><h3 id="42-会话隔离的安全边界">
+  4.2 会话隔离的安全边界
+  <a class="anchor" href="#42-%e4%bc%9a%e8%af%9d%e9%9a%94%e7%a6%bb%e7%9a%84%e5%ae%89%e5%85%a8%e8%be%b9%e7%95%8c">#</a>
+</h3>
+<p>OpenClaw 的隔离是<strong>软隔离</strong>（soft isolation），而非硬沙箱（hard sandbox）。理解这一区别至关重要：</p>
+<p><strong>Workspace 隔离 ≠ 硬沙箱</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># 配置示例</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;work&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/work-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">sandbox</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">mode</span>: <span style="color:#e6db74">&#34;all&#34;</span>        <span style="color:#75715e"># 对所有操作启用沙箱</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;main&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/openclaw-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">sandbox</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">mode</span>: <span style="color:#e6db74">&#34;off&#34;</span>        <span style="color:#75715e"># 不启用沙箱</span>
+</span></span></code></pre></div><p><code>sandbox.mode</code> 的三种模式：</p>
+<table>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>含义</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>off</code></td>
+          <td>不启用沙箱，Agent 可以访问整个文件系统</td>
+          <td>开发/测试环境</td>
+      </tr>
+      <tr>
+          <td><code>non-main</code></td>
+          <td>仅对非 main Agent 启用沙箱</td>
+          <td>生产环境（推荐）</td>
+      </tr>
+      <tr>
+          <td><code>all</code></td>
+          <td>对所有 Agent 启用沙箱</td>
+          <td>高安全要求场景</td>
+      </tr>
+  </tbody>
+</table>
+<p>源码中（<code>sandbox-agent-config.ts</code> + <code>sandbox-tool-policy.ts</code>）的隔离实现：</p>
+<pre tabindex="0"><code>1. 文件操作限制：Agent 只能在其 workspace 目录下读写文件
+2. 工具策略：可以配置哪些工具对哪些 Agent 可见
+3. 命令沙箱：通过 Docker/容器限制系统调用
+</code></pre><p><strong>安全边界分析</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>威胁模型</th>
+          <th>是否防护</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Agent A 读取 Agent B 的文件</td>
+          <td>✅（当 workspace 不同时）</td>
+          <td>文件系统级隔离</td>
+      </tr>
+      <tr>
+          <td>Agent A 查看 Agent B 的会话历史</td>
+          <td>✅</td>
+          <td>Session key 前缀隔离</td>
+      </tr>
+      <tr>
+          <td>Agent A 使用 Agent B 的 API Key</td>
+          <td>✅</td>
+          <td>authProfile 隔离</td>
+      </tr>
+      <tr>
+          <td>Agent A 执行恶意系统命令</td>
+          <td>⚠️（取决于 sandbox 模式）</td>
+          <td>需要容器级沙箱</td>
+      </tr>
+      <tr>
+          <td>Agent A 耗尽系统资源</td>
+          <td>⚠️（取决于 Lane 配置）</td>
+          <td>需要 maxConcurrent 限制</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="43-跨-agent-记忆搜索qmd-机制">
+  4.3 跨 Agent 记忆搜索（QMD 机制）
+  <a class="anchor" href="#43-%e8%b7%a8-agent-%e8%ae%b0%e5%bf%86%e6%90%9c%e7%b4%a2qmd-%e6%9c%ba%e5%88%b6">#</a>
+</h3>
+<p>在默认隔离策略下，Agent A 无法访问 Agent B 的记忆。但某些场景需要跨 Agent 的知识共享——例如 family Agent 需要知道 work Agent 记住的&quot;家人生日&quot;信息。</p>
+<p>OpenClaw 通过 <code>memorySearch.qmd.extraCollections</code> 提供了<strong>受控的跨 Agent 记忆搜索</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">memorySearch</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">qmd</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">extraCollections</span>:
+</span></span><span style="display:flex;"><span>      - <span style="color:#f92672">name</span>: <span style="color:#e6db74">&#34;family_shared&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">path</span>: <span style="color:#e6db74">&#34;~/.openclaw/shared/family.qmd&#34;</span>
+</span></span><span style="display:flex;"><span>      - <span style="color:#f92672">name</span>: <span style="color:#e6db74">&#34;work_shared&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">path</span>: <span style="color:#e6db74">&#34;~/.openclaw/shared/work.qmd&#34;</span>
+</span></span></code></pre></div><p><strong>何时应该跨 Agent 搜索记忆？</strong></p>
+<ul>
+<li>✅ 共享的事实性知识（地址、日期、偏好）</li>
+<li>✅ 跨领域的通用知识（菜谱、旅行攻略）</li>
+</ul>
+<p><strong>何时不应该？</strong></p>
+<ul>
+<li>❌ 敏感信息（密码、财务数据）</li>
+<li>❌ 上下文化的信息（&ldquo;上次开会讨论的 X&rdquo;）</li>
+<li>❌ Agent 特有的技能/工作流</li>
+</ul>
+<p>这与数据库设计中的&quot;规范化 vs 反规范化&quot;权衡类似——适度的冗余换来隔离性，但需要手动同步共享数据。</p>
+<hr>
+<h2 id="五委派层sub-agent-机制">
+  五、委派层：Sub-Agent 机制
+  <a class="anchor" href="#%e4%ba%94%e5%a7%94%e6%b4%be%e5%b1%82sub-agent-%e6%9c%ba%e5%88%b6">#</a>
+</h2>
+<blockquote>
+<p>&ldquo;Delegation is not about giving up control; it&rsquo;s about multiplying capability.&rdquo; — 改编自管理学格言</p></blockquote>
+<h3 id="51-sub-agent-的两种模式">
+  5.1 Sub-Agent 的两种模式
+  <a class="anchor" href="#51-sub-agent-%e7%9a%84%e4%b8%a4%e7%a7%8d%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<p>OpenClaw 提供了两种创建子 Agent 的方式，对应不同的使用场景：</p>
+<table>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>触发方式</th>
+          <th>生命周期</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Run 模式</strong></td>
+          <td><code>/subagents spawn</code></td>
+          <td>一次性：完成任务后自动销毁</td>
+          <td>&ldquo;帮我调研 X 并返回结果&rdquo;</td>
+      </tr>
+      <tr>
+          <td><strong>Session 模式</strong></td>
+          <td><code>sessions_spawn</code> + <code>thread: true</code></td>
+          <td>持久：子 Agent 有独立会话，可多次交互</td>
+          <td>&ldquo;创建一个专门处理邮件的 Agent&rdquo;</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>Run 模式</strong>是最常用的方式。父 Agent 派发一个任务，子 Agent 在隔离环境中执行，完成后通过 Announce 机制将结果回传给父 Agent。</p>
+<p><strong>Session 模式</strong>更像创建了一个&quot;长期雇员&quot;——它有自己独立的会话历史，可以持续接收新任务并与父 Agent 交互。</p>
+<h3 id="52-源码拆解subagent-spawnts">
+  5.2 源码拆解：subagent-spawn.ts
+  <a class="anchor" href="#52-%e6%ba%90%e7%a0%81%e6%8b%86%e8%a7%a3subagent-spawnts">#</a>
+</h3>
+<p><code>SpawnSubagentParams</code> 参数结构揭示了子 Agent 创建的所有可配置维度：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">interface</span> <span style="color:#a6e22e">SpawnSubagentParams</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">task</span>: <span style="color:#66d9ef">string</span>;              <span style="color:#75715e">// 任务描述
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">context</span><span style="color:#f92672">?:</span> <span style="color:#e6db74">&#34;isolated&#34;</span> <span style="color:#f92672">|</span> <span style="color:#e6db74">&#34;fork&#34;</span>;  <span style="color:#75715e">// 上下文模式
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">model?</span>: <span style="color:#66d9ef">string</span>;            <span style="color:#75715e">// 模型覆盖
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">timeout?</span>: <span style="color:#66d9ef">number</span>;          <span style="color:#75715e">// 超时时间
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">label?</span>: <span style="color:#66d9ef">string</span>;            <span style="color:#75715e">// 子 Agent 标签
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">thread?</span>: <span style="color:#66d9ef">boolean</span>;          <span style="color:#75715e">// 是否持久会话
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><p><strong>上下文模式对比</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>行为</th>
+          <th>优点</th>
+          <th>缺点</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>isolated</code></td>
+          <td>子 Agent 从零开始，不继承父 Agent 的任何上下文</td>
+          <td>完全隔离，无上下文污染</td>
+          <td>需要完整描述任务背景</td>
+      </tr>
+      <tr>
+          <td><code>fork</code></td>
+          <td>子 Agent 继承父 Agent 的部分会话历史</td>
+          <td>任务描述更简洁</td>
+          <td>可能泄露不相关的上下文</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>模型继承链</strong>：</p>
+<pre tabindex="0"><code>1. 显式 override（SpawnSubagentParams.model）
+2. agents.defaults.subagents.model
+3. 父 Agent 的 model
+4. 全局默认 model
+</code></pre><p>这种继承链确保了子 Agent 始终有一个可用的模型配置，同时允许在不同粒度上覆盖。</p>
+<h3 id="53-完成通知机制subagent-announcets">
+  5.3 完成通知机制：subagent-announce.ts
+  <a class="anchor" href="#53-%e5%ae%8c%e6%88%90%e9%80%9a%e7%9f%a5%e6%9c%ba%e5%88%b6subagent-announcets">#</a>
+</h3>
+<p>子 Agent 完成后的通知流程是 OpenClaw 中最复杂的机制之一：</p>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">sequenceDiagram
+    participant Parent as Parent Agent
+    participant Spawn as spawnSubagent()
+    participant Child as Child Agent
+    participant Announce as announceSubagentCompletion()
+    participant Registry as Subagent Registry
+
+    Parent-&gt;&gt;Spawn: task=&#34;Research X&#34;, context=&#34;isolated&#34;
+    Spawn-&gt;&gt;Registry: registerSubagentRun()
+    Spawn--&gt;&gt;Parent: {runId, childSessionKey}
+    Note over Parent: Parent continues / sessions_yield
+
+    activate Child
+    Note over Child: Child runs in own session/lane
+    Child-&gt;&gt;Child: Tools, LLM calls...
+    Child--&gt;&gt;Child: Run finishes
+    deactivate Child
+
+    Child-&gt;&gt;Announce: Completion event
+    Announce-&gt;&gt;Registry: Lookup parent session
+    Announce-&gt;&gt;Announce: Read latest output (retry)
+    Announce-&gt;&gt;Announce: Build internal events
+    alt Parent is active
+        Announce-&gt;&gt;Parent: Steer/wake with completion
+    else Parent is idle
+        Announce-&gt;&gt;Parent: New agent turn
+    end
+    Parent--&gt;&gt;Announce: Process result
+</code></pre><p><strong>Announce 的完整生命周期</strong>：</p>
+<ol>
+<li><strong>子 Agent 完成</strong>：子 Agent 的 run 结束（正常完成或超时/错误）</li>
+<li><strong>查找父会话</strong>：通过 Registry 查找父 Agent 的 session key</li>
+<li><strong>读取输出</strong>：获取子 Agent 的最后一次响应文本（带重试机制）</li>
+<li><strong>构建内部事件</strong>：将结果包装为内部消息格式</li>
+<li><strong>steer/wake</strong>：
+<ul>
+<li>如果父 Agent 正在 active run → 通过 steer 机制注入结果</li>
+<li>如果父 Agent 空闲 → 触发新的 agent turn</li>
+</ul>
+</li>
+<li><strong>投递到请求者频道</strong>：最终结果发送到用户可见的通道</li>
+</ol>
+<p><strong><code>SILENT_REPLY_TOKEN</code> 机制</strong>：当子 Agent 的输出包含 <code>SILENT_REPLY_TOKEN</code> 标记时，Announce 机制会跳过通知——这用于&quot;后台静默执行&quot;的场景。</p>
+<p><strong>粘滞取消意图（Sticky Cancel Intent）</strong>：如果用户在子 Agent 运行期间发送了取消指令，该意图会被持久化。即使 Gateway 重启，取消操作仍然有效。这是通过文件系统持久化实现的，而非内存状态。</p>
+<h3 id="54-嵌套深度与并发控制">
+  5.4 嵌套深度与并发控制
+  <a class="anchor" href="#54-%e5%b5%8c%e5%a5%97%e6%b7%b1%e5%ba%a6%e4%b8%8e%e5%b9%b6%e5%8f%91%e6%8e%a7%e5%88%b6">#</a>
+</h3>
+<p>OpenClaw 通过两个参数控制子 Agent 的规模：</p>
+<table>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>默认值</th>
+          <th>含义</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>maxSpawnDepth</code></td>
+          <td>2</td>
+          <td>最大嵌套深度（父→子→孙）</td>
+      </tr>
+      <tr>
+          <td><code>maxConcurrent</code></td>
+          <td>5</td>
+          <td>同时运行的子 Agent 最大数量</td>
+      </tr>
+  </tbody>
+</table>
+<p><code>maxSpawnDepth = 2</code> 意味着：</p>
+<pre tabindex="0"><code>Parent Agent (depth 0)
+  └── Child Agent (depth 1)
+        └── Grandchild Agent (depth 2)  ← 最深
+              └── ❌ 不能再 spawn（超过 maxSpawnDepth）
+</code></pre><p>这个限制防止了<strong>无限递归 spawn</strong>——想象一个 Agent 被要求&quot;创建一个 Agent 来创建一个 Agent&hellip;&ldquo;的场景。没有深度限制，这可能导致资源耗尽。</p>
+<p>源码中（<code>subagent-registry.ts</code> + <code>subagent-depth.ts</code>）的深度追踪机制：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 每次 spawn 时，检查当前深度
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">canSpawnSubagent</span>(<span style="color:#a6e22e">currentDepth</span>: <span style="color:#66d9ef">number</span>, <span style="color:#a6e22e">maxDepth</span>: <span style="color:#66d9ef">number</span>)<span style="color:#f92672">:</span> <span style="color:#66d9ef">boolean</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">currentDepth</span> <span style="color:#f92672">&lt;</span> <span style="color:#a6e22e">maxDepth</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 注册子 Agent 运行
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">registerSubagentRun</span>(<span style="color:#a6e22e">params</span><span style="color:#f92672">:</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">parentSessionKey</span>: <span style="color:#66d9ef">string</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">childSessionKey</span>: <span style="color:#66d9ef">string</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">depth</span>: <span style="color:#66d9ef">number</span>;
+</span></span><span style="display:flex;"><span>})<span style="color:#f92672">:</span> <span style="color:#a6e22e">SubagentRun</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">run</span> <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">id</span>: <span style="color:#66d9ef">crypto.randomUUID</span>(),
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">parentSessionKey</span>: <span style="color:#66d9ef">params.parentSessionKey</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">childSessionKey</span>: <span style="color:#66d9ef">params.childSessionKey</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">depth</span>: <span style="color:#66d9ef">params.depth</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">status</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;running&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">createdAt</span>: <span style="color:#66d9ef">new</span> Date(),
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">registry</span>.<span style="color:#66d9ef">set</span>(<span style="color:#a6e22e">run</span>.<span style="color:#a6e22e">id</span>, <span style="color:#a6e22e">run</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">run</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><hr>
+<h2 id="六对等层agent-to-agent-通信">
+  六、对等层：Agent-to-Agent 通信
+  <a class="anchor" href="#%e5%85%ad%e5%af%b9%e7%ad%89%e5%b1%82agent-to-agent-%e9%80%9a%e4%bf%a1">#</a>
+</h2>
+<blockquote>
+<p>&ldquo;Communication is the oil of the organizational machine.&rdquo; — 改编自 Charles Handy</p></blockquote>
+<h3 id="61-sessions_send-工具">
+  6.1 sessions_send 工具
+  <a class="anchor" href="#61-sessions_send-%e5%b7%a5%e5%85%b7">#</a>
+</h3>
+<p><code>sessions_send</code> 是 Agent 间对等通信的核心工具。与 <code>spawnSubagent</code> 的&quot;派任务-等结果&quot;模式不同，<code>sessions_send</code> 支持<strong>双向、持续</strong>的对话式交互。</p>
+<p>工具定义（<code>src/agents/tools/sessions-send-tool.ts</code>）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">interface</span> <span style="color:#a6e22e">SessionsSendParams</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">sessionKey?</span>: <span style="color:#66d9ef">string</span>;     <span style="color:#75715e">// 目标会话的 key
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">agentId?</span>: <span style="color:#66d9ef">string</span>;        <span style="color:#75715e">// 目标 Agent 的 ID
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">message</span>: <span style="color:#66d9ef">string</span>;         <span style="color:#75715e">// 要发送的消息
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">timeoutSeconds?</span>: <span style="color:#66d9ef">number</span>; <span style="color:#75715e">// 等待回复的超时时间
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><p><code>sessionKey</code> 和 <code>agentId</code> 二选一：</p>
+<ul>
+<li>指定 <code>sessionKey</code>：精确发送到某个特定会话</li>
+<li>指定 <code>agentId</code>：发送到该 Agent 的默认会话</li>
+</ul>
+<p><strong>可见性策略</strong>（<code>tools.sessions.visibility</code>）：</p>
+<table>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>Agent 能否看到其他 Agent 的 sessions？</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>self</code></td>
+          <td>只能看到自己的 session</td>
+          <td>默认推荐</td>
+      </tr>
+      <tr>
+          <td><code>all</code></td>
+          <td>可以看到所有 session</td>
+          <td>调试/管理</td>
+      </tr>
+      <tr>
+          <td><code>none</code></td>
+          <td>看不到任何 session（但仍可通过 agentId 发送）</td>
+          <td>高安全</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="62-a2a-flowagent-to-agent-对话流">
+  6.2 A2A Flow（Agent-to-Agent 对话流）
+  <a class="anchor" href="#62-a2a-flowagent-to-agent-%e5%af%b9%e8%af%9d%e6%b5%81">#</a>
+</h3>
+<p><code>sessions_send</code> 最强大的特性是 <strong>Ping-Pong 对话流</strong>。当 Agent A 发送消息给 Agent B 后，Agent B 的回复可以被自动回传给 Agent A，Agent A 再回复 Agent B——如此交替，最多 N 轮。</p>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">sequenceDiagram
+    participant A1 as Agent A (Requester)
+    participant Send as sessions_send tool
+    participant A2 as Agent B (Target)
+    participant A2A as A2A Engine
+
+    A1-&gt;&gt;Send: sessionKey=B, message=&#34;Analyze this data&#34;
+    Send-&gt;&gt;A2A: Trigger A2A flow
+    A2A-&gt;&gt;A2: Run agent step with message
+    Note over A2: maxPingPongTurns=2
+    A2-&gt;&gt;A2: Process &amp; generate reply
+    A2--&gt;&gt;A2A: Reply: &#34;Here is the analysis...&#34;
+
+    alt More ping-pong turns allowed
+        A2A-&gt;&gt;A1: Send reply back as new prompt
+        A1-&gt;&gt;A1: Process &amp; generate follow-up
+        A1--&gt;&gt;A2A: Follow-up reply
+        A2A-&gt;&gt;A2: Deliver follow-up
+        A2--&gt;&gt;A2A: Final reply
+    end
+
+    A2A-&gt;&gt;A2: Announce step: build final context
+    A2--&gt;&gt;A2A: Final announcement text
+    A2A-&gt;&gt;A1: Deliver result (announce)
+</code></pre><p><strong>Ping-Pong 机制详解</strong>：</p>
+<ol>
+<li><strong><code>maxPingPongTurns</code> 控制对话轮数</strong>：默认值为 2，防止无限对话消耗资源</li>
+<li><strong><code>buildAgentToAgentReplyContext()</code> 构建对话上下文</strong>：每次轮换时，系统会为当前发言的 Agent 构建一个特殊的上下文，包含对话历史和角色信息</li>
+<li><strong>角色轮换</strong>：requester ↔ target 交替发言，每一轮都是一次完整的 Agent 推理过程</li>
+</ol>
+<p><strong>终止条件</strong>（三个条件满足任一即终止）：</p>
+<table>
+  <thead>
+      <tr>
+          <th>条件</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>isReplySkip()</code></td>
+          <td>回复内容为空或为特殊 skip 标记</td>
+      </tr>
+      <tr>
+          <td><code>isNonDeliverableSessionsReply()</code></td>
+          <td>回复为不可投递的系统消息</td>
+      </tr>
+      <tr>
+          <td>达到 <code>maxPingPongTurns</code></td>
+          <td>对话轮数达到上限</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="63-安全门控">
+  6.3 安全门控
+  <a class="anchor" href="#63-%e5%ae%89%e5%85%a8%e9%97%a8%e6%8e%a7">#</a>
+</h3>
+<p>A2A 通信默认<strong>关闭</strong>，必须显式开启并配置白名单：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">tools</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">agentToAgent</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">enabled</span>: <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">allow</span>:
+</span></span><span style="display:flex;"><span>      - <span style="color:#f92672">from</span>: <span style="color:#e6db74">&#34;main&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">to</span>: <span style="color:#e6db74">&#34;work&#34;</span>
+</span></span><span style="display:flex;"><span>      - <span style="color:#f92672">from</span>: <span style="color:#e6db74">&#34;main&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">to</span>: <span style="color:#e6db74">&#34;family&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e"># 注意：work → family 未被允许</span>
+</span></span></code></pre></div><p><strong>默认值的安全考虑</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>默认值</th>
+          <th>安全考虑</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>enabled</code></td>
+          <td><code>false</code></td>
+          <td>默认不允许 Agent 间通信</td>
+      </tr>
+      <tr>
+          <td><code>allow</code></td>
+          <td><code>[]</code></td>
+          <td>即使 enabled，也需要显式白名单</td>
+      </tr>
+      <tr>
+          <td><code>maxPingPongTurns</code></td>
+          <td>2</td>
+          <td>防止无限递归对话消耗资源</td>
+      </tr>
+  </tbody>
+</table>
+<p>这个安全门控防止了<strong>Agent 间的意外对话循环</strong>——如果 Agent A 可以无条件地与 Agent B 通信，而 Agent B 也可以无条件地与 Agent A 通信，那么一条消息可能触发无限循环的对话。</p>
+<h3 id="64-announce-投递">
+  6.4 Announce 投递
+  <a class="anchor" href="#64-announce-%e6%8a%95%e9%80%92">#</a>
+</h3>
+<p>Ping-Pong 对话结束后，最终结果通过 Announce 机制投递给请求者：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// buildAgentToAgentAnnounceContext 构建最终公告
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">announceContext</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">buildAgentToAgentAnnounceContext</span>({
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">requesterSessionKey</span>: <span style="color:#66d9ef">params.requesterSessionKey</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">requesterChannel</span>: <span style="color:#66d9ef">params.requesterChannel</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">targetSessionKey</span>: <span style="color:#66d9ef">params.displayKey</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">targetChannel</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">originalMessage</span>: <span style="color:#66d9ef">params.message</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">roundOneReply</span>: <span style="color:#66d9ef">primaryReply</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">latestReply</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span></code></pre></div><p><strong>幂等性保障</strong>：每次 Announce 投递使用 <code>crypto.randomUUID()</code> 生成 <code>idempotencyKey</code>，确保同一结果不会被重复投递。这与 HTTP API 中的幂等键设计完全一致。</p>
+<p>投递流程：</p>
+<pre tabindex="0"><code>A2A Engine → buildAgentToAgentAnnounceContext() → callGateway(&#34;send&#34;) → 目标频道
+</code></pre><hr>
+<h2 id="七调度层command-queue-与-lanes">
+  七、调度层：Command Queue 与 Lanes
+  <a class="anchor" href="#%e4%b8%83%e8%b0%83%e5%ba%a6%e5%b1%82command-queue-%e4%b8%8e-lanes">#</a>
+</h2>
+<blockquote>
+<p>&ldquo;Concurrency is not parallelism. Concurrency is about dealing with lots of things at once. Parallelism is about doing lots of things at once.&rdquo; — Rob Pike</p></blockquote>
+<h3 id="71-lane-模型">
+  7.1 Lane 模型
+  <a class="anchor" href="#71-lane-%e6%a8%a1%e5%9e%8b">#</a>
+</h3>
+<p>Lane 是 OpenClaw 中<strong>并发调度的基本单元</strong>。可以把 Lane 想象成机场的跑道——同一时刻，一条跑道上只能有一架飞机起降，但不同跑道可以并行操作。</p>
+<p>源码入口（<code>src/agents/lanes.ts</code>）定义了以下 Lane 类型：</p>
+<table>
+  <thead>
+      <tr>
+          <th>Lane 类型</th>
+          <th>格式</th>
+          <th>含义</th>
+          <th>并发度</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>main</code></td>
+          <td><code>main:&lt;mainKey&gt;</code></td>
+          <td>主会话 lane</td>
+          <td>同 session 串行</td>
+      </tr>
+      <tr>
+          <td><code>subagent</code></td>
+          <td><code>subagent:&lt;parentSessionKey&gt;</code></td>
+          <td>子 Agent lane</td>
+          <td>受 maxConcurrent 限制</td>
+      </tr>
+      <tr>
+          <td><code>cron</code></td>
+          <td><code>cron</code></td>
+          <td>定时任务 lane</td>
+          <td>受 cron.maxConcurrentRuns 限制</td>
+      </tr>
+      <tr>
+          <td><code>cron-nested</code></td>
+          <td><code>cron-nested:&lt;cronKey&gt;</code></td>
+          <td>嵌套定时任务 lane</td>
+          <td>独立槽位</td>
+      </tr>
+      <tr>
+          <td><code>nested:&lt;sessionKey&gt;</code></td>
+          <td><code>nested:&lt;key&gt;</code></td>
+          <td>嵌套会话 lane</td>
+          <td>独立串行</td>
+      </tr>
+  </tbody>
+</table>
+<p><code>resolveNestedAgentLaneForSession()</code> 和 <code>resolveCronAgentLane()</code> 的语义：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 根据 session key 解析对应的 lane
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveNestedAgentLaneForSession</span>(<span style="color:#a6e22e">sessionKey</span>: <span style="color:#66d9ef">string</span>)<span style="color:#f92672">:</span> <span style="color:#66d9ef">string</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">isSubagentSessionKey</span>(<span style="color:#a6e22e">sessionKey</span>)) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#e6db74">`subagent:</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">getParentSessionKey</span>(<span style="color:#a6e22e">sessionKey</span>)<span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">isCronSessionKey</span>(<span style="color:#a6e22e">sessionKey</span>)) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#e6db74">`cron-nested:</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">getCronKey</span>(<span style="color:#a6e22e">sessionKey</span>)<span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#e6db74">`main:</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">extractMainKey</span>(<span style="color:#a6e22e">sessionKey</span>)<span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>Lane 的关键设计原则</strong>：</p>
+<ol>
+<li><strong>同 session 串行</strong>：同一个 session 的所有操作必须在同一个 lane 中串行执行，确保上下文一致性</li>
+<li><strong>跨 session 并行</strong>：不同 session 可以在不同 lane 中并行执行</li>
+<li><strong>Lane 隔离</strong>：subagent lane 和 cron lane 有独立的并发配额，互不影响</li>
+</ol>
+<h3 id="72-queue-模式">
+  7.2 Queue 模式
+  <a class="anchor" href="#72-queue-%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<p>当消息到达时，如果目标 Lane 正在忙，OpenClaw 根据 <strong>Queue 模式</strong> 决定如何处理：</p>
+<table>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>行为</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>steer</code></td>
+          <td>注入 active runtime，中断当前操作并处理新消息</td>
+          <td>默认推荐，适合交互式对话</td>
+      </tr>
+      <tr>
+          <td><code>followup</code></td>
+          <td>排队等待，等当前操作完成后处理</td>
+          <td>批量任务处理</td>
+      </tr>
+      <tr>
+          <td><code>collect</code></td>
+          <td>合并为一次 followup，多条消息合并为一条</td>
+          <td>群聊场景，避免刷屏</td>
+      </tr>
+      <tr>
+          <td><code>interrupt</code></td>
+          <td>强制中断当前 run，丢弃未完成的输出</td>
+          <td>紧急场景</td>
+      </tr>
+  </tbody>
+</table>
+<p>源码中的 <code>run-wait.ts</code> 与 <code>waitForAgentRun()</code> 实现了队列的等待和唤醒机制：</p>
+<pre tabindex="0"><code>消息到达 → 检查 lane 状态
+  ├── Lane 空闲 → 立即执行
+  ├── Lane 忙 + steer → 注入新消息到当前 run
+  ├── Lane 忙 + followup → 加入队列等待
+  ├── Lane 忙 + collect → 合并到已有队列项
+  └── Lane 忙 + interrupt → 终止当前 run，执行新消息
+</code></pre><h3 id="73-并发控制">
+  7.3 并发控制
+  <a class="anchor" href="#73-%e5%b9%b6%e5%8f%91%e6%8e%a7%e5%88%b6">#</a>
+</h3>
+<p>OpenClaw 在三个层级控制并发度：</p>
+<table>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>参数</th>
+          <th>默认值</th>
+          <th>作用范围</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Agent 级</td>
+          <td><code>agents.defaults.maxConcurrent</code></td>
+          <td>1</td>
+          <td>单个 Agent 的最大并发 run 数</td>
+      </tr>
+      <tr>
+          <td>Subagent 级</td>
+          <td><code>subagents.maxConcurrent</code></td>
+          <td>5</td>
+          <td>全局子 Agent 并发数</td>
+      </tr>
+      <tr>
+          <td>Cron 级</td>
+          <td><code>cron.maxConcurrentRuns</code></td>
+          <td>3</td>
+          <td>全局定时任务并发数</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>Session-level 串行保证</strong>：同一 session 在任何时刻只有一个 active run。这是通过 Lane 机制保证的——同一个 session key 映射到同一个 lane，而 lane 内部是串行执行的。</p>
+<p><strong>并发控制的现实意义</strong>：</p>
+<p>想象一个场景：用户在家庭群中连续发送了 10 条消息。如果没有并发控制，Agent 可能同时启动 10 个 run，每个 run 都在读取和写入同一个会话历史，导致数据竞争和上下文混乱。通过 session-level 串行保证，这 10 条消息会被依次处理（steer 模式下注入到同一个 run，followup 模式下排队处理）。</p>
+<h3 id="74-specialist-lanes-模式">
+  7.4 Specialist Lanes 模式
+  <a class="anchor" href="#74-specialist-lanes-%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<p>在多 Agent 架构中，每个 Agent 天然就是一个 <strong>Specialist Lane</strong>——它有自己专注的领域、独立的资源和明确的职责边界。</p>
+<pre tabindex="0"><code>Agent: main    → Lane: main:main     → 职责：通用任务
+Agent: work    → Lane: main:work     → 职责：工作相关
+Agent: family  → Lane: main:family   → 职责：家庭相关
+</code></pre><p>这种模式的三阶段推进：</p>
+<ol>
+<li><strong>Contract 阶段</strong>：定义每个 Agent 的职责边界和接口（通过 bindings 和 tools 配置）</li>
+<li><strong>Queue Tuning 阶段</strong>：调整每个 Agent 的 Queue 模式（steer vs followup vs collect）</li>
+<li><strong>Coordinator 阶段</strong>：引入一个 Coordinator Agent 负责请求分解和结果汇聚</li>
+</ol>
+<p>这与微服务架构中的&quot;服务网格&quot;概念类似——每个服务（Agent）独立部署和运行，但通过明确定义的接口（sessions_send / spawnSubagent）进行协作。</p>
+<hr>
+<h2 id="八配置实战">
+  八、配置实战
+  <a class="anchor" href="#%e5%85%ab%e9%85%8d%e7%bd%ae%e5%ae%9e%e6%88%98">#</a>
+</h2>
+<p>理论需要落地。本节通过四个典型场景，展示如何将前面介绍的机制组合成生产级方案。</p>
+<h3 id="81-场景-1家庭群--工作群隔离--agent-间协作">
+  8.1 场景 1：家庭群 + 工作群隔离 + Agent 间协作
+  <a class="anchor" href="#81-%e5%9c%ba%e6%99%af-1%e5%ae%b6%e5%ba%ad%e7%be%a4--%e5%b7%a5%e4%bd%9c%e7%be%a4%e9%9a%94%e7%a6%bb--agent-%e9%97%b4%e5%8d%8f%e4%bd%9c">#</a>
+</h3>
+<p><strong>需求</strong>：</p>
+<ul>
+<li>家庭群和工作群使用不同 Agent，互不干扰</li>
+<li>家庭 Agent 使用便宜的 Haiku 模型</li>
+<li>工作 Agent 使用强推理的 Opus 模型，且启用沙箱</li>
+<li>两个 Agent 可以共享日历信息</li>
+</ul>
+<p><strong>完整配置</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">list</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;main&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/openclaw-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;family&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-haiku&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/family-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">skills</span>:
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;calendar-reader&#34;</span>
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;recipe-finder&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;work&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-opus-4&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/work-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">sandbox</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">mode</span>: <span style="color:#e6db74">&#34;all&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">skills</span>:
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;code-review&#34;</span>
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;email-drafter&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">bindings</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 家庭群 → family Agent</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;family&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">channel</span>: <span style="color:#e6db74">&#34;telegram&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">guildId</span>: <span style="color:#e6db74">&#34;-100family_group_id&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 工作群 → work Agent</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;work&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">channel</span>: <span style="color:#e6db74">&#34;telegram&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">guildId</span>: <span style="color:#e6db74">&#34;-100work_group_id&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 工作 Slack → work Agent</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;work&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">channel</span>: <span style="color:#e6db74">&#34;slack&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">teamId</span>: <span style="color:#e6db74">&#34;T0WORKTEAM&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 个人 DM → main Agent</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;main&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">channel</span>: <span style="color:#e6db74">&#34;telegram&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Agent 间共享日历</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">memorySearch</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">qmd</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">extraCollections</span>:
+</span></span><span style="display:flex;"><span>      - <span style="color:#f92672">name</span>: <span style="color:#e6db74">&#34;shared_calendar&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">path</span>: <span style="color:#e6db74">&#34;~/.openclaw/shared/calendar.qmd&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 允许 family 和 work 互相通信（可选）</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">tools</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">agentToAgent</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">enabled</span>: <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">allow</span>:
+</span></span><span style="display:flex;"><span>      - <span style="color:#f92672">from</span>: <span style="color:#e6db74">&#34;family&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">to</span>: <span style="color:#e6db74">&#34;work&#34;</span>
+</span></span><span style="display:flex;"><span>      - <span style="color:#f92672">from</span>: <span style="color:#e6db74">&#34;work&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">to</span>: <span style="color:#e6db74">&#34;family&#34;</span>
+</span></span></code></pre></div><p><strong>交互流程</strong>：</p>
+<pre tabindex="0"><code>家人在家庭群发消息 → Telegram → Binding 匹配 guildId → family Agent
+同事在工作群发消息 → Slack → Binding 匹配 teamId → work Agent
+family Agent 需要查工作日程 → sessions_send → work Agent → 返回日历信息
+</code></pre><h3 id="82-场景-2coordinator--workers-编排模式">
+  8.2 场景 2：Coordinator + Workers 编排模式
+  <a class="anchor" href="#82-%e5%9c%ba%e6%99%af-2coordinator--workers-%e7%bc%96%e6%8e%92%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<p><strong>需求</strong>：</p>
+<ul>
+<li>一个 Coordinator Agent 接收用户请求并分解任务</li>
+<li>多个 Worker Agent 并行执行子任务</li>
+<li>结果汇聚后返回给用户</li>
+</ul>
+<p><strong>完整配置</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">list</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;coordinator&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-opus-4&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/coordinator-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">skills</span>:
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;task-decomposer&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;researcher&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/researcher-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">skills</span>:
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;web-search&#34;</span>
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;paper-reader&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;coder&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/coder-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">skills</span>:
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;python-dev&#34;</span>
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;data-analysis&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;writer&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/writer-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">skills</span>:
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;technical-writing&#34;</span>
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;document-formatting&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 所有消息默认路由到 Coordinator</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">bindings</span>:
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;coordinator&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">channel</span>: <span style="color:#e6db74">&#34;telegram&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Coordinator 可以 spawn 其他 Agent 作为子任务执行者</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">subagents</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">maxConcurrent</span>: <span style="color:#ae81ff">10</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">maxSpawnDepth</span>: <span style="color:#ae81ff">1</span>  <span style="color:#75715e"># Coordinator → Worker，不再嵌套</span>
+</span></span></code></pre></div><p><strong>Coordinator 的工作流程</strong>（由 task-decomposer skill 驱动）：</p>
+<pre tabindex="0"><code>用户: &#34;帮我调研 OpenClaw 的多 Agent 机制，写一篇文章，并生成代码示例&#34;
+
+Coordinator Agent:
+  1. 分解任务:
+     - 调研: spawn researcher → &#34;调研 OpenClaw 源码中的多 Agent 机制&#34;
+     - 编码: spawn coder → &#34;编写多 Agent 配置示例代码&#34;
+     - 写作: (等前两个完成后) spawn writer → &#34;整合调研和代码，写文章&#34;
+
+  2. 并行执行:
+     ├── researcher (并发) → 返回调研结果
+     └── coder (并发) → 返回代码示例
+
+  3. 结果汇聚:
+     └── writer (顺序) → 接收调研+代码 → 生成最终文章
+
+  4. Announce → 用户收到最终文章
+</code></pre><p><strong>源码对应的调用链</strong>：</p>
+<pre tabindex="0"><code>coordinator.spawnSubagent({ task: &#34;调研...&#34;, agentId: &#34;researcher&#34; })
+  → spawnSubagent() → Subagent Orchestrator → Lane: subagent:coordinator
+  → researcher 在隔离 session 中执行 → 完成
+  → announceSubagentCompletion() → 回调 coordinator
+
+coordinator.spawnSubagent({ task: &#34;编码...&#34;, agentId: &#34;coder&#34; })
+  → 同上...
+
+coordinator 等待两个子 Agent 完成 → spawnSubagent({ task: &#34;写作...&#34;, agentId: &#34;writer&#34; })
+  → writer 接收前两个的结果 → 生成文章
+  → announce → 用户
+</code></pre><h3 id="83-场景-3多频道--多模型--按需路由">
+  8.3 场景 3：多频道 + 多模型 + 按需路由
+  <a class="anchor" href="#83-%e5%9c%ba%e6%99%af-3%e5%a4%9a%e9%a2%91%e9%81%93--%e5%a4%9a%e6%a8%a1%e5%9e%8b--%e6%8c%89%e9%9c%80%e8%b7%af%e7%94%b1">#</a>
+</h3>
+<p><strong>需求</strong>：</p>
+<ul>
+<li>WhatsApp 使用快模型（Sonnet），注重响应速度</li>
+<li>Telegram 使用强模型（Opus），注重推理质量</li>
+<li>特定用户的 DM 绑定到专属 Agent</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">list</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;fast&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/fast-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;smart&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-opus-4&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/smart-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;vip&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-opus-4&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/vip-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">skills</span>:
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;personal-assistant&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">bindings</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># VIP 用户 → 专属 Agent（最高优先级）</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;vip&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">peer</span>: <span style="color:#e6db74">&#34;+1555VIPNUMBER&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># WhatsApp → 快模型</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;fast&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">channel</span>: <span style="color:#e6db74">&#34;whatsapp&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># Telegram → 强模型</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;smart&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">channel</span>: <span style="color:#e6db74">&#34;telegram&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 兜底</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;fast&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>: {}
+</span></span></code></pre></div><p><strong>路由优先级分析</strong>：</p>
+<pre tabindex="0"><code>VIP 用户从 WhatsApp 发消息:
+  1. 检查 peer 匹配 → ✅ 匹配 &#34;vip&#34; Agent → 使用 Opus + personal-assistant skill
+  （即使 WhatsApp 默认路由到 &#34;fast&#34;，peer 匹配优先级更高）
+
+普通用户从 WhatsApp 发消息:
+  1. 检查 peer 匹配 → ❌ 无匹配
+  2. 检查 channel 匹配 → ✅ 匹配 &#34;fast&#34; Agent → 使用 Sonnet
+
+普通用户从 Telegram 发消息:
+  1. 检查 peer 匹配 → ❌ 无匹配
+  2. 检查 channel 匹配 → ✅ 匹配 &#34;smart&#34; Agent → 使用 Opus
+</code></pre><h3 id="84-场景-4定时工作流--多-agent-协作">
+  8.4 场景 4：定时工作流 + 多 Agent 协作
+  <a class="anchor" href="#84-%e5%9c%ba%e6%99%af-4%e5%ae%9a%e6%97%b6%e5%b7%a5%e4%bd%9c%e6%b5%81--%e5%a4%9a-agent-%e5%8d%8f%e4%bd%9c">#</a>
+</h3>
+<p><strong>需求</strong>：</p>
+<ul>
+<li>每天早上 8 点，cron 触发 Data Agent 收集数据</li>
+<li>Data Agent 通过 <code>sessions_send</code> 将数据交给 Analysis Agent 分析</li>
+<li>Analysis Agent 通过 announce 投递最终报告到 Telegram 群</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">list</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;data-collector&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-haiku&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/data-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">skills</span>:
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;api-fetcher&#34;</span>
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;data-cleaner&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;data-analyst&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/analyst-workspace&#34;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">skills</span>:
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;data-analyzer&#34;</span>
+</span></span><span style="display:flex;"><span>        - <span style="color:#e6db74">&#34;report-generator&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">cron</span>:
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">schedule</span>: <span style="color:#e6db74">&#34;0 8 * * *&#34;</span>  <span style="color:#75715e"># 每天 8:00</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;data-collector&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">prompt</span>: <span style="color:#e6db74">&#34;收集昨天的销售数据，清洗后通过 sessions_send 发给 data-analyst&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">maxConcurrentRuns</span>: <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">tools</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">agentToAgent</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">enabled</span>: <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">allow</span>:
+</span></span><span style="display:flex;"><span>      - <span style="color:#f92672">from</span>: <span style="color:#e6db74">&#34;data-collector&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">to</span>: <span style="color:#e6db74">&#34;data-analyst&#34;</span>
+</span></span></code></pre></div><p><strong>Data Agent 的 cron prompt 示例</strong>：</p>
+<pre tabindex="0"><code>你是一个数据收集 Agent。请执行以下步骤：
+1. 调用 sales-api 获取昨天的销售数据
+2. 清洗数据：去除空值、修正格式
+3. 使用 sessions_send 将清洗后的数据发送给 data-analyst Agent
+   message: &#34;以下是昨天的销售数据，请生成分析报告：\n\n{data}&#34;
+4. 等待 data-analyst 的回复
+5. 将分析报告转发到 Telegram 家庭群
+</code></pre><p><strong>完整执行流程</strong>：</p>
+<pre tabindex="0"><code>08:00 → Cron 触发 → data-collector Agent 启动
+      → data-collector 调用 API → 清洗数据
+      → sessions_send → data-analyst Agent
+      → A2A Ping-Pong (1 轮)
+      → data-analyst 生成报告
+      → Announce → Telegram 群收到报告
+</code></pre><hr>
+<h2 id="九源码关键文件索引">
+  九、源码关键文件索引
+  <a class="anchor" href="#%e4%b9%9d%e6%ba%90%e7%a0%81%e5%85%b3%e9%94%ae%e6%96%87%e4%bb%b6%e7%b4%a2%e5%bc%95">#</a>
+</h2>
+<p>本节提供 OpenClaw 多 Agent 机制核心源码文件的速查表。基于 v1.x 源码结构，文件路径均相对于项目根目录。</p>
+<table>
+  <thead>
+      <tr>
+          <th>文件路径</th>
+          <th>职责</th>
+          <th>关键函数/类型</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>src/agents/agent-scope.ts</code></td>
+          <td>Agent 配置解析，从 session key 到 agentId 的映射</td>
+          <td><code>resolveSessionAgentIds()</code>, <code>listAgentIds()</code>, <code>resolveDefaultAgentId()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/agent-scope-config.ts</code></td>
+          <td>Agent 磁盘布局，路径解析逻辑</td>
+          <td><code>resolveAgentDir()</code>, <code>resolveWorkspacePath()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/lanes.ts</code></td>
+          <td>Lane 模型，并发调度基本单元</td>
+          <td><code>resolveNestedAgentLaneForSession()</code>, <code>resolveCronAgentLane()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/subagent-spawn.ts</code></td>
+          <td>Sub-Agent 创建，参数解析与会话分配</td>
+          <td><code>spawnSubagent()</code>, <code>SpawnSubagentParams</code>, <code>forkSessionFromParent()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/subagent-announce.ts</code></td>
+          <td>子 Agent 完成通知，steer/wake 机制</td>
+          <td><code>announceSubagentCompletion()</code>, <code>SILENT_REPLY_TOKEN</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/subagent-registry.ts</code></td>
+          <td>子 Agent 生命周期管理，深度追踪</td>
+          <td><code>registerSubagentRun()</code>, <code>lookupSubagentRun()</code>, <code>canSpawnSubagent()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/subagent-depth.ts</code></td>
+          <td>递归深度追踪</td>
+          <td><code>getSpawnDepth()</code>, <code>checkMaxSpawnDepth()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/tools/sessions-send-tool.ts</code></td>
+          <td>A2A 发送工具定义</td>
+          <td><code>createSessionsSendTool()</code>, <code>SessionsSendParams</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/tools/sessions-send-tool.a2a.ts</code></td>
+          <td>A2A 对话流引擎（Ping-Pong 机制）</td>
+          <td><code>runSessionsSendA2AFlow()</code>, <code>buildAgentToAgentReplyContext()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/tools/sessions-send-helpers.ts</code></td>
+          <td>A2A 辅助函数</td>
+          <td><code>buildAgentToAgentAnnounceContext()</code>, <code>isReplySkip()</code>, <code>isAnnounceSkip()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/tools/sessions-helpers.ts</code></td>
+          <td>Session 可见性策略</td>
+          <td><code>createSessionVisibilityGuard()</code>, <code>resolveVisibleSessionReference()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/run-wait.ts</code></td>
+          <td>Agent 运行等待，队列机制</td>
+          <td><code>waitForAgentRun()</code>, <code>readLatestAssistantReplySnapshot()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/agent-step.ts</code></td>
+          <td>单步 Agent 执行</td>
+          <td><code>runAgentStep()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/routing/resolve-route.ts</code></td>
+          <td>路由决策，Binding 匹配</td>
+          <td><code>resolveRoute()</code>, <code>matchBinding()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/routing/session-key.ts</code></td>
+          <td>Session Key 格式与解析</td>
+          <td><code>parseAgentSessionKey()</code>, <code>resolveAgentIdFromSessionKey()</code>, <code>toAgentStoreSessionKey()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/routing/bindings.ts</code></td>
+          <td>Binding 配置模型</td>
+          <td><code>resolveBindingMatch()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/bindings/records.ts</code></td>
+          <td>绑定记录持久化</td>
+          <td><code>createConversationBindingRecord()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/sandbox/sandbox-agent-config.ts</code></td>
+          <td>沙箱 Agent 配置</td>
+          <td><code>resolveSandboxMode()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/sandbox/sandbox-tool-policy.ts</code></td>
+          <td>沙箱工具策略</td>
+          <td><code>resolveToolPolicy()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/gateway/call.ts</code></td>
+          <td>Gateway 内部通信</td>
+          <td><code>callGateway()</code></td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>源码阅读建议路径</strong>：</p>
+<pre tabindex="0"><code>1. agent-scope.ts     → 理解 Agent 是什么
+2. session-key.ts     → 理解身份标识
+3. resolve-route.ts   → 理解消息路由
+4. lanes.ts           → 理解并发调度
+5. subagent-spawn.ts  → 理解子 Agent 创建
+6. subagent-announce.ts → 理解完成通知
+7. sessions-send-tool.ts + a2a.ts → 理解 Agent 间通信
+</code></pre><hr>
+<h2 id="十总结与展望">
+  十、总结与展望
+  <a class="anchor" href="#%e5%8d%81%e6%80%bb%e7%bb%93%e4%b8%8e%e5%b1%95%e6%9c%9b">#</a>
+</h2>
+<h3 id="101-核心设计原则回顾">
+  10.1 核心设计原则回顾
+  <a class="anchor" href="#101-%e6%a0%b8%e5%bf%83%e8%ae%be%e8%ae%a1%e5%8e%9f%e5%88%99%e5%9b%9e%e9%a1%be">#</a>
+</h3>
+<p>纵观全文，OpenClaw 多 Agent 架构可以归结为三个核心原则：</p>
+<p><strong>1. 隔离优先（Isolation First）</strong></p>
+<p>每个 Agent 是一个完整的、自洽的单元——独立的 workspace、独立的 session 历史、独立的模型配置、独立的工具集。默认情况下，Agent 之间不共享任何状态。这与微服务架构中的&quot;独立部署、独立运维&quot;理念一致。</p>
+<p><strong>2. 显式交互（Explicit Interaction）</strong></p>
+<p>Agent 之间的所有交互都必须通过显式机制（<code>spawnSubagent</code>、<code>sessions_send</code>）完成，不存在隐式的状态共享或上下文泄露。这与操作系统中进程间通信（IPC）的设计哲学如出一辙——进程默认隔离，通信需要系统调用。</p>
+<p><strong>3. 分层调度（Layered Scheduling）</strong></p>
+<p>从路由分发到会话隔离，从子 Agent 委派到对等通信，每一层解决一个特定问题，层与层之间通过明确定义的接口通信。调度层（Lane + Queue）正交地贯穿所有层，提供统一的并发控制。这与 TCP/IP 协议栈的分层设计异曲同工。</p>
+<h3 id="102-与-hermes-agent-的多-agent-对比">
+  10.2 与 Hermes Agent 的多 Agent 对比
+  <a class="anchor" href="#102-%e4%b8%8e-hermes-agent-%e7%9a%84%e5%a4%9a-agent-%e5%af%b9%e6%af%94">#</a>
+</h3>
+<p>OpenClaw 和 Hermes Agent 都支持多 Agent 机制，但设计理念有所不同：</p>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>OpenClaw</th>
+          <th>Hermes Agent</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>隔离粒度</strong></td>
+          <td>Agent 级（workspace + session + model）</td>
+          <td>Agent 级（类似）</td>
+      </tr>
+      <tr>
+          <td><strong>路由方式</strong></td>
+          <td>Binding 配置（声明式 YAML）</td>
+          <td>内置路由（配置驱动）</td>
+      </tr>
+      <tr>
+          <td><strong>子 Agent</strong></td>
+          <td>spawnSubagent（run/session 两种模式）</td>
+          <td>delegate_task（goal/context 模式）</td>
+      </tr>
+      <tr>
+          <td><strong>Agent 间通信</strong></td>
+          <td>sessions_send + A2A ping-pong</td>
+          <td>send_message + cronjob</td>
+      </tr>
+      <tr>
+          <td><strong>并发控制</strong></td>
+          <td>Lane + Queue + maxConcurrent</td>
+          <td>session 串行 + cron 调度</td>
+      </tr>
+      <tr>
+          <td><strong>安全模型</strong></td>
+          <td>sandbox + visibility + allowlist</td>
+          <td>profile 隔离 + 跨 profile guard</td>
+      </tr>
+      <tr>
+          <td><strong>调度</strong></td>
+          <td>Command Queue + Lanes + steer/followup</td>
+          <td>Cron 定时任务 + 后台进程</td>
+      </tr>
+  </tbody>
+</table>
+<p>两者的共同点是都选择了&quot;隔离优先、显式交互&quot;的架构。不同点在于 OpenClaw 更侧重于<strong>实时消息路由和会话隔离</strong>（适合聊天机器人场景），而 Hermes Agent 更侧重于<strong>任务委派和定时调度</strong>（适合自动化工作流）。</p>
+<h3 id="103-未来趋势">
+  10.3 未来趋势
+  <a class="anchor" href="#103-%e6%9c%aa%e6%9d%a5%e8%b6%8b%e5%8a%bf">#</a>
+</h3>
+<p><strong>更智能的 Lane 编排</strong>：当前的 Lane 调度是静态配置的（声明式 YAML）。未来可能引入动态 Lane 分配——根据负载自动调整并发度，或在检测到 Agent 间频繁通信时自动建立专用 Lane。</p>
+<p><strong>跨 Agent 记忆共享</strong>：当前的跨 Agent 记忆搜索是手动的（extraCollections 配置）。未来可能实现自动化的知识蒸馏——Agent 定期将重要记忆同步到共享知识库，供其他 Agent 按需检索。</p>
+<p><strong>动态路由优化</strong>：当前的 Binding 路由是静态配置的。未来可能引入学习式路由——根据历史交互模式自动调整路由规则，或将用户请求自动路由到最合适的 Agent。</p>
+<h3 id="104-最佳实践清单">
+  10.4 最佳实践清单
+  <a class="anchor" href="#104-%e6%9c%80%e4%bd%b3%e5%ae%9e%e8%b7%b5%e6%b8%85%e5%8d%95">#</a>
+</h3>
+<p>基于全文分析，以下是 OpenClaw 多 Agent 配置的最佳实践：</p>
+<table>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>实践</th>
+          <th>理由</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td><strong>每个 Agent 一个 workspace</strong></td>
+          <td>文件系统隔离是最基本的安全边界</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td><strong>启用 sandbox mode = &ldquo;non-main&rdquo;</strong></td>
+          <td>生产环境中保护 main Agent 不受非预期操作影响</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td><strong>Binding 规则从精确到宽泛排列</strong></td>
+          <td>利用最精确匹配优先策略，避免宽泛规则覆盖精确规则</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td><strong>设置合理的 maxSpawnDepth</strong></td>
+          <td>防止无限递归 spawn，默认值 2 适用于大多数场景</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td><strong>A2A 通信默认关闭，显式白名单</strong></td>
+          <td>防止意外对话循环，遵循最小权限原则</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td><strong>使用 steer 模式用于交互式对话</strong></td>
+          <td>确保用户消息被及时处理，而不是排队等待</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td><strong>使用 collect 模式用于群聊</strong></td>
+          <td>避免多条消息触发多个独立 run，导致刷屏</td>
+      </tr>
+      <tr>
+          <td>8</td>
+          <td><strong>定期清理不活跃的 session</strong></td>
+          <td>避免 session 历史无限增长，影响性能和 token 消耗</td>
+      </tr>
+      <tr>
+          <td>9</td>
+          <td><strong>为关键 Agent 配置 model override</strong></td>
+          <td>在特定会话中临时切换到更强/更便宜的模型</td>
+      </tr>
+      <tr>
+          <td>10</td>
+          <td><strong>使用 shared QMD collections 管理共享知识</strong></td>
+          <td>在保持 Agent 隔离的同时，实现可控的知识共享</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<p><em>本文基于 OpenClaw v1.x 源码编写。源码结构和 API 可能随版本更新而变化，建议阅读时参考最新源码。</em></p>
+<p><em>如果你从本文中学到了一件事，那应该是：多 Agent 架构的精髓不在于&quot;如何连接&rdquo;，而在于&quot;如何隔离&quot;。隔离是协作的前提，显式是隐式的解药。</em></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openclaw-多-agent-交互原理源码实现与应用配置">OpenClaw 多 Agent 交互：原理、源码实现与应用配置</a>
+      <ul>
+        <li><a href="#一引言">一、引言</a>
+          <ul>
+            <li><a href="#11-为什么需要多-agent-交互">1.1 为什么需要多 Agent 交互</a></li>
+            <li><a href="#12-openclaw-的多-agent-哲学">1.2 OpenClaw 的多 Agent 哲学</a></li>
+            <li><a href="#13-本文结构">1.3 本文结构</a></li>
+          </ul>
+        </li>
+        <li><a href="#二多-agent-架构全景">二、多 Agent 架构全景</a>
+          <ul>
+            <li><a href="#21-系统架构图">2.1 系统架构图</a></li>
+            <li><a href="#22-一个-agent--一个完整的大脑">2.2 一个 Agent = 一个完整的&quot;大脑&quot;</a></li>
+            <li><a href="#23-单-agent-vs-多-agent-模式">2.3 单 Agent vs 多 Agent 模式</a></li>
+            <li><a href="#24-多-agent-交互的五个层次">2.4 多 Agent 交互的五个层次</a></li>
+          </ul>
+        </li>
+        <li><a href="#三路由层消息如何找到正确的-agent">三、路由层：消息如何找到正确的 Agent</a>
+          <ul>
+            <li><a href="#31-binding-配置模型">3.1 Binding 配置模型</a></li>
+            <li><a href="#32-路由优先级链">3.2 路由优先级链</a></li>
+            <li><a href="#33-session-key-的生成与解析">3.3 Session Key 的生成与解析</a></li>
+          </ul>
+        </li>
+        <li><a href="#四会话层agent-隔离的本质">四、会话层：Agent 隔离的本质</a>
+          <ul>
+            <li><a href="#41-session-存储模型">4.1 Session 存储模型</a></li>
+            <li><a href="#42-会话隔离的安全边界">4.2 会话隔离的安全边界</a></li>
+            <li><a href="#43-跨-agent-记忆搜索qmd-机制">4.3 跨 Agent 记忆搜索（QMD 机制）</a></li>
+          </ul>
+        </li>
+        <li><a href="#五委派层sub-agent-机制">五、委派层：Sub-Agent 机制</a>
+          <ul>
+            <li><a href="#51-sub-agent-的两种模式">5.1 Sub-Agent 的两种模式</a></li>
+            <li><a href="#52-源码拆解subagent-spawnts">5.2 源码拆解：subagent-spawn.ts</a></li>
+            <li><a href="#53-完成通知机制subagent-announcets">5.3 完成通知机制：subagent-announce.ts</a></li>
+            <li><a href="#54-嵌套深度与并发控制">5.4 嵌套深度与并发控制</a></li>
+          </ul>
+        </li>
+        <li><a href="#六对等层agent-to-agent-通信">六、对等层：Agent-to-Agent 通信</a>
+          <ul>
+            <li><a href="#61-sessions_send-工具">6.1 sessions_send 工具</a></li>
+            <li><a href="#62-a2a-flowagent-to-agent-对话流">6.2 A2A Flow（Agent-to-Agent 对话流）</a></li>
+            <li><a href="#63-安全门控">6.3 安全门控</a></li>
+            <li><a href="#64-announce-投递">6.4 Announce 投递</a></li>
+          </ul>
+        </li>
+        <li><a href="#七调度层command-queue-与-lanes">七、调度层：Command Queue 与 Lanes</a>
+          <ul>
+            <li><a href="#71-lane-模型">7.1 Lane 模型</a></li>
+            <li><a href="#72-queue-模式">7.2 Queue 模式</a></li>
+            <li><a href="#73-并发控制">7.3 并发控制</a></li>
+            <li><a href="#74-specialist-lanes-模式">7.4 Specialist Lanes 模式</a></li>
+          </ul>
+        </li>
+        <li><a href="#八配置实战">八、配置实战</a>
+          <ul>
+            <li><a href="#81-场景-1家庭群--工作群隔离--agent-间协作">8.1 场景 1：家庭群 + 工作群隔离 + Agent 间协作</a></li>
+            <li><a href="#82-场景-2coordinator--workers-编排模式">8.2 场景 2：Coordinator + Workers 编排模式</a></li>
+            <li><a href="#83-场景-3多频道--多模型--按需路由">8.3 场景 3：多频道 + 多模型 + 按需路由</a></li>
+            <li><a href="#84-场景-4定时工作流--多-agent-协作">8.4 场景 4：定时工作流 + 多 Agent 协作</a></li>
+          </ul>
+        </li>
+        <li><a href="#九源码关键文件索引">九、源码关键文件索引</a></li>
+        <li><a href="#十总结与展望">十、总结与展望</a>
+          <ul>
+            <li><a href="#101-核心设计原则回顾">10.1 核心设计原则回顾</a></li>
+            <li><a href="#102-与-hermes-agent-的多-agent-对比">10.2 与 Hermes Agent 的多 Agent 对比</a></li>
+            <li><a href="#103-未来趋势">10.3 未来趋势</a></li>
+            <li><a href="#104-最佳实践清单">10.4 最佳实践清单</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,7283 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  OpenClaw 多 Agent 交互：原理、源码实现与应用配置
+  #
+
+
+作者： 大风
+日期： 2026-08-02
+系列： OpenClaw 深度解析系列
+源码版本： OpenClaw v2026.5.27
+GitHub： https://github.com/openclaw/openclaw
+官方文档： https://docs.openclaw.ai
+
+
+  一、引言
+  #
+
+
+  1.1 单 Agent 的三大瓶颈
+  #
+
+无论你用的是 Claude Opus、GPT-4o 还是 Qwen3-Max，单 Agent 架构始终面临三个硬性天花板。这三个瓶颈不取决于模型能力，而是由架构本身决定的。
+
+  上下文天花板（Context Window Ceiling）
+  #
+
+即使底层模型支持 200K token 的上下文窗口，当你的任务需要同时&quot;记住&quot;以下内容时，仍然会溢出：
+
+数十万行代码库的结构
+数百页的技术文档
+实时抓取的网络数据
+之前的决策和中间状态
+
+结果： 关键信息被截断，模型开始&quot;遗忘&quot;，输出质量急剧下降。
+
+  认知过载（Cognitive Overload）
+  #
+
+学术研究中称之为注意力稀释效应（Attention Dilution Effect）——当单个 Agent 需要在不同领域之间反复切换时，输出质量随任务链增长而系统性下降。
+举个真实场景的例子：
+
+你让一个 Agent 同时完成：法律合规审查 → 财务报表分析 → 代码安全审计 → 市场趋势预测。
+第一项任务的输出质量可能是 90 分，到第四项时可能只剩 60 分。">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/multiagent2/">
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="OpenClaw 多 Agent 交互：原理、源码实现与应用配置 # 作者： 大风
+日期： 2026-08-02
+系列： OpenClaw 深度解析系列
+源码版本： OpenClaw v2026.5.27
+GitHub： https://github.com/openclaw/openclaw
+官方文档： https://docs.openclaw.ai
+一、引言 # 1.1 单 Agent 的三大瓶颈 # 无论你用的是 Claude Opus、GPT-4o 还是 Qwen3-Max，单 Agent 架构始终面临三个硬性天花板。这三个瓶颈不取决于模型能力，而是由架构本身决定的。
+上下文天花板（Context Window Ceiling） # 即使底层模型支持 200K token 的上下文窗口，当你的任务需要同时&#34;记住&#34;以下内容时，仍然会溢出：
+数十万行代码库的结构 数百页的技术文档 实时抓取的网络数据 之前的决策和中间状态 结果： 关键信息被截断，模型开始&#34;遗忘&#34;，输出质量急剧下降。
+认知过载（Cognitive Overload） # 学术研究中称之为注意力稀释效应（Attention Dilution Effect）——当单个 Agent 需要在不同领域之间反复切换时，输出质量随任务链增长而系统性下降。
+举个真实场景的例子：
+你让一个 Agent 同时完成：法律合规审查 → 财务报表分析 → 代码安全审计 → 市场趋势预测。
+第一项任务的输出质量可能是 90 分，到第四项时可能只剩 60 分。">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>Multiagent2 | Modern Agent</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/multiagent2/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.77f02e3aa712c2c8d6fd06cfc3786527995ea21b63634afa67fe7b181404e87e.js" integrity="sha256-d/AuOqcSwsjW/QbPw3hlJ5leohtjY0r6Z/57GBQE6H4=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/multiagent2/index.xml" title="Modern Agent" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall/" class="">Rag Recall</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/" class="">Rag Recall 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cc96aa92b1fe4deb19f2780a910b3a84" class="toggle"  />
+    <label for="section-cc96aa92b1fe4deb19f2780a910b3a84" class="flex justify-between">
+      <a role="button" class="">Dify</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="toggle"  />
+    <label for="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="flex justify-between">
+      <a role="button" class="">产品</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/list/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="toggle"  />
+    <label for="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="flex justify-between">
+      <a role="button" class="">Sandbox</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/opensource/" class="">Opensource</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-42ab09fd6e839492b699ee2fa4656e2f" class="toggle"  />
+    <label for="section-42ab09fd6e839492b699ee2fa4656e2f" class="flex justify-between">
+      <a role="button" class="">SDK</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk-%E5%85%BC%E5%AE%B9%E6%80%A7/" class="">Sdk 兼容性 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk-%E5%85%BC%E5%AE%B9%E6%80%A7-1/" class="">Sdk 兼容性 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f52d73da99d8a76b38639b3169b9c30" class="toggle"  />
+    <label for="section-9f52d73da99d8a76b38639b3169b9c30" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E4%BC%98%E5%8C%96/" class="">Claude Platform 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent2/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent3/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E8%A7%A3%E8%AF%BB/" class="">脑和手的解耦</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E5%8E%9F%E6%96%87/" class="">原文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fa07d823cbbab8a5cb211097d19a8b0f" class="toggle"  />
+    <label for="section-fa07d823cbbab8a5cb211097d19a8b0f" class="flex justify-between">
+      <a role="button" class="">Reflection</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91cb2f81fbf96ec25f68405674241162" class="toggle"  />
+    <label for="section-91cb2f81fbf96ec25f68405674241162" class="flex justify-between">
+      <a role="button" class="">Planning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b95bbb7a37b62a6b524cdc440bea4bea" class="toggle"  />
+    <label for="section-b95bbb7a37b62a6b524cdc440bea4bea" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c6918aab8d4437c8353af1df185685d7" class="toggle"  />
+    <label for="section-c6918aab8d4437c8353af1df185685d7" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4bd94f7e5788f6f6b717b9411d5219d7" class="toggle"  />
+    <label for="section-4bd94f7e5788f6f6b717b9411d5219d7" class="flex justify-between">
+      <a role="button" class="">Hermes</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes1/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes2/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes/" class="">Hermes Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e851bc8bb25b6d3ab16779dd8e31e163" class="toggle"  />
+    <label for="section-e851bc8bb25b6d3ab16779dd8e31e163" class="flex justify-between">
+      <a role="button" class="">managed agents</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming1/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a5f1c9d05f8697fe4344602432ed2c1" class="toggle"  />
+    <label for="section-4a5f1c9d05f8697fe4344602432ed2c1" class="flex justify-between">
+      <a role="button" class="">Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/hindsight/" class="">Hindsight</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking/" class="">Openviking</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27631881d59f460a7e82415eae943524" class="toggle"  />
+    <label for="section-27631881d59f460a7e82415eae943524" class="flex justify-between">
+      <a role="button" class="">Openclaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-867db087ab84641b5d4e3bc021355890" class="toggle"  />
+    <label for="section-867db087ab84641b5d4e3bc021355890" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ca53c095705ebe6e57deb96a02c0d3e3" class="toggle"  />
+    <label for="section-ca53c095705ebe6e57deb96a02c0d3e3" class="flex justify-between">
+      <a role="button" class="">Multi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7f3cbaaa32d67178b923d0e7080ddc58" class="toggle"  />
+    <label for="section-7f3cbaaa32d67178b923d0e7080ddc58" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Kanban/" class="">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7c1e99e2bc0dea50268247820e8feb36" class="toggle"  />
+    <label for="section-7c1e99e2bc0dea50268247820e8feb36" class="flex justify-between">
+      <a role="button" class="">Multi-agent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8aff2d658582dd8082936377ce08c46d" class="toggle"  />
+    <label for="section-8aff2d658582dd8082936377ce08c46d" class="flex justify-between">
+      <a role="button" class="">subagent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/Claude-code/" class="">Claude Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/subagent/" class="">Subagent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-78862664423ffb11f8c168297456fbac" class="toggle"  />
+    <label for="section-78862664423ffb11f8c168297456fbac" class="flex justify-between">
+      <a role="button" class="">Teams *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-Teams/" class="">Claude Code Teams</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-TeamsA1/" class="">Claude Code Teams[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-504cb284e9f6a649d018a049679638f6" class="toggle"  />
+    <label for="section-504cb284e9f6a649d018a049679638f6" class="flex justify-between">
+      <a role="button" class="">Agent Tool</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b80366c67c2d447239312da68cd1ac4c" class="toggle"  />
+    <label for="section-b80366c67c2d447239312da68cd1ac4c" class="flex justify-between">
+      <a role="button" class="">Survey &amp; SFT</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/SurveySFT/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-aa27abb55dc621af66ea631cd4bad469" class="toggle"  />
+    <label for="section-aa27abb55dc621af66ea631cd4bad469" class="flex justify-between">
+      <a role="button" class="">Tool 演进</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/%E6%BC%94%E8%BF%9B/fc&#43;mcp&#43;cli/" class="">Functioncall-&gt;MCP-&gt;cli &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a2630b53c4c4baf384f02ab78ef6519" class="toggle"  />
+    <label for="section-4a2630b53c4c4baf384f02ab78ef6519" class="flex justify-between">
+      <a role="button" class="">tools</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/Tools/claude-searchTool/" class="">Claude toolsearch</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8fd065cbe7dbbad30f0c4e4d0545d6c4" class="toggle"  />
+    <label for="section-8fd065cbe7dbbad30f0c4e4d0545d6c4" class="flex justify-between">
+      <a role="button" class="">MCP *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Tool/MCP/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle" checked />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle" checked />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/" class="">State</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/" class="">Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/" class="">Security</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%811/" class="">OpenClaw 生态1 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%812/" class="">OpenClaw 生态2 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/mulitagent1/" class="">Mulitagent1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/multiagent2/" class="active">Multiagent2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-406a2e1159d423500a23abb9a994a5a3" class="toggle"  />
+    <label for="section-406a2e1159d423500a23abb9a994a5a3" class="flex justify-between">
+      <a role="button" class="">Hermes Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/apiwebhook/" class="">Api&amp;webhook</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitctureA1/" class="">Arcitcture[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/interrupt/" class="">Interrupt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/" class="">Skill Envolve</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Prompting-caching/" class="">Claude Prompt Cache [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1A1/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/permission/" class="">Permission[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/source-code/" class="">claude code 源码 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-86069d54ccd932a89a9e23b7736965ee" class="toggle"  />
+    <label for="section-86069d54ccd932a89a9e23b7736965ee" class="flex justify-between">
+      <a role="button" class="">Pi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent/" class="">Pi Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent1/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent2/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Tau-Agent/" class="">Tau Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-2e3eee3f31d4bf9a6c3f87751db4d681" class="toggle"  />
+    <label for="section-2e3eee3f31d4bf9a6c3f87751db4d681" class="flex justify-between">
+      <a role="button" class="">实战</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b1ceebdd7e406fc4533519c821a9e4c3" class="toggle"  />
+    <label for="section-b1ceebdd7e406fc4533519c821a9e4c3" class="flex justify-between">
+      <a role="button" class="">Loops engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-01142eb3e9d36b255ac107cb9131d7c2" class="toggle"  />
+    <label for="section-01142eb3e9d36b255ac107cb9131d7c2" class="flex justify-between">
+      <a role="button" class="">goal</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/" class="">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="toggle"  />
+    <label for="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="flex justify-between">
+      <a role="button" class="">loop engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loops/" class="">loops engineering[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loop-engineering1/" class="">Loop Engineering1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b3a0ebe16d532fb38ede799ae1575c3a" class="toggle"  />
+    <label for="section-b3a0ebe16d532fb38ede799ae1575c3a" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/" class="">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/openclaw/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle"  />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering1/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering2/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-compress/" class="">Claude /compact</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/codex-context/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">context engineering[Manus]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/skill/" class="">编写高质量Skill的六大失效模式</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="toggle"  />
+    <label for="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="flex justify-between">
+      <a role="button" class="">AI Native</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeminimax/" class="">AI原生组织实践(MiniMax)</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Claude-tag/" class="">Claude tag</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Ai-nativeali/" class="">AI native与人机协作[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeclaude/" class="">Bottleneck Shift in AI-native Engineering[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Multiagent2</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openclaw-多-agent-交互原理源码实现与应用配置">OpenClaw 多 Agent 交互：原理、源码实现与应用配置</a>
+      <ul>
+        <li><a href="#一引言">一、引言</a>
+          <ul>
+            <li><a href="#11-单-agent-的三大瓶颈">1.1 单 Agent 的三大瓶颈</a></li>
+            <li><a href="#12-为什么需要多-agent-协作">1.2 为什么需要多 Agent 协作</a></li>
+            <li><a href="#13-本文结构">1.3 本文结构</a></li>
+          </ul>
+        </li>
+        <li><a href="#二openclaw-多-agent-架构总览">二、OpenClaw 多 Agent 架构总览</a>
+          <ul>
+            <li><a href="#21-agent-核心概念">2.1 Agent 核心概念</a></li>
+            <li><a href="#22-三种协作机制定位">2.2 三种协作机制定位</a></li>
+            <li><a href="#23-选型原则能解决问题的最简机制">2.3 选型原则：能解决问题的最简机制</a></li>
+            <li><a href="#24-架构全景图">2.4 架构全景图</a></li>
+          </ul>
+        </li>
+        <li><a href="#三机制一subagent--父子委派架构">三、机制一：SubAgent — 父子委派架构</a>
+          <ul>
+            <li><a href="#31-subagent-工作流程与生命周期">3.1 SubAgent 工作流程与生命周期</a></li>
+            <li><a href="#32-sessions_spawn-工具详解">3.2 <code>sessions_spawn</code> 工具详解</a></li>
+            <li><a href="#33-session-key-层级体系">3.3 Session Key 层级体系</a></li>
+            <li><a href="#34-context-模式对比isolated-vs-fork">3.4 <code>context</code> 模式对比：isolated vs fork</a></li>
+            <li><a href="#35-典型应用场景code-review-流水线">3.5 典型应用场景：Code Review 流水线</a></li>
+            <li><a href="#36-subagent-相关-cli-命令">3.6 SubAgent 相关 CLI 命令</a></li>
+          </ul>
+        </li>
+        <li><a href="#四机制二agent-teams--团队协作">四、机制二：Agent Teams — 团队协作</a>
+          <ul>
+            <li><a href="#41-与-subagent-的本质差异">4.1 与 SubAgent 的本质差异</a></li>
+            <li><a href="#42-三种协调模式">4.2 三种协调模式</a></li>
+            <li><a href="#43-agent-teams-配置结构">4.3 Agent Teams 配置结构</a></li>
+            <li><a href="#44-共享内存与状态同步">4.4 共享内存与状态同步</a></li>
+          </ul>
+        </li>
+        <li><a href="#五机制三agenttoagent--跨实例通信">五、机制三：AgentToAgent — 跨实例通信</a>
+          <ul>
+            <li><a href="#51-跨-gateway-分布式协作场景">5.1 跨 Gateway 分布式协作场景</a></li>
+            <li><a href="#52-agenttoagent-协议设计">5.2 AgentToAgent 协议设计</a></li>
+            <li><a href="#53-agenttoagent-消息协议">5.3 AgentToAgent 消息协议</a></li>
+            <li><a href="#54-三种机制总结对比">5.4 三种机制总结对比</a></li>
+          </ul>
+        </li>
+        <li><a href="#六核心源码剖析">六、核心源码剖析</a>
+          <ul>
+            <li><a href="#61-gateway-路由机制binding-匹配与消息分发">6.1 Gateway 路由机制：Binding 匹配与消息分发</a></li>
+            <li><a href="#62-sessions_spawn-的实现链路">6.2 sessions_spawn 的实现链路</a></li>
+            <li><a href="#63-会话隔离与上下文管理sqlite-session-store">6.3 会话隔离与上下文管理：SQLite Session Store</a></li>
+            <li><a href="#64-子-agent-完成事件回传与-sessions_yield-机制">6.4 子 Agent 完成事件回传与 sessions_yield 机制</a></li>
+            <li><a href="#65-安全策略tool-allowlist--嵌套深度限制">6.5 安全策略：Tool Allowlist / 嵌套深度限制</a></li>
+          </ul>
+        </li>
+        <li><a href="#七应用配置实战">七、应用配置实战</a>
+          <ul>
+            <li><a href="#71-多-agent-环境初始化">7.1 多 Agent 环境初始化</a></li>
+            <li><a href="#72-配置案例-1orchestrator--专业子-agent-模式">7.2 配置案例 1：Orchestrator + 专业子 Agent 模式</a></li>
+            <li><a href="#73-配置案例-2同-whatsapp-号码拆分多-agent">7.3 配置案例 2：同 WhatsApp 号码拆分多 Agent</a></li>
+            <li><a href="#74-性能调优混合模型策略">7.4 性能调优：混合模型策略</a></li>
+            <li><a href="#75-安全最佳实践">7.5 安全最佳实践</a></li>
+          </ul>
+        </li>
+        <li><a href="#八总结与展望">八、总结与展望</a>
+          <ul>
+            <li><a href="#81-三种机制对比总结">8.1 三种机制对比总结</a></li>
+            <li><a href="#82-openclaw-多-agent-架构的设计哲学">8.2 OpenClaw 多 Agent 架构的设计哲学</a></li>
+            <li><a href="#83-未来演进方向">8.3 未来演进方向</a></li>
+          </ul>
+        </li>
+        <li><a href="#附录">附录</a>
+          <ul>
+            <li><a href="#a-常用-cli-命令速查">A. 常用 CLI 命令速查</a></li>
+            <li><a href="#b-参考链接">B. 参考链接</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="openclaw-多-agent-交互原理源码实现与应用配置">
+  OpenClaw 多 Agent 交互：原理、源码实现与应用配置
+  <a class="anchor" href="#openclaw-%e5%a4%9a-agent-%e4%ba%a4%e4%ba%92%e5%8e%9f%e7%90%86%e6%ba%90%e7%a0%81%e5%ae%9e%e7%8e%b0%e4%b8%8e%e5%ba%94%e7%94%a8%e9%85%8d%e7%bd%ae">#</a>
+</h1>
+<blockquote>
+<p><strong>作者：</strong> 大风<br>
+<strong>日期：</strong> 2026-08-02<br>
+<strong>系列：</strong> OpenClaw 深度解析系列<br>
+<strong>源码版本：</strong> OpenClaw v2026.5.27<br>
+<strong>GitHub：</strong> <a href="https://github.com/openclaw/openclaw">https://github.com/openclaw/openclaw</a><br>
+<strong>官方文档：</strong> <a href="https://docs.openclaw.ai">https://docs.openclaw.ai</a></p></blockquote>
+<hr>
+<h2 id="一引言">
+  一、引言
+  <a class="anchor" href="#%e4%b8%80%e5%bc%95%e8%a8%80">#</a>
+</h2>
+<h3 id="11-单-agent-的三大瓶颈">
+  1.1 单 Agent 的三大瓶颈
+  <a class="anchor" href="#11-%e5%8d%95-agent-%e7%9a%84%e4%b8%89%e5%a4%a7%e7%93%b6%e9%a2%88">#</a>
+</h3>
+<p>无论你用的是 Claude Opus、GPT-4o 还是 Qwen3-Max，单 Agent 架构始终面临三个硬性天花板。这三个瓶颈不取决于模型能力，而是由架构本身决定的。</p>
+<h4 id="上下文天花板context-window-ceiling">
+  上下文天花板（Context Window Ceiling）
+  <a class="anchor" href="#%e4%b8%8a%e4%b8%8b%e6%96%87%e5%a4%a9%e8%8a%b1%e6%9d%bfcontext-window-ceiling">#</a>
+</h4>
+<p>即使底层模型支持 200K token 的上下文窗口，当你的任务需要同时&quot;记住&quot;以下内容时，仍然会溢出：</p>
+<ul>
+<li>数十万行代码库的结构</li>
+<li>数百页的技术文档</li>
+<li>实时抓取的网络数据</li>
+<li>之前的决策和中间状态</li>
+</ul>
+<p><strong>结果：</strong> 关键信息被截断，模型开始&quot;遗忘&quot;，输出质量急剧下降。</p>
+<h4 id="认知过载cognitive-overload">
+  认知过载（Cognitive Overload）
+  <a class="anchor" href="#%e8%ae%a4%e7%9f%a5%e8%bf%87%e8%bd%bdcognitive-overload">#</a>
+</h4>
+<p>学术研究中称之为<strong>注意力稀释效应（Attention Dilution Effect）</strong>——当单个 Agent 需要在不同领域之间反复切换时，输出质量随任务链增长而系统性下降。</p>
+<p>举个真实场景的例子：</p>
+<blockquote>
+<p>你让一个 Agent 同时完成：法律合规审查 → 财务报表分析 → 代码安全审计 → 市场趋势预测。<br>
+第一项任务的输出质量可能是 90 分，到第四项时可能只剩 60 分。</p></blockquote>
+<p>这不是模型变笨了，而是<strong>单一思维链在跨域切换中产生了信息丢失</strong>。</p>
+<h4 id="串行延迟sequential-latency">
+  串行延迟（Sequential Latency）
+  <a class="anchor" href="#%e4%b8%b2%e8%a1%8c%e5%bb%b6%e8%bf%9fsequential-latency">#</a>
+</h4>
+<p>单 Agent 只能按顺序执行子任务：</p>
+<pre tabindex="0"><code>任务A (5min) → 任务B (5min) → 任务C (5min) → 任务D (5min) = 总计 20 分钟
+</code></pre><p>而 4 个独立子任务如果并行执行：</p>
+<pre tabindex="0"><code>任务A ↘
+任务B → 汇总 (2min) = 总计 ~7 分钟（含协调开销）
+任务C ↗
+任务D ↗
+</code></pre><p><strong>加速比约 2.8x</strong>——这在实时性敏感的场景中是决定性的差异。</p>
+<table>
+  <thead>
+      <tr>
+          <th>瓶颈</th>
+          <th>核心表现</th>
+          <th>量化影响</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>上下文天花板</strong></td>
+          <td>记忆溢出导致关键信息丢失</td>
+          <td>200K token 仍不够用</td>
+      </tr>
+      <tr>
+          <td><strong>认知过载</strong></td>
+          <td>跨域切换导致输出质量下降</td>
+          <td>先做任务 90 分 → 后做任务 60 分</td>
+      </tr>
+      <tr>
+          <td><strong>串行延迟</strong></td>
+          <td>独立子任务无法并行</td>
+          <td>4 个子任务 20 分钟 vs 7 分钟</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="12-为什么需要多-agent-协作">
+  1.2 为什么需要多 Agent 协作
+  <a class="anchor" href="#12-%e4%b8%ba%e4%bb%80%e4%b9%88%e9%9c%80%e8%a6%81%e5%a4%9a-agent-%e5%8d%8f%e4%bd%9c">#</a>
+</h3>
+<p>多 Agent 架构本质上是通过<strong>分布式记忆 + 专业分工 + 并行执行</strong>来解决上述三个瓶颈：</p>
+<table>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th>解决的瓶颈</th>
+          <th>原理</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>分布式记忆</strong></td>
+          <td>上下文天花板</td>
+          <td>每个子 Agent 只维护自己职责范围内的上下文</td>
+      </tr>
+      <tr>
+          <td><strong>专业分工</strong></td>
+          <td>认知过载</td>
+          <td>不同领域由不同 Agent 处理，不需要跨域切换</td>
+      </tr>
+      <tr>
+          <td><strong>并行加速</strong></td>
+          <td>串行延迟</td>
+          <td>独立子任务并行执行，大幅降低端到端延迟</td>
+      </tr>
+      <tr>
+          <td><strong>混合模型</strong></td>
+          <td>成本控制</td>
+          <td>路由决策用轻量模型，深度推理用高级模型</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>什么时候需要启用多 Agent？</strong> 满足以下 2 条以上即值得考虑：</p>
+<ul>
+<li>✅ 任务可分解为相对独立的子任务（依赖越少，加速越明显）</li>
+<li>✅ 需要不同领域的专业知识（一个 Agent 无法覆盖全部领域）</li>
+<li>✅ 对成本敏感（混合模型策略可降低 30-50% 的 token 成本）</li>
+<li>✅ 对可靠性要求高（多 Agent 天然支持冗余和容错）</li>
+</ul>
+<blockquote>
+<p><strong>配图 1：单 Agent vs 多 Agent 对比示意图</strong></p>
+<p>Excalidraw 手绘风格对比图，描述如下：</p>
+<p><strong>左侧（单 Agent 场景）：</strong></p>
+<pre tabindex="0"><code>    ┌─────────────────────┐
+    │   🤖 Single Agent    │
+    │                     │
+    │   📚 Context: 128K  │  ← 警告图标 ⚠️
+    │   📝 Task Queue:    │
+    │     □ 代码审查       │
+    │     □ 文档撰写       │  ← 排队等待
+    │     □ 数据分析       │
+    │     □ 部署运维       │
+    │                     │
+    │   ⏱️ ETA: 20 min    │
+    └─────────────────────┘
+</code></pre><p><strong>右侧（多 Agent 场景）：</strong></p>
+<pre tabindex="0"><code>    ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
+    │ 🤖 Agent │  │ 🤖 Agent │  │ 🤖 Agent │  │ 🤖 Agent │
+    │  代码审查  │  │ 文档撰写  │  │ 数据分析  │  │ 部署运维  │
+    │ Context OK│  │ Context OK│  │ Context OK│  │ Context OK│
+    └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘
+         │              │              │              │
+         └──────────────┴──────────────┴──────────────┘
+                             ↓
+                       📊 结果汇总
+                        ⏱️ ETA: ~7 min
+</code></pre></blockquote>
+<h3 id="13-本文结构">
+  1.3 本文结构
+  <a class="anchor" href="#13-%e6%9c%ac%e6%96%87%e7%bb%93%e6%9e%84">#</a>
+</h3>
+<p>本文将从<strong>原理 → 源码 → 配置实战</strong>三个层次，完整解析 OpenClaw 的多 Agent 交互架构：</p>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph LR
+    A[原理篇] --&gt; B[源码篇]
+    B --&gt; C[配置实战篇]
+    
+    A --&gt; A1[三种协作机制]
+    A --&gt; A2[选型决策树]
+    
+    B --&gt; B1[Gateway 路由]
+    B --&gt; B2[spawn 链路]
+    B --&gt; B3[SQLite Store]
+    B --&gt; B4[安全策略]
+    
+    C --&gt; C1[Orchestrator 模式]
+    C --&gt; C2[多 Channel 绑定]
+    C --&gt; C3[混合模型降本]
+</code></pre><hr>
+<h2 id="二openclaw-多-agent-架构总览">
+  二、OpenClaw 多 Agent 架构总览
+  <a class="anchor" href="#%e4%ba%8copenclaw-%e5%a4%9a-agent-%e6%9e%b6%e6%9e%84%e6%80%bb%e8%a7%88">#</a>
+</h2>
+<h3 id="21-agent-核心概念">
+  2.1 Agent 核心概念
+  <a class="anchor" href="#21-agent-%e6%a0%b8%e5%bf%83%e6%a6%82%e5%bf%b5">#</a>
+</h3>
+<p>在深入三种协作机制之前，先明确 OpenClaw 中 <strong>Agent</strong> 的核心组件。理解这些概念是后续所有配置和源码分析的基础。</p>
+<blockquote>
+<p><strong>配图 2：Agent 核心组件关系图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+    subgraph Agent Core
+        WS[Workspace&lt;br/&gt;文件空间]
+        AD[agentDir&lt;br/&gt;状态目录]
+        SS[Session Store&lt;br/&gt;SQLite 数据库]
+        MR[Model Registry&lt;br/&gt;模型注册表]
+    end
+    
+    subgraph Persona Layer
+        SOUL[SOUL.md&lt;br/&gt;人格/语气]
+        AGENTS[AGENTS.md&lt;br/&gt;工作规则]
+        USER[USER.md&lt;br/&gt;用户信息]
+        TOOLS[TOOLS.md&lt;br/&gt;工具备注]
+        MEMORY[MEMORY.md&lt;br/&gt;长期记忆]
+    end
+    
+    subgraph External
+        CH[Channels&lt;br/&gt;WhatsApp / Telegram / DingTalk / Discord]
+        BD[Bindings&lt;br/&gt;路由规则]
+        SK[Skills&lt;br/&gt;workspace + shared]
+    end
+    
+    SOUL --&gt; WS
+    AGENTS --&gt; WS
+    USER --&gt; WS
+    TOOLS --&gt; WS
+    MEMORY --&gt; WS
+    
+    WS --&gt; AD
+    AD --&gt; SS
+    AD --&gt; MR
+    
+    CH --&gt; BD
+    BD --&gt; AD
+    MR --&gt; SK
+</code></pre><p>每个 Agent 拥有以下<strong>独立资源</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>概念</th>
+          <th>说明</th>
+          <th>默认路径</th>
+          <th>可否跨 Agent 复用</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Workspace</strong></td>
+          <td>Agent 的文件空间，包含所有 persona 文件和自定义规则</td>
+          <td><code>~/.openclaw/workspace</code> 或 <code>agents.entries.*.workspace</code></td>
+          <td>❌ 建议独立</td>
+      </tr>
+      <tr>
+          <td><strong>agentDir</strong></td>
+          <td>状态目录，包含认证信息、模型注册表、SQLite 会话库</td>
+          <td><code>~/.openclaw/agents/&lt;agentId&gt;/agent</code></td>
+          <td>❌ <strong>绝对不可复用</strong></td>
+      </tr>
+      <tr>
+          <td><strong>Session Store</strong></td>
+          <td>基于 SQLite 的会话历史和路由状态</td>
+          <td><code>openclaw-agent.sqlite</code>（位于 agentDir 内）</td>
+          <td>❌ 自动隔离</td>
+      </tr>
+      <tr>
+          <td><strong>Skills</strong></td>
+          <td>从 workspace 和共享根目录加载的技能文件</td>
+          <td><code>~/.openclaw/skills</code> + workspace skills</td>
+          <td>⚠️ 可通过 allowlist 控制</td>
+      </tr>
+      <tr>
+          <td><strong>Model Registry</strong></td>
+          <td>每个 Agent 绑定的 provider 和模型配置</td>
+          <td>存储在 agentDir 的 SQLite 中</td>
+          <td>❌ 独立管理</td>
+      </tr>
+  </tbody>
+</table>
+<blockquote>
+<p>⚠️ <strong>关键警告</strong>：Agent 之间<strong>绝不复用 agentDir</strong>。如果复用，会导致 OAuth refresh token 和会话状态冲突，引发难以排查的认证问题。</p></blockquote>
+<h3 id="22-三种协作机制定位">
+  2.2 三种协作机制定位
+  <a class="anchor" href="#22-%e4%b8%89%e7%a7%8d%e5%8d%8f%e4%bd%9c%e6%9c%ba%e5%88%b6%e5%ae%9a%e4%bd%8d">#</a>
+</h3>
+<p>OpenClaw 提供了<strong>三个层级</strong>的多 Agent 协作机制，从简单到复杂，覆盖从轻量委派到分布式协作的完整场景谱。</p>
+<table>
+  <thead>
+      <tr>
+          <th>机制</th>
+          <th>关系模型</th>
+          <th>通信方向</th>
+          <th>上下文隔离</th>
+          <th>部署范围</th>
+          <th>复杂度</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>SubAgent</strong></td>
+          <td>一对多（父子）</td>
+          <td>单向：父 → 子 → 父</td>
+          <td>各自独立</td>
+          <td>单 Gateway</td>
+          <td>⭐</td>
+      </tr>
+      <tr>
+          <td><strong>Agent Teams</strong></td>
+          <td>多对多（团队）</td>
+          <td>多向：成员间互通信</td>
+          <td>共享内存</td>
+          <td>单 Gateway</td>
+          <td>⭐⭐</td>
+      </tr>
+      <tr>
+          <td><strong>AgentToAgent</strong></td>
+          <td>跨实例</td>
+          <td>结构化协议</td>
+          <td>跨网络传输</td>
+          <td>多 Gateway</td>
+          <td>⭐⭐⭐</td>
+      </tr>
+  </tbody>
+</table>
+<h4 id="subagent子代理">
+  SubAgent（子代理）
+  <a class="anchor" href="#subagent%e5%ad%90%e4%bb%a3%e7%90%86">#</a>
+</h4>
+<ul>
+<li><strong>一句话定义</strong>：父 Agent 把子任务委派给子 Agent，子 Agent 完成后把结果回传给父 Agent</li>
+<li><strong>适用场景</strong>：流水线式任务委派（Code Review、内容生产、数据处理管道）</li>
+<li><strong>核心工具</strong>：<code>sessions_spawn</code>、<code>sessions_yield</code>、<code>subagents list</code></li>
+</ul>
+<h4 id="agent-teams团队协作">
+  Agent Teams（团队协作）
+  <a class="anchor" href="#agent-teams%e5%9b%a2%e9%98%9f%e5%8d%8f%e4%bd%9c">#</a>
+</h4>
+<ul>
+<li><strong>一句话定义</strong>：多个 Agent 组成团队，通过共享内存和消息队列实时协作</li>
+<li><strong>适用场景</strong>：需要多角色协调的复杂任务（市场调研、跨领域项目）</li>
+<li><strong>核心特性</strong>：三种协调模式（Orchestrator / Peer-to-Peer / Hierarchical）</li>
+</ul>
+<h4 id="agenttoagent跨实例通信">
+  AgentToAgent（跨实例通信）
+  <a class="anchor" href="#agenttoagent%e8%b7%a8%e5%ae%9e%e4%be%8b%e9%80%9a%e4%bf%a1">#</a>
+</h4>
+<ul>
+<li><strong>一句话定义</strong>：不同 OpenClaw Gateway 实例上的 Agent 通过结构化协议跨网络通信</li>
+<li><strong>适用场景</strong>：跨服务器、跨组织的分布式协作</li>
+<li><strong>核心特性</strong>：加密传输、消息序列化、远程 Agent 发现</li>
+</ul>
+<h3 id="23-选型原则能解决问题的最简机制">
+  2.3 选型原则：能解决问题的最简机制
+  <a class="anchor" href="#23-%e9%80%89%e5%9e%8b%e5%8e%9f%e5%88%99%e8%83%bd%e8%a7%a3%e5%86%b3%e9%97%ae%e9%a2%98%e7%9a%84%e6%9c%80%e7%ae%80%e6%9c%ba%e5%88%b6">#</a>
+</h3>
+<p>OpenClaw 的设计哲学是<strong>显式优于隐式，简单优于复杂</strong>。选择多 Agent 协作机制时，遵循以下决策树：</p>
+<blockquote>
+<p><strong>配图 3：多 Agent 选型决策树</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TD
+    A[需要多 Agent 协作?] --&gt;|否| B[✅ 单 Agent 即可]
+    A --&gt;|是| C{在同一台服务器&lt;br/&gt;同一 Gateway?}
+    C --&gt;|否| D[✅ AgentToAgent&lt;br/&gt;跨实例通信]
+    C --&gt;|是| E{需要多 Agent&lt;br/&gt;实时双向通信?}
+    E --&gt;|否| F[✅ SubAgent&lt;br/&gt;父子委派]
+    E --&gt;|是| G[✅ Agent Teams&lt;br/&gt;团队协作]
+    
+    style D fill:#4ECDC4
+    style F fill:#4ECDC4
+    style G fill:#4ECDC4
+    style B fill:#95E1D3
+</code></pre><p><strong>实战经验法则：</strong></p>
+<ol>
+<li><strong>能用 SubAgent 解决的，不要上 Agent Teams</strong> — SubAgent 配置简单、调试方便、结果可追溯</li>
+<li><strong>能在单 Gateway 内解决的，不要上 AgentToAgent</strong> — 跨实例引入网络延迟和复杂性</li>
+<li><strong>先跑通 SubAgent，再考虑 Team</strong> — 大多数场景的瓶颈不在协作机制，而在任务分解质量</li>
+</ol>
+<h3 id="24-架构全景图">
+  2.4 架构全景图
+  <a class="anchor" href="#24-%e6%9e%b6%e6%9e%84%e5%85%a8%e6%99%af%e5%9b%be">#</a>
+</h3>
+<blockquote>
+<p><strong>配图 4：OpenClaw 多 Agent 架构全景图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+    subgraph Channel Layer
+        WA[WhatsApp]
+        TG[Telegram]
+        DS[Discord]
+        DT[DingTalk]
+    end
+    
+    subgraph Gateway
+        RT[Binding Router&lt;br/&gt;路由引擎]
+        GW[OpenClaw Gateway&lt;br/&gt;核心进程]
+    end
+    
+    subgraph Agent A: main
+        WS_A[Workspace]
+        AD_A[agentDir&lt;br/&gt;SQLite]
+        MR_A[Model Registry]
+        SK_A[Skills]
+    end
+    
+    subgraph Agent B: coder
+        WS_B[Workspace]
+        AD_B[agentDir&lt;br/&gt;SQLite]
+        MR_B[Model Registry]
+        SK_B[Skills]
+    end
+    
+    subgraph Agent C: researcher
+        WS_C[Workspace]
+        AD_C[agentDir&lt;br/&gt;SQLite]
+        MR_C[Model Registry]
+        SK_C[Skills]
+    end
+    
+    subgraph Collaboration
+        SA[SubAgent&lt;br/&gt;sessions_spawn]
+        AT[Agent Teams&lt;br/&gt;shared memory]
+        AA[AgentToAgent&lt;br/&gt;cross-gateway]
+    end
+    
+    WA --&gt; RT
+    TG --&gt; RT
+    DS --&gt; RT
+    DT --&gt; RT
+    RT --&gt; GW
+    GW --&gt; WS_A
+    GW --&gt; WS_B
+    GW --&gt; WS_C
+    
+    WS_A -.SubAgent.-&gt; SA
+    WS_A -.Teams.-&gt; AT
+    WS_A -.CrossGW.-&gt; AA
+    
+    SA --&gt; AD_A
+    AT --&gt; AD_B
+    AT --&gt; AD_C
+</code></pre><hr>
+<h2 id="三机制一subagent--父子委派架构">
+  三、机制一：SubAgent — 父子委派架构
+  <a class="anchor" href="#%e4%b8%89%e6%9c%ba%e5%88%b6%e4%b8%80subagent--%e7%88%b6%e5%ad%90%e5%a7%94%e6%b4%be%e6%9e%b6%e6%9e%84">#</a>
+</h2>
+<p>SubAgent 是 OpenClaw 多 Agent 系统中最基础、最常用的机制。它的核心概念非常直观：<strong>父 Agent 在执行过程中，把特定子任务委派给一个或多个子 Agent 处理，子 Agent 完成后将结果返回给父 Agent，父 Agent 继续工作流</strong>。</p>
+<h3 id="31-subagent-工作流程与生命周期">
+  3.1 SubAgent 工作流程与生命周期
+  <a class="anchor" href="#31-subagent-%e5%b7%a5%e4%bd%9c%e6%b5%81%e7%a8%8b%e4%b8%8e%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f">#</a>
+</h3>
+<p>SubAgent 的完整生命周期包含四个阶段：</p>
+<blockquote>
+<p><strong>配图 5：SubAgent 生命周期时序图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">sequenceDiagram
+    participant User as 👤 用户
+    participant Parent as Parent Agent&lt;br/&gt;(Orchestrator)
+    participant Gateway as OpenClaw Gateway
+    participant Sub as SubAgent (Worker)
+    
+    User-&gt;&gt;Parent: 发送复杂任务
+    Note over Parent: 1. 解析任务&lt;br/&gt;2. 任务分解
+    Parent-&gt;&gt;Gateway: sessions_spawn(&lt;br/&gt;  task=&#34;子任务描述&#34;,&lt;br/&gt;  runtime=&#34;subagent&#34;,&lt;br/&gt;  mode=&#34;run&#34;&lt;br/&gt;)
+    Note over Gateway: 创建隔离会话&lt;br/&gt;生成 Session Key&lt;br/&gt;agent:agentId:subagent:uuid
+    Gateway-&gt;&gt;Sub: 初始化子 Agent&lt;br/&gt;加载 SOUL.md / Skills / Model
+    Sub-&gt;&gt;Sub: 独立执行任务&lt;br/&gt;使用自己的工具和模型
+    Sub-&gt;&gt;Gateway: 任务完成 → 生成 Completion Event
+    Gateway-&gt;&gt;Parent: Completion Event 回调
+    Parent-&gt;&gt;Gateway: sessions_yield&lt;br/&gt;等待子 Agent 完成
+    Parent-&gt;&gt;Parent: 汇总所有子任务结果
+    Parent-&gt;&gt;User: 返回最终回复
+</code></pre><p><strong>详细拆解：</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>阶段</th>
+          <th>做什么</th>
+          <th>关键动作</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>1. 任务委派</strong></td>
+          <td>父 Agent 决定把子任务交给谁</td>
+          <td>调用 <code>sessions_spawn</code>，传入 task、model、context 等参数</td>
+      </tr>
+      <tr>
+          <td><strong>2. 子 Agent 初始化</strong></td>
+          <td>Gateway 创建隔离会话</td>
+          <td>生成唯一 Session Key，加载该 Agent 的 workspace、skills、model</td>
+      </tr>
+      <tr>
+          <td><strong>3. 独立执行</strong></td>
+          <td>子 Agent 在自己上下文中工作</td>
+          <td>使用自己的工具集和模型完成指定任务，不干扰父 Agent</td>
+      </tr>
+      <tr>
+          <td><strong>4. 结果回传</strong></td>
+          <td>子 Agent 完成后通知父 Agent</td>
+          <td>生成 Completion Event → 父 Agent 通过 <code>sessions_yield</code> 接收</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="32-sessions_spawn-工具详解">
+  3.2 <code>sessions_spawn</code> 工具详解
+  <a class="anchor" href="#32-sessions_spawn-%e5%b7%a5%e5%85%b7%e8%af%a6%e8%a7%a3">#</a>
+</h3>
+<p><code>sessions_spawn</code> 是 SubAgent 的核心工具。以下是完整的参数说明：</p>
+<table>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>类型</th>
+          <th>必填</th>
+          <th>默认值</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>task</code></td>
+          <td>string</td>
+          <td>✅</td>
+          <td>—</td>
+          <td>子任务描述（<strong>最重要的参数</strong>，子 Agent 看到的指令）</td>
+      </tr>
+      <tr>
+          <td><code>runtime</code></td>
+          <td>enum</td>
+          <td>✅</td>
+          <td><code>&quot;subagent&quot;</code></td>
+          <td>固定为 <code>&quot;subagent&quot;</code></td>
+      </tr>
+      <tr>
+          <td><code>agentId</code></td>
+          <td>string</td>
+          <td>❌</td>
+          <td>同父 Agent</td>
+          <td>指定子 Agent 的 ID</td>
+      </tr>
+      <tr>
+          <td><code>context</code></td>
+          <td>enum</td>
+          <td>❌</td>
+          <td><code>&quot;isolated&quot;</code></td>
+          <td><code>&quot;isolated&quot;</code>（干净子会话）或 <code>&quot;fork&quot;</code>（继承父会话 transcript）</td>
+      </tr>
+      <tr>
+          <td><code>model</code></td>
+          <td>string</td>
+          <td>❌</td>
+          <td>继承父 Agent</td>
+          <td>为子 Agent 指定特定模型</td>
+      </tr>
+      <tr>
+          <td><code>mode</code></td>
+          <td>enum</td>
+          <td>❌</td>
+          <td>交互模式</td>
+          <td><code>&quot;run&quot;</code> 表示后台一次性任务</td>
+      </tr>
+      <tr>
+          <td><code>label</code></td>
+          <td>string</td>
+          <td>❌</td>
+          <td>—</td>
+          <td>稳定别名，方便后续 <code>sessions_send</code> 定位</td>
+      </tr>
+      <tr>
+          <td><code>taskName</code></td>
+          <td>string</td>
+          <td>❌</td>
+          <td>—</td>
+          <td>稳定别名，方便后续 targeting（小写字母/数字/下划线，以字母开头）</td>
+      </tr>
+      <tr>
+          <td><code>sandbox</code></td>
+          <td>enum</td>
+          <td>❌</td>
+          <td><code>&quot;inherit&quot;</code></td>
+          <td><code>&quot;inherit&quot;</code>（继承父策略）或 <code>&quot;require&quot;</code>（强制沙箱）</td>
+      </tr>
+      <tr>
+          <td><code>cleanup</code></td>
+          <td>enum</td>
+          <td>❌</td>
+          <td><code>&quot;keep&quot;</code></td>
+          <td><code>&quot;delete&quot;</code>（完成后删除会话）或 <code>&quot;keep&quot;</code></td>
+      </tr>
+      <tr>
+          <td><code>runTimeoutSeconds</code></td>
+          <td>number</td>
+          <td>❌</td>
+          <td>无超时</td>
+          <td>子 Agent 运行超时时间（秒）</td>
+      </tr>
+      <tr>
+          <td><code>lightContext</code></td>
+          <td>boolean</td>
+          <td>❌</td>
+          <td>false</td>
+          <td>轻量引导上下文，减少 token 消耗</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>实战示例：并行 Code Review</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-javascript" data-lang="javascript"><span style="display:flex;"><span><span style="color:#75715e">// 并行 spawn 3 个子 Agent
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">sessions_spawn</span>({
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">task</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;审查以下代码的安全性，重点关注 SQL 注入、XSS、CSRF 和敏感信息泄露&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">runtime</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;subagent&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">agentId</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;security-reviewer&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">model</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4-6&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">label</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;security-review&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">mode</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;run&#34;</span>
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">sessions_spawn</span>({
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">task</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;检查代码风格和命名规范，参考 Google Style Guide&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">runtime</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;subagent&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">agentId</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;style-checker&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">model</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;openai/gpt-4o-mini&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">label</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;style-check&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">mode</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;run&#34;</span>
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">sessions_spawn</span>({
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">task</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;分析代码性能瓶颈，关注时间复杂度和内存使用&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">runtime</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;subagent&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">agentId</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;perf-analyzer&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">model</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4-6&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">label</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;perf-analysis&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">mode</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;run&#34;</span>
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 等待所有子 Agent 完成
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">sessions_yield</span>({ <span style="color:#a6e22e">message</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;等待三个子 Agent 完成代码审查&#34;</span> });
+</span></span></code></pre></div><blockquote>
+<p>💡 <strong>最佳实践</strong>：并行 spawn 多个子 Agent 后，立即调用 <code>sessions_yield</code>，让 Gateway 自动等待所有子 Agent 的完成事件。不要轮询 <code>subagents list</code>。</p></blockquote>
+<h3 id="33-session-key-层级体系">
+  3.3 Session Key 层级体系
+  <a class="anchor" href="#33-session-key-%e5%b1%82%e7%ba%a7%e4%bd%93%e7%b3%bb">#</a>
+</h3>
+<p>OpenClaw 的 Session Key 有明确的层级结构，这决定了 Agent 之间的嵌套深度和隔离边界。</p>
+<blockquote>
+<p><strong>配图 6：Session Key 层级树状图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TD
+    D0[&#34;Depth 0&lt;br/&gt;agent:main:main&lt;br/&gt;👑 主 Agent&#34;]
+    D1A[&#34;Depth 1&lt;br/&gt;agent:main:subagent:uuid-1&lt;br/&gt;👷 子 Agent A&#34;]
+    D1B[&#34;Depth 1&lt;br/&gt;agent:main:subagent:uuid-2&lt;br/&gt;👷 子 Agent B&#34;]
+    D1C[&#34;Depth 1&lt;br/&gt;agent:main:subagent:uuid-3&lt;br/&gt;👷 子 Agent C&#34;]
+    D2A[&#34;Depth 2&lt;br/&gt;agent:main:subagent:uuid-4&lt;br/&gt;🔧 孙 Agent A-1&#34;]
+    D2B[&#34;Depth 2&lt;br/&gt;agent:main:subagent:uuid-5&lt;br/&gt;🔧 孙 Agent A-2&#34;]
+    
+    D0 --&gt; D1A
+    D0 --&gt; D1B
+    D0 --&gt; D1C
+    D1A --&gt; D2A
+    D1A --&gt; D2B
+    
+    style D0 fill:#FF6B6B
+    style D1A fill:#4ECDC4
+    style D1B fill:#4ECDC4
+    style D1C fill:#4ECDC4
+    style D2A fill:#95E1D3
+    style D2B fill:#95E1D3
+</code></pre><table>
+  <thead>
+      <tr>
+          <th>深度</th>
+          <th>Session Key 格式</th>
+          <th>说明</th>
+          <th>可否 spawn 子 Agent</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Depth 0</strong></td>
+          <td><code>agent:&lt;agentId&gt;:&lt;mainKey&gt;</code></td>
+          <td>主 Agent</td>
+          <td>✅ 始终可以</td>
+      </tr>
+      <tr>
+          <td><strong>Depth 1</strong></td>
+          <td><code>agent:&lt;agentId&gt;:subagent:&lt;uuid&gt;</code></td>
+          <td>子 Agent</td>
+          <td>✅ 需 <code>maxSpawnDepth ≥ 2</code></td>
+      </tr>
+      <tr>
+          <td><strong>Depth 2</strong></td>
+          <td><code>agent:&lt;agentId&gt;:subagent:&lt;uuid&gt;</code></td>
+          <td>孙 Agent（Worker）</td>
+          <td>❌ 默认到达上限</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>关键配置：<code>maxSpawnDepth</code></strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;agents&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;defaults&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;runtime&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;maxSpawnDepth&#34;</span>: <span style="color:#ae81ff">2</span>
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><ul>
+<li><code>maxSpawnDepth: 0</code> → 不允许 spawn 任何子 Agent</li>
+<li><code>maxSpawnDepth: 1</code>（默认）→ 主 Agent 可 spawn 子 Agent，子 Agent 不能再 spawn</li>
+<li><code>maxSpawnDepth: 2</code> → 启用嵌套，子 Agent 可 spawn 孙 Agent</li>
+</ul>
+<blockquote>
+<p>⚠️ <strong>不要将 <code>maxSpawnDepth</code> 设得过高</strong>。嵌套深度增加会导致调试难度指数级上升，且容易造成 Session Key 冲突。</p></blockquote>
+<h3 id="34-context-模式对比isolated-vs-fork">
+  3.4 <code>context</code> 模式对比：isolated vs fork
+  <a class="anchor" href="#34-context-%e6%a8%a1%e5%bc%8f%e5%af%b9%e6%af%94isolated-vs-fork">#</a>
+</h3>
+<p><code>sessions_spawn</code> 的 <code>context</code> 参数决定了子 Agent 是否继承父会话的历史对话。</p>
+<table>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>上下文内容</th>
+          <th>适用场景</th>
+          <th>Token 开销</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>isolated</strong>（默认）</td>
+          <td>干净的子会话，不携带父会话 transcript</td>
+          <td>独立子任务（代码审查、数据清洗）</td>
+          <td><strong>低</strong>（仅 task 描述）</td>
+      </tr>
+      <tr>
+          <td><strong>fork</strong></td>
+          <td>继承当前会话的完整 transcript</td>
+          <td>子任务需要了解对话历史才能完成</td>
+          <td><strong>高</strong>（完整对话历史）</td>
+      </tr>
+  </tbody>
+</table>
+<blockquote>
+<p><strong>配图 7：isolated vs fork 模式对比图</strong></p>
+<pre tabindex="0"><code>┌─────────────────────────────────────────────────────────────┐
+│                    context: &#34;isolated&#34;                      │
+│                                                             │
+│  Parent Agent ──task: &#34;审查这段代码&#34;──▶ SubAgent            │
+│                              (空状态启动)                    │
+│                                                             │
+│  Token 消耗: ~100 tokens (task 描述)                        │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                      context: &#34;fork&#34;                        │
+│                                                             │
+│  Parent Agent ──task + 完整对话历史──▶ SubAgent             │
+│                        (携带完整上下文)                      │
+│                                                             │
+│  Token 消耗: ~10K-50K tokens (完整 transcript)              │
+└─────────────────────────────────────────────────────────────┘
+</code></pre></blockquote>
+<p><strong>实战建议：</strong></p>
+<ul>
+<li><strong>99% 的场景用 <code>isolated</code></strong> — 子任务通常不需要完整的对话历史</li>
+<li><strong>只有在子 Agent 需要了解用户之前的对话上下文时才用 <code>fork</code></strong> — 比如&quot;继续上次讨论的那个方案&quot;</li>
+<li><code>fork</code> 的 token 开销可能很高，谨慎使用</li>
+</ul>
+<h3 id="35-典型应用场景code-review-流水线">
+  3.5 典型应用场景：Code Review 流水线
+  <a class="anchor" href="#35-%e5%85%b8%e5%9e%8b%e5%ba%94%e7%94%a8%e5%9c%ba%e6%99%afcode-review-%e6%b5%81%e6%b0%b4%e7%ba%bf">#</a>
+</h3>
+<blockquote>
+<p><strong>配图 8：Code Review 流水线架构图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+    PR[📦 Pull Request&lt;br/&gt;到达] --&gt; ORCH[🤖 Orchestrator&lt;br/&gt;Claude Opus&lt;br/&gt;任务分解与协调]
+    
+    ORCH --&gt;|&#34;sessions_spawn&lt;br/&gt;task=安全扫描&#34;| SEC[🛡️ Security Agent&lt;br/&gt;Claude Sonnet&lt;br/&gt;SQL注入/XSS/CSRF]
+    ORCH --&gt;|&#34;sessions_spawn&lt;br/&gt;task=风格检查&#34;| STYLE[📝 Style Agent&lt;br/&gt;GPT-4o-mini&lt;br/&gt;命名/格式/规范]
+    ORCH --&gt;|&#34;sessions_spawn&lt;br/&gt;task=性能分析&#34;| PERF[⚡ Perf Agent&lt;br/&gt;Claude Sonnet&lt;br/&gt;复杂度/内存/I-O]
+    
+    SEC --&gt;|&#34;Completion Event&#34;| MERGE[📊 结果汇总]
+    STYLE --&gt;|&#34;Completion Event&#34;| MERGE
+    PERF --&gt;|&#34;Completion Event&#34;| MERGE
+    
+    MERGE --&gt; ORCH
+    ORCH --&gt;|&#34;📋 审查报告&#34;| DEV[👤 开发者]
+    
+    style ORCH fill:#FF6B6B
+    style SEC fill:#4ECDC4
+    style STYLE fill:#4ECDC4
+    style PERF fill:#4ECDC4
+    style DEV fill:#95E1D3
+</code></pre><p><strong>工作流解析：</strong></p>
+<ol>
+<li><strong>Orchestrator</strong> 收到 PR 变更文件列表</li>
+<li><strong>并行 spawn</strong> 三个子 Agent，各自使用最适合的模型</li>
+<li>三个子 Agent <strong>独立执行</strong>，互不干扰</li>
+<li>各自完成后发送 <strong>Completion Event</strong> 回 Orchestrator</li>
+<li>Orchestrator <strong>汇总审查报告</strong>，输出给开发者</li>
+</ol>
+<p><strong>预期效果：</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>指标</th>
+          <th>单 Agent 串行</th>
+          <th>多 Agent 并行</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>总耗时</td>
+          <td>~15 分钟</td>
+          <td>~5-6 分钟</td>
+      </tr>
+      <tr>
+          <td>上下文占用</td>
+          <td>128K+（全部历史）</td>
+          <td>每个 Agent &lt; 10K</td>
+      </tr>
+      <tr>
+          <td>审查质量</td>
+          <td>后半段下降</td>
+          <td>每个 Agent 全程高质量</td>
+      </tr>
+      <tr>
+          <td>模型成本</td>
+          <td>全用 Opus = $8/次</td>
+          <td>Sonnet + mini = $2.5/次</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="36-subagent-相关-cli-命令">
+  3.6 SubAgent 相关 CLI 命令
+  <a class="anchor" href="#36-subagent-%e7%9b%b8%e5%85%b3-cli-%e5%91%bd%e4%bb%a4">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 查看所有已配置的 Agent</span>
+</span></span><span style="display:flex;"><span>openclaw agents list
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 添加新 Agent</span>
+</span></span><span style="display:flex;"><span>openclaw agents add security-reviewer --model claude-sonnet-4-6
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 查看 Agent 绑定状态</span>
+</span></span><span style="display:flex;"><span>openclaw agents list --bindings
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 查看 Gateway 日志（追踪 Agent 执行情况）</span>
+</span></span><span style="display:flex;"><span>openclaw logs --follow
+</span></span></code></pre></div><p><strong>对话内命令（Slash Commands）：</strong></p>
+<pre tabindex="0"><code>/subagents spawn        # 手动 spawn 子 Agent
+/subagents list         # 查看当前活跃的子 Agent
+/subagents cancel &lt;id&gt;  # 取消运行中的子 Agent
+/status                 # 查看当前会话状态（模型、token 用量、时间）
+</code></pre><hr>
+<h2 id="四机制二agent-teams--团队协作">
+  四、机制二：Agent Teams — 团队协作
+  <a class="anchor" href="#%e5%9b%9b%e6%9c%ba%e5%88%b6%e4%ba%8cagent-teams--%e5%9b%a2%e9%98%9f%e5%8d%8f%e4%bd%9c">#</a>
+</h2>
+<p>当任务复杂度超过了&quot;父子委派&quot;的能力范围——需要多个 Agent 之间实时通信、共享状态、动态调整任务分配时，就该 <strong>Agent Teams</strong> 出场了。</p>
+<h3 id="41-与-subagent-的本质差异">
+  4.1 与 SubAgent 的本质差异
+  <a class="anchor" href="#41-%e4%b8%8e-subagent-%e7%9a%84%e6%9c%ac%e8%b4%a8%e5%b7%ae%e5%bc%82">#</a>
+</h3>
+<p>SubAgent 是<strong>单向委托</strong>（我说你做，做完汇报），Agent Teams 是<strong>多向协作</strong>（大家讨论怎么一起把事做好）。</p>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>SubAgent</th>
+          <th>Agent Teams</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>通信方向</td>
+          <td>单向（父 → 子 → 父）</td>
+          <td>多向（成员间互通信）</td>
+      </tr>
+      <tr>
+          <td>上下文</td>
+          <td>各自独立</td>
+          <td>支持共享内存</td>
+      </tr>
+      <tr>
+          <td>角色灵活性</td>
+          <td>配置时固定</td>
+          <td>支持动态角色切换</td>
+      </tr>
+      <tr>
+          <td>协调机制</td>
+          <td>单一父 Agent 控制</td>
+          <td>三种模式可选</td>
+      </tr>
+      <tr>
+          <td>适合场景</td>
+          <td>流水线任务</td>
+          <td>需要讨论与协商的复杂任务</td>
+      </tr>
+  </tbody>
+</table>
+<blockquote>
+<p><strong>配图 9：SubAgent vs Agent Teams 通信流向对比</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">sequenceDiagram
+    rect rgb(200, 230, 255)
+        Note over P,C1: SubAgent — 单向通信
+        P-&gt;&gt;C1: delegate(task=&#34;安全扫描&#34;)
+        P-&gt;&gt;C2: delegate(task=&#34;风格检查&#34;)
+        C1-&gt;&gt;C1: 独立执行
+        C2-&gt;&gt;C2: 独立执行
+        C1--&gt;&gt;P: 返回结果
+        C2--&gt;&gt;P: 返回结果
+        Note over P,C2: 子 Agent 之间无法通信
+    end
+    
+    rect rgb(230, 255, 200)
+        Note over A,B,C: Agent Teams — 多向通信
+        A-&gt;&gt;B: 共享搜索数据
+        B-&gt;&gt;C: 请求分析
+        C-&gt;&gt;A: 反馈分析结果
+        A-&gt;&gt;C: 调整任务优先级
+        B-&gt;&gt;C: 补充数据
+        C-&gt;&gt;B: 确认数据格式
+        Note over A,C: 成员间自由通信
+    end
+</code></pre><h3 id="42-三种协调模式">
+  4.2 三种协调模式
+  <a class="anchor" href="#42-%e4%b8%89%e7%a7%8d%e5%8d%8f%e8%b0%83%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<p>Agent Teams 支持三种协调模式，适用于不同类型的团队任务：</p>
+<blockquote>
+<p><strong>配图 10：三种协调模式对比图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TD
+    subgraph &#34;① Orchestrator 模式（星型）&#34;
+        O[Orchestrator&lt;br/&gt;协调者] --&gt; W1[Worker A&lt;br/&gt;数据采集]
+        O --&gt; W2[Worker B&lt;br/&gt;数据分析]
+        O --&gt; W3[Worker C&lt;br/&gt;报告撰写]
+        W1 -.汇报.-&gt; O
+        W2 -.汇报.-&gt; O
+        W3 -.汇报.-&gt; O
+    end
+    
+    subgraph &#34;② Peer-to-Peer 模式（网状）&#34;
+        P2A[Agent A] &lt;--&gt; P2B[Agent B]
+        P2B &lt;--&gt; P2PC[Agent C]
+        P2A &lt;--&gt; P2PC
+    end
+    
+    subgraph &#34;③ Hierarchical 模式（分层树）&#34;
+        H1[Lead&lt;br/&gt;总负责人] --&gt; H2A[Sub-Lead A&lt;br/&gt;技术线]
+        H1 --&gt; H2B[Sub-Lead B&lt;br/&gt;业务线]
+        H2A --&gt; H3A[Worker A1]
+        H2A --&gt; H3B[Worker A2]
+        H2B --&gt; H3C[Worker B1]
+    end
+</code></pre><table>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>拓扑</th>
+          <th>适用场景</th>
+          <th>优势</th>
+          <th>劣势</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Orchestrator</strong></td>
+          <td>星型辐射</td>
+          <td>任务可明确分解、有明确负责人</td>
+          <td>结构简单、容易调试、权责清晰</td>
+          <td>协调者是单点故障瓶颈</td>
+      </tr>
+      <tr>
+          <td><strong>Peer-to-Peer</strong></td>
+          <td>网状互连</td>
+          <td>任务需要成员间频繁协商</td>
+          <td>无中心瓶颈、灵活性高</td>
+          <td>容易产生混乱、调试困难</td>
+      </tr>
+      <tr>
+          <td><strong>Hierarchical</strong></td>
+          <td>分层树</td>
+          <td>大型项目、多层管理结构</td>
+          <td>可扩展性强、职责分层</td>
+          <td>层级过深时通信延迟高</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="43-agent-teams-配置结构">
+  4.3 Agent Teams 配置结构
+  <a class="anchor" href="#43-agent-teams-%e9%85%8d%e7%bd%ae%e7%bb%93%e6%9e%84">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;agent_teams&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;research-team&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;description&#34;</span>: <span style="color:#e6db74">&#34;市场调研分析团队&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;coordination&#34;</span>: <span style="color:#e6db74">&#34;orchestrator&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;orchestrator&#34;</span>: <span style="color:#e6db74">&#34;research-lead&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;shared_memory&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;enabled&#34;</span>: <span style="color:#66d9ef">true</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;max_size&#34;</span>: <span style="color:#e6db74">&#34;50MB&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;persistence&#34;</span>: <span style="color:#e6db74">&#34;session&#34;</span>
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;members&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;research-lead&#34;</span>: {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;role&#34;</span>: <span style="color:#e6db74">&#34;团队负责人：任务分解、进度跟踪、最终报告整合&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;model&#34;</span>: { <span style="color:#f92672">&#34;primary&#34;</span>: <span style="color:#e6db74">&#34;claude-opus-4-6&#34;</span> },
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;skills&#34;</span>: [<span style="color:#e6db74">&#34;task-planning&#34;</span>, <span style="color:#e6db74">&#34;report-generation&#34;</span>],
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;can_delegate&#34;</span>: <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;web-scout&#34;</span>: {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;role&#34;</span>: <span style="color:#e6db74">&#34;网络侦察员：搜索和收集公开信息&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;model&#34;</span>: { <span style="color:#f92672">&#34;primary&#34;</span>: <span style="color:#e6db74">&#34;gpt-4o&#34;</span> },
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;skills&#34;</span>: [<span style="color:#e6db74">&#34;web-search&#34;</span>, <span style="color:#e6db74">&#34;web-scrape&#34;</span>],
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;can_delegate&#34;</span>: <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;analyst&#34;</span>: {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;role&#34;</span>: <span style="color:#e6db74">&#34;数据分析师：数据清洗、统计分析、趋势识别&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;model&#34;</span>: { <span style="color:#f92672">&#34;primary&#34;</span>: <span style="color:#e6db74">&#34;claude-sonnet-4-6&#34;</span> },
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;skills&#34;</span>: [<span style="color:#e6db74">&#34;data-analysis&#34;</span>, <span style="color:#e6db74">&#34;chart-generation&#34;</span>],
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;can_delegate&#34;</span>: <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;writer&#34;</span>: {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;role&#34;</span>: <span style="color:#e6db74">&#34;报告撰写者：将分析结果转化为结构化报告&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;model&#34;</span>: { <span style="color:#f92672">&#34;primary&#34;</span>: <span style="color:#e6db74">&#34;claude-sonnet-4-6&#34;</span> },
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;skills&#34;</span>: [<span style="color:#e6db74">&#34;content-writing&#34;</span>, <span style="color:#e6db74">&#34;formatting&#34;</span>],
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;can_delegate&#34;</span>: <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;workflow&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;max_rounds&#34;</span>: <span style="color:#ae81ff">10</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;timeout&#34;</span>: <span style="color:#ae81ff">600</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;early_stop&#34;</span>: {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;condition&#34;</span>: <span style="color:#e6db74">&#34;orchestrator_decision&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;min_rounds&#34;</span>: <span style="color:#ae81ff">2</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>关键配置参数：</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>coordination</code></td>
+          <td>协调模式：<code>orchestrator</code> / <code>peer</code> / <code>hierarchical</code></td>
+      </tr>
+      <tr>
+          <td><code>orchestrator</code></td>
+          <td>Orchestrator 模式下指定协调者 Agent 的 ID</td>
+      </tr>
+      <tr>
+          <td><code>shared_memory.enabled</code></td>
+          <td>是否启用共享内存</td>
+      </tr>
+      <tr>
+          <td><code>shared_memory.max_size</code></td>
+          <td>共享内存上限（防止无限增长）</td>
+      </tr>
+      <tr>
+          <td><code>shared_memory.persistence</code></td>
+          <td>持久化策略：<code>session</code>（会话级）/ <code>permanent</code>（永久）</td>
+      </tr>
+      <tr>
+          <td><code>members.*.can_delegate</code></td>
+          <td>该成员是否可以进一步委派任务</td>
+      </tr>
+      <tr>
+          <td><code>workflow.max_rounds</code></td>
+          <td>最大协作轮数（防止死循环）</td>
+      </tr>
+      <tr>
+          <td><code>workflow.early_stop</code></td>
+          <td>提前终止条件</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="44-共享内存与状态同步">
+  4.4 共享内存与状态同步
+  <a class="anchor" href="#44-%e5%85%b1%e4%ba%ab%e5%86%85%e5%ad%98%e4%b8%8e%e7%8a%b6%e6%80%81%e5%90%8c%e6%ad%a5">#</a>
+</h3>
+<p>Agent Teams 通过 <code>shared_memory</code> 实现成员间的状态共享。这是与 SubAgent 最本质的区别。</p>
+<blockquote>
+<p><strong>配图 11：Agent Teams 共享内存架构图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+    subgraph &#34;Agent Team: research-team&#34;
+        L[research-lead&lt;br/&gt;Orchestrator]
+        W[web-scout&lt;br/&gt;数据采集]
+        A[analyst&lt;br/&gt;数据分析]
+        WR[writer&lt;br/&gt;报告撰写]
+    end
+    
+    subgraph &#34;Shared Memory Pool (50MB)&#34;
+        SM[(Shared Memory&lt;br/&gt;JSON / KV Store)]
+        PERS[(Persistence&lt;br/&gt;session-scoped)]
+    end
+    
+    L &lt;--&gt;|读写| SM
+    W &lt;--&gt;|写入搜索结果| SM
+    A &lt;--&gt;|读取数据+写入分析| SM
+    WR &lt;--&gt;|读取分析结果| SM
+    SM &lt;--&gt;|持久化| PERS
+    
+    style SM fill:#FFEAA7
+    style PERS fill:#DFE6E9
+</code></pre><p><strong>共享内存使用示例（概念层面）：</strong></p>
+<pre tabindex="0"><code>Round 1:
+  web-scout -&gt; 写入搜索结果到 Shared Memory: { &#34;query&#34;: &#34;AI Agent 市场&#34;, &#34;results&#34;: [...] }
+  
+Round 2:
+  analyst -&gt; 从 Shared Memory 读取搜索结果 -&gt; 写入分析结果: { &#34;trends&#34;: [...], &#34;market_size&#34;: ... }
+  
+Round 3:
+  writer -&gt; 从 Shared Memory 读取分析结果 -&gt; 生成报告草稿
+  
+Round 4:
+  research-lead -&gt; 审查报告 -&gt; 决定是否需要补充数据（决定是否继续下一轮）
+</code></pre><hr>
+<h2 id="五机制三agenttoagent--跨实例通信">
+  五、机制三：AgentToAgent — 跨实例通信
+  <a class="anchor" href="#%e4%ba%94%e6%9c%ba%e5%88%b6%e4%b8%89agenttoagent--%e8%b7%a8%e5%ae%9e%e4%be%8b%e9%80%9a%e4%bf%a1">#</a>
+</h2>
+<h3 id="51-跨-gateway-分布式协作场景">
+  5.1 跨 Gateway 分布式协作场景
+  <a class="anchor" href="#51-%e8%b7%a8-gateway-%e5%88%86%e5%b8%83%e5%bc%8f%e5%8d%8f%e4%bd%9c%e5%9c%ba%e6%99%af">#</a>
+</h3>
+<p>当 Agent 分布在<strong>不同的服务器</strong>或<strong>不同的 OpenClaw Gateway 实例</strong>上时，SubAgent 和 Agent Teams 都无法跨实例工作。此时需要 AgentToAgent 协议。</p>
+<p>典型场景：</p>
+<table>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>跨服务器协作</strong></td>
+          <td>数据中心 A 的 Agent 调用数据中心 B 的 Agent</td>
+      </tr>
+      <tr>
+          <td><strong>跨组织协作</strong></td>
+          <td>不同组织的 Agent 通过安全协议协作</td>
+      </tr>
+      <tr>
+          <td><strong>混合云架构</strong></td>
+          <td>本地 Agent + 云端 Agent 协同工作</td>
+      </tr>
+      <tr>
+          <td><strong>边缘计算</strong></td>
+          <td>边缘设备上的轻量 Agent 与云端强推理 Agent 协作</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="52-agenttoagent-协议设计">
+  5.2 AgentToAgent 协议设计
+  <a class="anchor" href="#52-agenttoagent-%e5%8d%8f%e8%ae%ae%e8%ae%be%e8%ae%a1">#</a>
+</h3>
+<blockquote>
+<p><strong>配图 12：跨实例分布式协作拓扑图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+    subgraph &#34;Gateway Instance A（公司内网）&#34;
+        GA[Gateway A]
+        AA1[Agent A1&lt;br/&gt;数据预处理]
+        AA2[Agent A2&lt;br/&gt;本地知识库]
+    end
+    
+    subgraph &#34;Gateway Instance B（云服务器）&#34;
+        GB[Gateway B]
+        AB1[Agent B1&lt;br/&gt;深度推理 Claude Opus]
+        AB2[Agent B2&lt;br/&gt;多语言翻译]
+    end
+    
+    subgraph &#34;Gateway Instance C（合作伙伴）&#34;
+        GC[Gateway C]
+        AC1[Agent C1&lt;br/&gt;行业数据源]
+    end
+    
+    AA1 -.AgentToAgent.-&gt; AB1
+    AA2 -.AgentToAgent.-&gt; AB2
+    AB1 -.AgentToAgent.-&gt; AC1
+    
+    style AA1 fill:#4ECDC4
+    style AB1 fill:#FF6B6B
+    style AC1 fill:#95E1D3
+</code></pre><h3 id="53-agenttoagent-消息协议">
+  5.3 AgentToAgent 消息协议
+  <a class="anchor" href="#53-agenttoagent-%e6%b6%88%e6%81%af%e5%8d%8f%e8%ae%ae">#</a>
+</h3>
+<blockquote>
+<p><strong>配图 13：AgentToAgent 消息协议时序图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">sequenceDiagram
+    participant A as Agent A&lt;br/&gt;(Gateway Instance 1)
+    participant Proto as AgentToAgent&lt;br/&gt;Protocol Layer
+    participant Net as Network&lt;br/&gt;(HTTPS / gRPC)
+    participant B as Agent B&lt;br/&gt;(Gateway Instance 2)
+    
+    A-&gt;&gt;Proto: 准备跨实例请求
+    Proto-&gt;&gt;Proto: 序列化消息&lt;br/&gt;{ from, to, payload, metadata }
+    Proto-&gt;&gt;Proto: 加密（TLS + 签名）
+    Proto-&gt;&gt;Net: 发送 HTTPS/gRPC 请求
+    Net-&gt;&gt;B: 消息到达目标 Gateway
+    B-&gt;&gt;B: 验证签名 &amp; 反序列化
+    B-&gt;&gt;B: 路由到目标 Agent
+    B-&gt;&gt;B: 处理请求
+    B-&gt;&gt;Proto: 准备响应
+    Proto-&gt;&gt;Proto: 序列化响应
+    Proto-&gt;&gt;Net: 发送响应
+    Net-&gt;&gt;A: 响应返回
+    A-&gt;&gt;A: 处理结果
+</code></pre><p><strong>消息结构（概念模型）：</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;protocol&#34;</span>: <span style="color:#e6db74">&#34;openclaw.agent-to-agent/v1&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;from&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;gateway_id&#34;</span>: <span style="color:#e6db74">&#34;gw-prod-01&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;agent_id&#34;</span>: <span style="color:#e6db74">&#34;data-preprocessor&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;request_id&#34;</span>: <span style="color:#e6db74">&#34;req-abc123&#34;</span>
+</span></span><span style="display:flex;"><span>  },
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;to&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;gateway_id&#34;</span>: <span style="color:#e6db74">&#34;gw-cloud-01&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;agent_id&#34;</span>: <span style="color:#e6db74">&#34;deep-reasoner&#34;</span>
+</span></span><span style="display:flex;"><span>  },
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;payload&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;action&#34;</span>: <span style="color:#e6db74">&#34;analyze&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;data&#34;</span>: { <span style="color:#f92672">&#34;input&#34;</span>: <span style="color:#e6db74">&#34;...&#34;</span> }
+</span></span><span style="display:flex;"><span>  },
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;metadata&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;timestamp&#34;</span>: <span style="color:#e6db74">&#34;2026-08-02T05:00:00Z&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;timeout_seconds&#34;</span>: <span style="color:#ae81ff">300</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;priority&#34;</span>: <span style="color:#e6db74">&#34;normal&#34;</span>
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="54-三种机制总结对比">
+  5.4 三种机制总结对比
+  <a class="anchor" href="#54-%e4%b8%89%e7%a7%8d%e6%9c%ba%e5%88%b6%e6%80%bb%e7%bb%93%e5%af%b9%e6%af%94">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>SubAgent</th>
+          <th>Agent Teams</th>
+          <th>AgentToAgent</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>复杂度</strong></td>
+          <td>低</td>
+          <td>中</td>
+          <td>高</td>
+      </tr>
+      <tr>
+          <td><strong>通信</strong></td>
+          <td>单向</td>
+          <td>多向</td>
+          <td>跨实例（结构化协议）</td>
+      </tr>
+      <tr>
+          <td><strong>上下文</strong></td>
+          <td>独立</td>
+          <td>共享内存</td>
+          <td>独立（跨网络）</td>
+      </tr>
+      <tr>
+          <td><strong>部署</strong></td>
+          <td>单 Gateway</td>
+          <td>单 Gateway</td>
+          <td>多 Gateway</td>
+      </tr>
+      <tr>
+          <td><strong>典型场景</strong></td>
+          <td>任务委派</td>
+          <td>团队协作</td>
+          <td>分布式协作</td>
+      </tr>
+      <tr>
+          <td><strong>配置难度</strong></td>
+          <td>低（几行 JSON）</td>
+          <td>中（需要定义团队成员）</td>
+          <td>高（需要配置跨实例连接）</td>
+      </tr>
+      <tr>
+          <td><strong>调试难度</strong></td>
+          <td>低</td>
+          <td>中</td>
+          <td>高</td>
+      </tr>
+      <tr>
+          <td><strong>推荐度</strong></td>
+          <td>首选</td>
+          <td>需要实时协调时用</td>
+          <td>跨服务器时用</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="六核心源码剖析">
+  六、核心源码剖析
+  <a class="anchor" href="#%e5%85%ad%e6%a0%b8%e5%bf%83%e6%ba%90%e7%a0%81%e5%89%96%e6%9e%90">#</a>
+</h2>
+<p>本章基于 OpenClaw v2026.5.27 的源码，深入剖析多 Agent 交互的底层实现。</p>
+<h3 id="61-gateway-路由机制binding-匹配与消息分发">
+  6.1 Gateway 路由机制：Binding 匹配与消息分发
+  <a class="anchor" href="#61-gateway-%e8%b7%af%e7%94%b1%e6%9c%ba%e5%88%b6binding-%e5%8c%b9%e9%85%8d%e4%b8%8e%e6%b6%88%e6%81%af%e5%88%86%e5%8f%91">#</a>
+</h3>
+<p>OpenClaw 的消息路由遵循<strong>最精确匹配优先</strong>原则。每条入站消息经过 Binding Router 后，被精确路由到目标 Agent。</p>
+<blockquote>
+<p><strong>配图 14：Gateway 消息路由流程图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TD
+    A[Inbound Message&lt;br/&gt;from Channel] --&gt; B{Binding 匹配引擎}
+    
+    B --&gt;|精确匹配&lt;br/&gt;channel + peer.id| C[路由到对应 Agent]
+    B --&gt;|peer wildcard&lt;br/&gt;channel + peer.kind| D[路由到通配 Agent]
+    B --&gt;|parent peer&lt;br/&gt;channel + parent.id| E[路由到父级 Agent]
+    B --&gt;|channel default| F[路由到 Channel 默认 Agent]
+    B --&gt;|global fallback| G[路由到全局默认 Agent]
+    
+    C --&gt; H{Session 路由}
+    D --&gt; H
+    E --&gt; H
+    F --&gt; H
+    G --&gt; H
+    
+    H --&gt;|DM 会话| I[Main Session&lt;br/&gt;agent:agentId:mainKey]
+    H --&gt;|群聊会话| J[Group Session&lt;br/&gt;agent:agentId:group:chatId]
+    H --&gt;|子 Agent| K[Subagent Session&lt;br/&gt;agent:agentId:subagent:uuid]
+    
+    I --&gt; L[加载 Workspace + SOUL.md]
+    J --&gt; L
+    K --&gt; L
+    
+    L --&gt; M[Model 推理 Turn]
+    M --&gt; N[Reply to Channel]
+    
+    style A fill:#FFEAA7
+    style C fill:#4ECDC4
+    style L fill:#FF6B6B
+    style N fill:#95E1D3
+</code></pre><p><strong>路由层级详解（从高到低）：</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>优先级</th>
+          <th>匹配规则</th>
+          <th>示例</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>1</strong></td>
+          <td>channel + peer.id</td>
+          <td>whatsapp + +15551230001</td>
+          <td>精确到具体用户</td>
+      </tr>
+      <tr>
+          <td><strong>2</strong></td>
+          <td>channel + peer.kind</td>
+          <td>whatsapp + direct</td>
+          <td>匹配所有 DM</td>
+      </tr>
+      <tr>
+          <td><strong>3</strong></td>
+          <td>channel + parent.id</td>
+          <td>telegram + group-123</td>
+          <td>群聊父级</td>
+      </tr>
+      <tr>
+          <td><strong>4</strong></td>
+          <td>channel</td>
+          <td>discord</td>
+          <td>Channel 级别默认</td>
+      </tr>
+      <tr>
+          <td><strong>5</strong></td>
+          <td>全局默认</td>
+          <td>—</td>
+          <td>所有未匹配的消息</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="62-sessions_spawn-的实现链路">
+  6.2 sessions_spawn 的实现链路
+  <a class="anchor" href="#62-sessions_spawn-%e7%9a%84%e5%ae%9e%e7%8e%b0%e9%93%be%e8%b7%af">#</a>
+</h3>
+<blockquote>
+<p><strong>配图 15：sessions_spawn 源码调用链路图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TD
+    A[Agent 调用 sessions_spawn tool] --&gt; B[Tool Handler&lt;br/&gt;解析参数 &amp; 校验]
+    B --&gt; C{context 模式?}
+    C --&gt;|isolated| D[创建全新 Session&lt;br/&gt;无历史上下文]
+    C --&gt;|fork| E[复制父 Session transcript&lt;br/&gt;到子 Session]
+    
+    D --&gt; F[解析 agentId&lt;br/&gt;加载对应配置]
+    E --&gt; F
+    
+    F --&gt; G[解析 Model 策略&lt;br/&gt;primary + fallbacks]
+    G --&gt; H[生成 Session Key&lt;br/&gt;agent:agentId:subagent:uuid]
+    H --&gt; I[初始化 Agent Runtime&lt;br/&gt;workspace / skills / tools / model]
+    
+    I --&gt; J[执行 Agent Turn]
+    J --&gt; K{mode?}
+    K --&gt;|run| L[后台执行 完成后生成 Completion Event]
+    K --&gt;|交互| M[持续交互模式]
+    
+    L --&gt; N[Completion Event&lt;br/&gt;推送到父 Agent]
+    N --&gt; O[父 Agent sessions_yield&lt;br/&gt;接收结果]
+    O --&gt; P[父 Agent 继续工作流]
+    
+    style A fill:#FFEAA7
+    style B fill:#4ECDC4
+    style N fill:#FF6B6B
+    style P fill:#95E1D3
+</code></pre><p><strong>关键源码文件（基于 v2026.5.27）：</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>文件</th>
+          <th>职责</th>
+          <th>关键内容</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>get-reply-*.js</code></td>
+          <td>核心 Turn 处理</td>
+          <td>sessionKey 路由、Turn 生命周期管理</td>
+      </tr>
+      <tr>
+          <td><code>spawn-requester-origin-*.js</code></td>
+          <td>Spawn 请求来源解析</td>
+          <td>Workspace override 计算</td>
+      </tr>
+      <tr>
+          <td><code>subagent-recovery-state-*.js</code></td>
+          <td>子 Agent 状态恢复</td>
+          <td>崩溃恢复、状态持久化</td>
+      </tr>
+      <tr>
+          <td><code>agent-limits-*.js</code></td>
+          <td>限制检查</td>
+          <td>maxSpawnDepth / maxChildrenPerAgent 校验</td>
+      </tr>
+      <tr>
+          <td><code>thread-bindings-*.js</code></td>
+          <td>线程绑定策略</td>
+          <td>Session 绑定与路由规则</td>
+      </tr>
+      <tr>
+          <td><code>runtime-policy-session-key-*.js</code></td>
+          <td>Session Key 策略</td>
+          <td>Runtime 级别的 Session Key 解析</td>
+      </tr>
+      <tr>
+          <td><code>commands-status.runtime.js</code></td>
+          <td>状态命令</td>
+          <td>/status 和 Agent 状态查询</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="63-会话隔离与上下文管理sqlite-session-store">
+  6.3 会话隔离与上下文管理：SQLite Session Store
+  <a class="anchor" href="#63-%e4%bc%9a%e8%af%9d%e9%9a%94%e7%a6%bb%e4%b8%8e%e4%b8%8a%e4%b8%8b%e6%96%87%e7%ae%a1%e7%90%86sqlite-session-store">#</a>
+</h3>
+<p>OpenClaw 使用 <strong>SQLite</strong> 作为 Session Store 的底层存储。每个 Agent 拥有独立的 SQLite 数据库，确保会话数据严格隔离。</p>
+<blockquote>
+<p><strong>配图 16：SQLite Session Store 数据模型图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">erDiagram
+    SESSIONS ||--o{ MESSAGES : contains
+    SESSIONS ||--o{ TRANSCRIPTS : has
+    SESSIONS }o--|| AGENTS : belongs_to
+    
+    AGENTS {
+        string agentId PK
+        string workspace
+        string agentDir
+        string model_primary
+        datetime created_at
+    }
+    
+    SESSIONS {
+        string sessionKey PK
+        string agentId FK
+        string sessionScope
+        int depth
+        datetime createdAt
+        datetime updatedAt
+        string parentSessionKey
+        string model
+        string status
+        string label
+    }
+    
+    MESSAGES {
+        bigint id PK
+        string sessionKey FK
+        string role
+        text content
+        datetime timestamp
+        string messageId
+    }
+    
+    TRANSCRIPTS {
+        bigint id PK
+        string sessionKey FK
+        text toolCalls
+        text toolResults
+        text thinkingBlocks
+        int tokenCount
+    }
+</code></pre><p><strong>数据模型说明：</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>表</th>
+          <th>作用</th>
+          <th>关键字段</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>AGENTS</strong></td>
+          <td>Agent 注册信息</td>
+          <td>agentId, workspace, agentDir, model_primary</td>
+      </tr>
+      <tr>
+          <td><strong>SESSIONS</strong></td>
+          <td>会话元数据</td>
+          <td>sessionKey（唯一标识）, depth（嵌套深度）, parentSessionKey（父会话引用）</td>
+      </tr>
+      <tr>
+          <td><strong>MESSAGES</strong></td>
+          <td>消息记录</td>
+          <td>sessionKey, role（user/assistant/system）, content</td>
+      </tr>
+      <tr>
+          <td><strong>TRANSCRIPTS</strong></td>
+          <td>工具调用与推理记录</td>
+          <td>toolCalls, toolResults, thinkingBlocks, tokenCount</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>会话隔离保证：</strong></p>
+<ul>
+<li>每个 Agent 有独立的 SQLite 数据库（<code>~/.openclaw/agents/&lt;agentId&gt;/agent/openclaw-agent.sqlite</code>）</li>
+<li><code>sessions_spawn</code> 创建的子会话使用独立的 sessionKey</li>
+<li>子会话无法访问父会话的 SQLite 数据</li>
+</ul>
+<h3 id="64-子-agent-完成事件回传与-sessions_yield-机制">
+  6.4 子 Agent 完成事件回传与 sessions_yield 机制
+  <a class="anchor" href="#64-%e5%ad%90-agent-%e5%ae%8c%e6%88%90%e4%ba%8b%e4%bb%b6%e5%9b%9e%e4%bc%a0%e4%b8%8e-sessions_yield-%e6%9c%ba%e5%88%b6">#</a>
+</h3>
+<p><code>sessions_yield</code> 是父 Agent 等待子 Agent 完成的核心机制。与轮询不同，它是<strong>事件驱动的</strong>：</p>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">sequenceDiagram
+    participant Parent as Parent Agent
+    participant Gateway as Gateway
+    participant Sub1 as SubAgent A
+    participant Sub2 as SubAgent B
+    
+    Parent-&gt;&gt;Gateway: sessions_spawn(task=&#34;任务A&#34;)
+    Parent-&gt;&gt;Gateway: sessions_spawn(task=&#34;任务B&#34;)
+    Gateway-&gt;&gt;Sub1: 启动 SubAgent A
+    Gateway-&gt;&gt;Sub2: 启动 SubAgent B
+    Parent-&gt;&gt;Gateway: sessions_yield(message=&#34;等待子 Agent 完成&#34;)
+    
+    Note over Parent: 父 Agent 暂停&lt;br/&gt;等待 Completion Event
+    
+    Sub1-&gt;&gt;Sub1: 执行中...
+    Sub2-&gt;&gt;Sub2: 执行中...
+    Sub1-&gt;&gt;Gateway: 完成 Completion Event
+    Sub2-&gt;&gt;Sub2: 执行中...
+    Gateway-&gt;&gt;Parent: 推送 Completion Event A
+    Note over Parent: 收到 A 的结果
+    
+    Sub2-&gt;&gt;Gateway: 完成 Completion Event
+    Gateway-&gt;&gt;Parent: 推送 Completion Event B
+    Note over Parent: 收到 B 的结果&lt;br/&gt;继续工作流
+    Parent-&gt;&gt;Parent: 汇总结果 生成回复
+</code></pre><p><strong>关键区别：</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>方式</th>
+          <th>行为</th>
+          <th>资源消耗</th>
+          <th>推荐度</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>sessions_yield</strong></td>
+          <td>事件驱动，完成后自动恢复</td>
+          <td>零轮询开销</td>
+          <td>推荐</td>
+      </tr>
+      <tr>
+          <td><strong>轮询 subagents list</strong></td>
+          <td>定时查询子 Agent 状态</td>
+          <td>持续消耗 token</td>
+          <td>不推荐</td>
+      </tr>
+  </tbody>
+</table>
+<blockquote>
+<p>不要轮询 <code>subagents list</code> 或 <code>sessions_list</code> 等待子 Agent 完成。使用 <code>sessions_yield</code> 等待完成事件，仅在需要干预/调试时才按需检查状态。</p></blockquote>
+<h3 id="65-安全策略tool-allowlist--嵌套深度限制">
+  6.5 安全策略：Tool Allowlist / 嵌套深度限制
+  <a class="anchor" href="#65-%e5%ae%89%e5%85%a8%e7%ad%96%e7%95%a5tool-allowlist--%e5%b5%8c%e5%a5%97%e6%b7%b1%e5%ba%a6%e9%99%90%e5%88%b6">#</a>
+</h3>
+<blockquote>
+<p><strong>配图 17：安全策略配置决策图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TD
+    A[Spawn 请求到达] --&gt; B{检查 maxSpawnDepth&lt;br/&gt;当前深度 配置值?}
+    B --&gt;|超出限制| C[拒绝: 嵌套过深]
+    B --&gt;|通过| D{检查 maxChildrenPerAgent&lt;br/&gt;当前子 Agent 数 上限?}
+    
+    D --&gt;|超出限制| E[拒绝: 子 Agent 过多]
+    D --&gt;|通过| F{检查 Tool Allowlist&lt;br/&gt;toolsAllow 配置?}
+    
+    F --&gt;|有白名单| G[裁剪工具集&lt;br/&gt;仅保留 allowlist 中的工具]
+    F --&gt;|无白名单| H[继承完整工具集]
+    
+    G --&gt; I{检查 Sandbox 策略}
+    H --&gt; I
+    
+    I --&gt;|require| J[强制沙箱隔离&lt;br/&gt;文件系统 / 网络受限]
+    I --&gt;|inherit| K[继承父 Agent 策略]
+    
+    J --&gt; L[放行子 Agent]
+    K --&gt; L
+    
+    style C fill:#FF6B6B
+    style E fill:#FF6B6B
+    style L fill:#95E1D3
+</code></pre><p><strong>安全配置详解：</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>配置项</th>
+          <th>默认值</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>maxSpawnDepth</code></td>
+          <td>1</td>
+          <td>最大嵌套深度（0=不允许 spawn，1=主子，2=主子孙）</td>
+      </tr>
+      <tr>
+          <td><code>maxChildrenPerAgent</code></td>
+          <td>10</td>
+          <td>单个 Agent 同时运行的子 Agent 上限</td>
+      </tr>
+      <tr>
+          <td><code>toolsAllow</code></td>
+          <td>null（不限制）</td>
+          <td>子 Agent 允许使用的工具白名单</td>
+      </tr>
+      <tr>
+          <td><code>sandbox</code></td>
+          <td>inherit</td>
+          <td>沙箱策略（inherit 继承父 / require 强制沙箱）</td>
+      </tr>
+      <tr>
+          <td><code>lightContext</code></td>
+          <td>false</td>
+          <td>轻量引导上下文，减少 token 消耗</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>安全配置示例：</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;agents&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;defaults&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;runtime&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;maxSpawnDepth&#34;</span>: <span style="color:#ae81ff">1</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;maxChildrenPerAgent&#34;</span>: <span style="color:#ae81ff">5</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;sandbox&#34;</span>: <span style="color:#e6db74">&#34;require&#34;</span>
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;toolsAllow&#34;</span>: [<span style="color:#e6db74">&#34;exec&#34;</span>, <span style="color:#e6db74">&#34;read&#34;</span>, <span style="color:#e6db74">&#34;write&#34;</span>, <span style="color:#e6db74">&#34;edit&#34;</span>, <span style="color:#e6db74">&#34;web_search&#34;</span>, <span style="color:#e6db74">&#34;web_fetch&#34;</span>]
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;entries&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;coder&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;workspace&#34;</span>: <span style="color:#e6db74">&#34;~/.openclaw/workspace-coder&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;toolsAllow&#34;</span>: [<span style="color:#e6db74">&#34;exec&#34;</span>, <span style="color:#e6db74">&#34;read&#34;</span>, <span style="color:#e6db74">&#34;write&#34;</span>, <span style="color:#e6db74">&#34;edit&#34;</span>, <span style="color:#e6db74">&#34;browser&#34;</span>]
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;researcher&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;workspace&#34;</span>: <span style="color:#e6db74">&#34;~/.openclaw/workspace-researcher&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;toolsAllow&#34;</span>: [<span style="color:#e6db74">&#34;web_search&#34;</span>, <span style="color:#e6db74">&#34;web_fetch&#34;</span>, <span style="color:#e6db74">&#34;read&#34;</span>, <span style="color:#e6db74">&#34;write&#34;</span>]
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><hr>
+<h2 id="七应用配置实战">
+  七、应用配置实战
+  <a class="anchor" href="#%e4%b8%83%e5%ba%94%e7%94%a8%e9%85%8d%e7%bd%ae%e5%ae%9e%e6%88%98">#</a>
+</h2>
+<h3 id="71-多-agent-环境初始化">
+  7.1 多 Agent 环境初始化
+  <a class="anchor" href="#71-%e5%a4%9a-agent-%e7%8e%af%e5%a2%83%e5%88%9d%e5%a7%8b%e5%8c%96">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># Step 1: 创建 Agent</span>
+</span></span><span style="display:flex;"><span>openclaw agents add coding --model claude-sonnet-4-6
+</span></span><span style="display:flex;"><span>openclaw agents add social --model gpt-4o
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Step 2: 配置 Channel 账户</span>
+</span></span><span style="display:flex;"><span>openclaw channels login --channel telegram --account coding-bot
+</span></span><span style="display:flex;"><span>openclaw channels login --channel telegram --account social-bot
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Step 3: 添加 Binding（向导会自动提示）</span>
+</span></span><span style="display:flex;"><span>openclaw agents list --bindings
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Step 4: 重启并验证</span>
+</span></span><span style="display:flex;"><span>openclaw gateway restart
+</span></span><span style="display:flex;"><span>openclaw agents list --bindings
+</span></span><span style="display:flex;"><span>openclaw channels status --probe
+</span></span></code></pre></div><blockquote>
+<p><strong>配图 18：多 Agent 初始化工作流图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph LR
+    A[openclaw agents add] --&gt; B[生成 Workspace&lt;br/&gt;SOUL.md / AGENTS.md]
+    B --&gt; C[创建 agentDir&lt;br/&gt;SQLite Session Store]
+    C --&gt; D[配置 Channel Account]
+    D --&gt; E[添加 Binding 路由规则]
+    E --&gt; F[gateway restart]
+    F --&gt; G[验证: agents list --bindings]
+    
+    style A fill:#FFEAA7
+    style F fill:#FF6B6B
+    style G fill:#95E1D3
+</code></pre><h3 id="72-配置案例-1orchestrator--专业子-agent-模式">
+  7.2 配置案例 1：Orchestrator + 专业子 Agent 模式
+  <a class="anchor" href="#72-%e9%85%8d%e7%bd%ae%e6%a1%88%e4%be%8b-1orchestrator--%e4%b8%93%e4%b8%9a%e5%ad%90-agent-%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;agents&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;list&#34;</span>: [
+</span></span><span style="display:flex;"><span>      {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;orchestrator&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;name&#34;</span>: <span style="color:#e6db74">&#34;Orchestrator&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;workspace&#34;</span>: <span style="color:#e6db74">&#34;~/.openclaw/workspace-orchestrator&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;model&#34;</span>: <span style="color:#e6db74">&#34;anthropic/claude-opus-4-6&#34;</span>
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;coder&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;name&#34;</span>: <span style="color:#e6db74">&#34;Coding Expert&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;workspace&#34;</span>: <span style="color:#e6db74">&#34;~/.openclaw/workspace-coder&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;model&#34;</span>: <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4-6&#34;</span>
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;researcher&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;name&#34;</span>: <span style="color:#e6db74">&#34;Web Researcher&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;workspace&#34;</span>: <span style="color:#e6db74">&#34;~/.openclaw/workspace-researcher&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;model&#34;</span>: <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4-6&#34;</span>
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;ops&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;name&#34;</span>: <span style="color:#e6db74">&#34;DevOps Expert&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;workspace&#34;</span>: <span style="color:#e6db74">&#34;~/.openclaw/workspace-ops&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;model&#34;</span>: <span style="color:#e6db74">&#34;gpt-4o&#34;</span>
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    ]
+</span></span><span style="display:flex;"><span>  },
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;bindings&#34;</span>: [
+</span></span><span style="display:flex;"><span>    { <span style="color:#f92672">&#34;agentId&#34;</span>: <span style="color:#e6db74">&#34;orchestrator&#34;</span>, <span style="color:#f92672">&#34;match&#34;</span>: { <span style="color:#f92672">&#34;channel&#34;</span>: <span style="color:#e6db74">&#34;telegram&#34;</span>, <span style="color:#f92672">&#34;peer&#34;</span>: { <span style="color:#f92672">&#34;kind&#34;</span>: <span style="color:#e6db74">&#34;direct&#34;</span>, <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;+8613800000001&#34;</span> } } },
+</span></span><span style="display:flex;"><span>    { <span style="color:#f92672">&#34;agentId&#34;</span>: <span style="color:#e6db74">&#34;coder&#34;</span>, <span style="color:#f92672">&#34;match&#34;</span>: { <span style="color:#f92672">&#34;channel&#34;</span>: <span style="color:#e6db74">&#34;telegram&#34;</span>, <span style="color:#f92672">&#34;peer&#34;</span>: { <span style="color:#f92672">&#34;kind&#34;</span>: <span style="color:#e6db74">&#34;direct&#34;</span>, <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;+8613800000002&#34;</span> } } },
+</span></span><span style="display:flex;"><span>    { <span style="color:#f92672">&#34;agentId&#34;</span>: <span style="color:#e6db74">&#34;researcher&#34;</span>, <span style="color:#f92672">&#34;match&#34;</span>: { <span style="color:#f92672">&#34;channel&#34;</span>: <span style="color:#e6db74">&#34;discord&#34;</span>, <span style="color:#f92672">&#34;channelId&#34;</span>: <span style="color:#e6db74">&#34;coding-channel&#34;</span> } },
+</span></span><span style="display:flex;"><span>    { <span style="color:#f92672">&#34;agentId&#34;</span>: <span style="color:#e6db74">&#34;ops&#34;</span>, <span style="color:#f92672">&#34;match&#34;</span>: { <span style="color:#f92672">&#34;channel&#34;</span>: <span style="color:#e6db74">&#34;whatsapp&#34;</span>, <span style="color:#f92672">&#34;peer&#34;</span>: { <span style="color:#f92672">&#34;kind&#34;</span>: <span style="color:#e6db74">&#34;direct&#34;</span>, <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;+8613800000003&#34;</span> } } }
+</span></span><span style="display:flex;"><span>  ]
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><blockquote>
+<p><strong>配图 19：Orchestrator 模式部署架构图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph TB
+    User[用户&lt;br/&gt;发送复杂任务] --&gt; O[Orchestrator&lt;br/&gt;Claude Opus&lt;br/&gt;决策与协调]
+    
+    O --&gt;|sessions_spawn| C[Coder Agent&lt;br/&gt;Claude Sonnet&lt;br/&gt;代码实现]
+    O --&gt;|sessions_spawn| R[Researcher Agent&lt;br/&gt;Claude Sonnet&lt;br/&gt;资料收集]
+    O --&gt;|sessions_spawn| D[DevOps Agent&lt;br/&gt;GPT-4o&lt;br/&gt;部署运维]
+    
+    C --&gt;|完成事件| O
+    R --&gt;|完成事件| O
+    D --&gt;|完成事件| O
+    
+    O --&gt;|汇总结果| User
+    
+    subgraph 混合模型策略
+        O -.决策路由.-&gt; C
+        O -.决策路由.-&gt; R
+        O -.决策路由.-&gt; D
+    end
+    
+    style O fill:#FF6B6B
+    style C fill:#4ECDC4
+    style R fill:#4ECDC4
+    style D fill:#4ECDC4
+</code></pre><h3 id="73-配置案例-2同-whatsapp-号码拆分多-agent">
+  7.3 配置案例 2：同 WhatsApp 号码拆分多 Agent
+  <a class="anchor" href="#73-%e9%85%8d%e7%bd%ae%e6%a1%88%e4%be%8b-2%e5%90%8c-whatsapp-%e5%8f%b7%e7%a0%81%e6%8b%86%e5%88%86%e5%a4%9a-agent">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;agents&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;list&#34;</span>: [
+</span></span><span style="display:flex;"><span>      { <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;alex&#34;</span>, <span style="color:#f92672">&#34;workspace&#34;</span>: <span style="color:#e6db74">&#34;~/.openclaw/workspace-alex&#34;</span> },
+</span></span><span style="display:flex;"><span>      { <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;mia&#34;</span>, <span style="color:#f92672">&#34;workspace&#34;</span>: <span style="color:#e6db74">&#34;~/.openclaw/workspace-mia&#34;</span> }
+</span></span><span style="display:flex;"><span>    ]
+</span></span><span style="display:flex;"><span>  },
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;bindings&#34;</span>: [
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;agentId&#34;</span>: <span style="color:#e6db74">&#34;alex&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;match&#34;</span>: { <span style="color:#f92672">&#34;channel&#34;</span>: <span style="color:#e6db74">&#34;whatsapp&#34;</span>, <span style="color:#f92672">&#34;peer&#34;</span>: { <span style="color:#f92672">&#34;kind&#34;</span>: <span style="color:#e6db74">&#34;direct&#34;</span>, <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;+15551230001&#34;</span> } }
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;agentId&#34;</span>: <span style="color:#e6db74">&#34;mia&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;match&#34;</span>: { <span style="color:#f92672">&#34;channel&#34;</span>: <span style="color:#e6db74">&#34;whatsapp&#34;</span>, <span style="color:#f92672">&#34;peer&#34;</span>: { <span style="color:#f92672">&#34;kind&#34;</span>: <span style="color:#e6db74">&#34;direct&#34;</span>, <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;+15551230002&#34;</span> } }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  ],
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;channels&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;whatsapp&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;dmPolicy&#34;</span>: <span style="color:#e6db74">&#34;allowlist&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;allowFrom&#34;</span>: [<span style="color:#e6db74">&#34;+15551230001&#34;</span>, <span style="color:#e6db74">&#34;+15551230002&#34;</span>]
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><blockquote>
+<p><strong>配图 20：多 Channel 绑定拓扑图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">graph LR
+    subgraph WhatsApp
+    WA1[+86...0001] --&gt;|DM| A[Alex Agent]
+    WA2[+86...0002] --&gt;|DM| M[Mia Agent]
+    end
+    
+    subgraph Telegram
+    TG[Bot Token] --&gt;|Group| O[Orchestrator Agent]
+    end
+    
+    subgraph Discord
+    DS[Bot Token] --&gt;|Channel| C[Coder Agent]
+    end
+    
+    A -.同一 Gateway.-&gt; M
+    A -.同一 Gateway.-&gt; O
+    A -.同一 Gateway.-&gt; C
+</code></pre><h3 id="74-性能调优混合模型策略">
+  7.4 性能调优：混合模型策略
+  <a class="anchor" href="#74-%e6%80%a7%e8%83%bd%e8%b0%83%e4%bc%98%e6%b7%b7%e5%90%88%e6%a8%a1%e5%9e%8b%e7%ad%96%e7%95%a5">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>角色</th>
+          <th>推荐模型</th>
+          <th>理由</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Orchestrator（决策/路由）</strong></td>
+          <td>Claude Opus / GPT-4o</td>
+          <td>需要强推理能力做任务分解</td>
+      </tr>
+      <tr>
+          <td><strong>Worker（执行）</strong></td>
+          <td>Claude Sonnet / GPT-4o-mini</td>
+          <td>执行特定任务，性价比更高</td>
+      </tr>
+      <tr>
+          <td><strong>Simple Task（简单任务）</strong></td>
+          <td>GPT-4o-mini / Qwen-Turbo</td>
+          <td>快速响应，成本极低</td>
+      </tr>
+  </tbody>
+</table>
+<blockquote>
+<p><strong>配图 21：混合模型策略成本对比柱状图</strong></p>
+<p>使用 Python matplotlib 生成：</p></blockquote>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> matplotlib.pyplot <span style="color:#66d9ef">as</span> plt
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> numpy <span style="color:#66d9ef">as</span> np
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>categories <span style="color:#f92672">=</span> [<span style="color:#e6db74">&#39;路由决策&#39;</span>, <span style="color:#e6db74">&#39;代码生成&#39;</span>, <span style="color:#e6db74">&#39;数据分析&#39;</span>, <span style="color:#e6db74">&#39;内容写作&#39;</span>, <span style="color:#e6db74">&#39;总计&#39;</span>]
+</span></span><span style="display:flex;"><span>pure_opus <span style="color:#f92672">=</span> [<span style="color:#ae81ff">12.5</span>, <span style="color:#ae81ff">45.0</span>, <span style="color:#ae81ff">38.0</span>, <span style="color:#ae81ff">32.0</span>, <span style="color:#ae81ff">127.5</span>]   <span style="color:#75715e"># 全 Opus 成本 ($/月)</span>
+</span></span><span style="display:flex;"><span>mixed <span style="color:#f92672">=</span> [<span style="color:#ae81ff">12.5</span>, <span style="color:#ae81ff">18.0</span>, <span style="color:#ae81ff">15.0</span>, <span style="color:#ae81ff">12.0</span>, <span style="color:#ae81ff">57.5</span>]          <span style="color:#75715e"># 混合模型成本</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>x <span style="color:#f92672">=</span> np<span style="color:#f92672">.</span>arange(len(categories))
+</span></span><span style="display:flex;"><span>width <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.35</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>fig, ax <span style="color:#f92672">=</span> plt<span style="color:#f92672">.</span>subplots(figsize<span style="color:#f92672">=</span>(<span style="color:#ae81ff">10</span>, <span style="color:#ae81ff">5</span>))
+</span></span><span style="display:flex;"><span>bars1 <span style="color:#f92672">=</span> ax<span style="color:#f92672">.</span>bar(x <span style="color:#f92672">-</span> width<span style="color:#f92672">/</span><span style="color:#ae81ff">2</span>, pure_opus, width, label<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;纯 Claude Opus&#39;</span>, color<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;#FF6B6B&#39;</span>)
+</span></span><span style="display:flex;"><span>bars2 <span style="color:#f92672">=</span> ax<span style="color:#f92672">.</span>bar(x <span style="color:#f92672">+</span> width<span style="color:#f92672">/</span><span style="color:#ae81ff">2</span>, mixed, width, label<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;混合模型策略&#39;</span>, color<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;#4ECDC4&#39;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>ax<span style="color:#f92672">.</span>set_ylabel(<span style="color:#e6db74">&#39;月度成本 ($)&#39;</span>)
+</span></span><span style="display:flex;"><span>ax<span style="color:#f92672">.</span>set_title(<span style="color:#e6db74">&#39;混合模型策略 vs 纯 Opus 成本对比&#39;</span>)
+</span></span><span style="display:flex;"><span>ax<span style="color:#f92672">.</span>set_xticks(x)
+</span></span><span style="display:flex;"><span>ax<span style="color:#f92672">.</span>set_xticklabels(categories)
+</span></span><span style="display:flex;"><span>ax<span style="color:#f92672">.</span>legend()
+</span></span><span style="display:flex;"><span>ax<span style="color:#f92672">.</span>bar_label(bars1, padding<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span>)
+</span></span><span style="display:flex;"><span>ax<span style="color:#f92672">.</span>bar_label(bars2, padding<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 标注降本比例</span>
+</span></span><span style="display:flex;"><span>ax<span style="color:#f92672">.</span>annotate(<span style="color:#e6db74">&#39;55</span><span style="color:#e6db74">% r</span><span style="color:#e6db74">eduction&#39;</span>, xy<span style="color:#f92672">=</span>(<span style="color:#ae81ff">4.35</span>, <span style="color:#ae81ff">65</span>), fontsize<span style="color:#f92672">=</span><span style="color:#ae81ff">14</span>, color<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;green&#39;</span>, fontweight<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;bold&#39;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>plt<span style="color:#f92672">.</span>tight_layout()
+</span></span><span style="display:flex;"><span>plt<span style="color:#f92672">.</span>savefig(<span style="color:#e6db74">&#39;cost-comparison.png&#39;</span>, dpi<span style="color:#f92672">=</span><span style="color:#ae81ff">150</span>)
+</span></span><span style="display:flex;"><span>plt<span style="color:#f92672">.</span>show()
+</span></span></code></pre></div><p><strong>预期输出效果：</strong> 左右柱状图对比，清晰展示混合模型策略降本 55%（$127.5 → $57.5/月）。</p>
+<h3 id="75-安全最佳实践">
+  7.5 安全最佳实践
+  <a class="anchor" href="#75-%e5%ae%89%e5%85%a8%e6%9c%80%e4%bd%b3%e5%ae%9e%e8%b7%b5">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>实践</th>
+          <th>配置</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>凭证隔离</strong></td>
+          <td>每个 Agent 独立的 agentDir</td>
+          <td>防止 OAuth refresh token 泄漏</td>
+      </tr>
+      <tr>
+          <td><strong>权限控制</strong></td>
+          <td>子 Agent 配置 toolsAllow 白名单</td>
+          <td>最小权限原则</td>
+      </tr>
+      <tr>
+          <td><strong>Sandbox 隔离</strong></td>
+          <td>sandbox: &ldquo;require&rdquo;</td>
+          <td>子 Agent 必须在沙箱中执行</td>
+      </tr>
+      <tr>
+          <td><strong>嵌套深度</strong></td>
+          <td>maxSpawnDepth: 1</td>
+          <td>防止无限递归 spawn</td>
+      </tr>
+      <tr>
+          <td><strong>并发限制</strong></td>
+          <td>maxChildrenPerAgent: 5</td>
+          <td>控制资源消耗</td>
+      </tr>
+  </tbody>
+</table>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;agents&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;defaults&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;runtime&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;maxSpawnDepth&#34;</span>: <span style="color:#ae81ff">1</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;maxChildrenPerAgent&#34;</span>: <span style="color:#ae81ff">5</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;sandbox&#34;</span>: <span style="color:#e6db74">&#34;require&#34;</span>
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><hr>
+<h2 id="八总结与展望">
+  八、总结与展望
+  <a class="anchor" href="#%e5%85%ab%e6%80%bb%e7%bb%93%e4%b8%8e%e5%b1%95%e6%9c%9b">#</a>
+</h2>
+<h3 id="81-三种机制对比总结">
+  8.1 三种机制对比总结
+  <a class="anchor" href="#81-%e4%b8%89%e7%a7%8d%e6%9c%ba%e5%88%b6%e5%af%b9%e6%af%94%e6%80%bb%e7%bb%93">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>SubAgent</th>
+          <th>Agent Teams</th>
+          <th>AgentToAgent</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>复杂度</strong></td>
+          <td>低</td>
+          <td>中</td>
+          <td>高</td>
+      </tr>
+      <tr>
+          <td><strong>通信</strong></td>
+          <td>单向</td>
+          <td>多向</td>
+          <td>跨实例</td>
+      </tr>
+      <tr>
+          <td><strong>上下文</strong></td>
+          <td>独立</td>
+          <td>共享</td>
+          <td>独立</td>
+      </tr>
+      <tr>
+          <td><strong>部署</strong></td>
+          <td>单 Gateway</td>
+          <td>单 Gateway</td>
+          <td>多 Gateway</td>
+      </tr>
+      <tr>
+          <td><strong>典型场景</strong></td>
+          <td>任务委派</td>
+          <td>团队协作</td>
+          <td>分布式协作</td>
+      </tr>
+      <tr>
+          <td><strong>推荐度</strong></td>
+          <td>首选</td>
+          <td>需要实时协调时用</td>
+          <td>跨服务器时用</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="82-openclaw-多-agent-架构的设计哲学">
+  8.2 OpenClaw 多 Agent 架构的设计哲学
+  <a class="anchor" href="#82-openclaw-%e5%a4%9a-agent-%e6%9e%b6%e6%9e%84%e7%9a%84%e8%ae%be%e8%ae%a1%e5%93%b2%e5%ad%a6">#</a>
+</h3>
+<p>OpenClaw 多 Agent 架构遵循<strong>显式优于隐式</strong>原则：</p>
+<ul>
+<li><strong>Agent 之间不直接通信</strong>，必须通过主 Agent 协调</li>
+<li><strong>跨 Agent 访问需要显式配置</strong>（如 extraCollections、copyToAgents）</li>
+<li><strong>权限边界清晰</strong>：Workspace 是默认 cwd，非硬沙箱</li>
+<li><strong>工具访问遵循最小权限</strong>：子 Agent 默认受限</li>
+</ul>
+<h3 id="83-未来演进方向">
+  8.3 未来演进方向
+  <a class="anchor" href="#83-%e6%9c%aa%e6%9d%a5%e6%bc%94%e8%bf%9b%e6%96%b9%e5%90%91">#</a>
+</h3>
+<ul>
+<li><strong>Agent Teams 增强</strong>：更灵活的协调策略、动态成员加入/退出</li>
+<li><strong>AgentToAgent 标准化</strong>：跨厂商 Agent 互操作协议</li>
+<li><strong>智能路由优化</strong>：基于任务特征自动选择最优 Agent</li>
+<li><strong>多模态协作</strong>：不同 Agent 处理不同模态（文本/图像/音频）的融合</li>
+</ul>
+<blockquote>
+<p><strong>配图 22：全文知识地图</strong></p></blockquote>
+<pre tabindex="0"><code class="language-mermaid" data-lang="mermaid">mindmap
+  root((OpenClaw&lt;br/&gt;多 Agent 交互))
+    单 Agent 瓶颈
+      上下文天花板
+      认知过载
+      串行延迟
+    架构总览
+      Workspace
+      agentDir
+      Session Store
+      Binding
+    SubAgent
+      sessions_spawn
+      Session Key 层级
+      isolated / fork
+      Code Review 流水线
+    Agent Teams
+      Orchestrator
+      Peer-to-Peer
+      Hierarchical
+      共享内存
+    AgentToAgent
+      跨 Gateway
+      消息协议
+      分布式协作
+    源码实现
+      路由机制
+      Spawn 链路
+      SQLite Store
+      安全策略
+    配置实战
+      CLI 初始化
+      Orchestrator 模式
+      WhatsApp 拆分
+      混合模型降本
+</code></pre><hr>
+<h2 id="附录">
+  附录
+  <a class="anchor" href="#%e9%99%84%e5%bd%95">#</a>
+</h2>
+<h3 id="a-常用-cli-命令速查">
+  A. 常用 CLI 命令速查
+  <a class="anchor" href="#a-%e5%b8%b8%e7%94%a8-cli-%e5%91%bd%e4%bb%a4%e9%80%9f%e6%9f%a5">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># Agent 管理</span>
+</span></span><span style="display:flex;"><span>openclaw agents add &lt;id&gt; --model &lt;model&gt; --workspace &lt;dir&gt;
+</span></span><span style="display:flex;"><span>openclaw agents list --bindings
+</span></span><span style="display:flex;"><span>openclaw agents remove &lt;id&gt;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Channel 管理</span>
+</span></span><span style="display:flex;"><span>openclaw channels login --channel &lt;channel&gt; --account &lt;account&gt;
+</span></span><span style="display:flex;"><span>openclaw channels status --probe
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Gateway 管理</span>
+</span></span><span style="display:flex;"><span>openclaw gateway restart
+</span></span><span style="display:flex;"><span>openclaw gateway status
+</span></span><span style="display:flex;"><span>openclaw logs --follow
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Session 管理（在对话中）</span>
+</span></span><span style="display:flex;"><span>/subagents spawn        <span style="color:#75715e"># 手动 spawn 子 Agent</span>
+</span></span><span style="display:flex;"><span>/subagents list         <span style="color:#75715e"># 查看当前活跃的子 Agent</span>
+</span></span><span style="display:flex;"><span>/subagents cancel &lt;id&gt;  <span style="color:#75715e"># 取消运行中的子 Agent</span>
+</span></span><span style="display:flex;"><span>/status                 <span style="color:#75715e"># 查看当前会话状态（模型、token 用量、时间）</span>
+</span></span></code></pre></div><h3 id="b-参考链接">
+  B. 参考链接
+  <a class="anchor" href="#b-%e5%8f%82%e8%80%83%e9%93%be%e6%8e%a5">#</a>
+</h3>
+<ul>
+<li>OpenClaw 官方文档：https://docs.openclaw.ai</li>
+<li>OpenClaw GitHub 源码：https://github.com/openclaw/openclaw</li>
+<li>Multi-Agent Routing 文档：https://docs.openclaw.ai/concepts/multi-agent</li>
+<li>Agent Bindings 文档：https://docs.openclaw.ai/concepts/agent-bindings</li>
+<li>Skills 文档：https://docs.openclaw.ai/tools/skills</li>
+</ul>
+<hr>
+<p><em>全文完。</em></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openclaw-多-agent-交互原理源码实现与应用配置">OpenClaw 多 Agent 交互：原理、源码实现与应用配置</a>
+      <ul>
+        <li><a href="#一引言">一、引言</a>
+          <ul>
+            <li><a href="#11-单-agent-的三大瓶颈">1.1 单 Agent 的三大瓶颈</a></li>
+            <li><a href="#12-为什么需要多-agent-协作">1.2 为什么需要多 Agent 协作</a></li>
+            <li><a href="#13-本文结构">1.3 本文结构</a></li>
+          </ul>
+        </li>
+        <li><a href="#二openclaw-多-agent-架构总览">二、OpenClaw 多 Agent 架构总览</a>
+          <ul>
+            <li><a href="#21-agent-核心概念">2.1 Agent 核心概念</a></li>
+            <li><a href="#22-三种协作机制定位">2.2 三种协作机制定位</a></li>
+            <li><a href="#23-选型原则能解决问题的最简机制">2.3 选型原则：能解决问题的最简机制</a></li>
+            <li><a href="#24-架构全景图">2.4 架构全景图</a></li>
+          </ul>
+        </li>
+        <li><a href="#三机制一subagent--父子委派架构">三、机制一：SubAgent — 父子委派架构</a>
+          <ul>
+            <li><a href="#31-subagent-工作流程与生命周期">3.1 SubAgent 工作流程与生命周期</a></li>
+            <li><a href="#32-sessions_spawn-工具详解">3.2 <code>sessions_spawn</code> 工具详解</a></li>
+            <li><a href="#33-session-key-层级体系">3.3 Session Key 层级体系</a></li>
+            <li><a href="#34-context-模式对比isolated-vs-fork">3.4 <code>context</code> 模式对比：isolated vs fork</a></li>
+            <li><a href="#35-典型应用场景code-review-流水线">3.5 典型应用场景：Code Review 流水线</a></li>
+            <li><a href="#36-subagent-相关-cli-命令">3.6 SubAgent 相关 CLI 命令</a></li>
+          </ul>
+        </li>
+        <li><a href="#四机制二agent-teams--团队协作">四、机制二：Agent Teams — 团队协作</a>
+          <ul>
+            <li><a href="#41-与-subagent-的本质差异">4.1 与 SubAgent 的本质差异</a></li>
+            <li><a href="#42-三种协调模式">4.2 三种协调模式</a></li>
+            <li><a href="#43-agent-teams-配置结构">4.3 Agent Teams 配置结构</a></li>
+            <li><a href="#44-共享内存与状态同步">4.4 共享内存与状态同步</a></li>
+          </ul>
+        </li>
+        <li><a href="#五机制三agenttoagent--跨实例通信">五、机制三：AgentToAgent — 跨实例通信</a>
+          <ul>
+            <li><a href="#51-跨-gateway-分布式协作场景">5.1 跨 Gateway 分布式协作场景</a></li>
+            <li><a href="#52-agenttoagent-协议设计">5.2 AgentToAgent 协议设计</a></li>
+            <li><a href="#53-agenttoagent-消息协议">5.3 AgentToAgent 消息协议</a></li>
+            <li><a href="#54-三种机制总结对比">5.4 三种机制总结对比</a></li>
+          </ul>
+        </li>
+        <li><a href="#六核心源码剖析">六、核心源码剖析</a>
+          <ul>
+            <li><a href="#61-gateway-路由机制binding-匹配与消息分发">6.1 Gateway 路由机制：Binding 匹配与消息分发</a></li>
+            <li><a href="#62-sessions_spawn-的实现链路">6.2 sessions_spawn 的实现链路</a></li>
+            <li><a href="#63-会话隔离与上下文管理sqlite-session-store">6.3 会话隔离与上下文管理：SQLite Session Store</a></li>
+            <li><a href="#64-子-agent-完成事件回传与-sessions_yield-机制">6.4 子 Agent 完成事件回传与 sessions_yield 机制</a></li>
+            <li><a href="#65-安全策略tool-allowlist--嵌套深度限制">6.5 安全策略：Tool Allowlist / 嵌套深度限制</a></li>
+          </ul>
+        </li>
+        <li><a href="#七应用配置实战">七、应用配置实战</a>
+          <ul>
+            <li><a href="#71-多-agent-环境初始化">7.1 多 Agent 环境初始化</a></li>
+            <li><a href="#72-配置案例-1orchestrator--专业子-agent-模式">7.2 配置案例 1：Orchestrator + 专业子 Agent 模式</a></li>
+            <li><a href="#73-配置案例-2同-whatsapp-号码拆分多-agent">7.3 配置案例 2：同 WhatsApp 号码拆分多 Agent</a></li>
+            <li><a href="#74-性能调优混合模型策略">7.4 性能调优：混合模型策略</a></li>
+            <li><a href="#75-安全最佳实践">7.5 安全最佳实践</a></li>
+          </ul>
+        </li>
+        <li><a href="#八总结与展望">八、总结与展望</a>
+          <ul>
+            <li><a href="#81-三种机制对比总结">8.1 三种机制对比总结</a></li>
+            <li><a href="#82-openclaw-多-agent-架构的设计哲学">8.2 OpenClaw 多 Agent 架构的设计哲学</a></li>
+            <li><a href="#83-未来演进方向">8.3 未来演进方向</a></li>
+          </ul>
+        </li>
+        <li><a href="#附录">附录</a>
+          <ul>
+            <li><a href="#a-常用-cli-命令速查">A. 常用 CLI 命令速查</a></li>
+            <li><a href="#b-参考链接">B. 参考链接</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
