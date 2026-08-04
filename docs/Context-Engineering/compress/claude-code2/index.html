@@ -1,0 +1,6406 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  Claude Code 会话压缩机制深度解析：四层防御体系与工程实践
+  #
+
+
+&ldquo;Every token in the context window costs time and money. The art is knowing what to keep and what to summarize.&rdquo;
+Claude Code 是 Anthropic 推出的终端 AI 编程助手（github.com/anthropics/claude-code），其核心源码分析基于社区反向工程仓库 oboard/claude-code-rev。与传统云端 API 不同，Claude Code 运行在开发者自己的机器上，每次请求都需要将完整的会话历史（Message[]）发送给 LLM。
+想象这样一个场景：你让 Claude Code 重构一个 5000 行的模块。经过 20 轮对话后，上下文已经塞满了文件读取结果、Shell 命令输出、代码编辑记录、试错调试过程……当 token 计数逼近 200K 窗口上限时，下一次 API 请求将直接失败。但简单粗暴地截断历史会让 Agent &ldquo;失忆&rdquo;——忘记刚才做了什么、为什么要这样做。
+核心问题：如何在有限的上下文窗口中，既保留足够的历史信息让 Agent 连贯工作，又不超出 token 上限？
+Claude Code 的答案是一套四层防御体系：Micro-Compact（微观折叠）→ Auto-Compact（自动压缩）→ Session Memory Compact（零成本裁剪）→ Manual Compact（手动压缩）。本文将逐层深入源码，剖析这套体系的设计哲学与工程实现。">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Context-Engineering/compress/claude-code2/">
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="Claude Code 会话压缩机制深度解析：四层防御体系与工程实践 # “Every token in the context window costs time and money. The art is knowing what to keep and what to summarize.”
+Claude Code 是 Anthropic 推出的终端 AI 编程助手（github.com/anthropics/claude-code），其核心源码分析基于社区反向工程仓库 oboard/claude-code-rev。与传统云端 API 不同，Claude Code 运行在开发者自己的机器上，每次请求都需要将完整的会话历史（Message[]）发送给 LLM。
+想象这样一个场景：你让 Claude Code 重构一个 5000 行的模块。经过 20 轮对话后，上下文已经塞满了文件读取结果、Shell 命令输出、代码编辑记录、试错调试过程……当 token 计数逼近 200K 窗口上限时，下一次 API 请求将直接失败。但简单粗暴地截断历史会让 Agent “失忆”——忘记刚才做了什么、为什么要这样做。
+核心问题：如何在有限的上下文窗口中，既保留足够的历史信息让 Agent 连贯工作，又不超出 token 上限？
+Claude Code 的答案是一套四层防御体系：Micro-Compact（微观折叠）→ Auto-Compact（自动压缩）→ Session Memory Compact（零成本裁剪）→ Manual Compact（手动压缩）。本文将逐层深入源码，剖析这套体系的设计哲学与工程实现。">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>Claude Code2 | Modern Agent</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Context-Engineering/compress/claude-code2/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.7d591902a0455dea7b7deabcdc401020d27d3727bf3a34cd0586c67491e6838a.js" integrity="sha256-fVkZAqBFXep7feq83EAQINJ9Nye/OjTNBYbGdJHmg4o=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Context-Engineering/compress/claude-code2/index.xml" title="Modern Agent" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall/" class="">Rag Recall</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/" class="">Rag Recall 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cc96aa92b1fe4deb19f2780a910b3a84" class="toggle"  />
+    <label for="section-cc96aa92b1fe4deb19f2780a910b3a84" class="flex justify-between">
+      <a role="button" class="">Dify</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="toggle"  />
+    <label for="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="flex justify-between">
+      <a role="button" class="">产品</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/list/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="toggle"  />
+    <label for="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="flex justify-between">
+      <a role="button" class="">Sandbox</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/opensource/" class="">Opensource</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-42ab09fd6e839492b699ee2fa4656e2f" class="toggle"  />
+    <label for="section-42ab09fd6e839492b699ee2fa4656e2f" class="flex justify-between">
+      <a role="button" class="">SDK</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk%E5%85%BC%E5%AE%B9%E6%80%A7/" class="">AI SDK 向后兼容性*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk%E5%85%BC%E5%AE%B9%E6%80%A71/" class="">Sdk兼容性1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f52d73da99d8a76b38639b3169b9c30" class="toggle"  />
+    <label for="section-9f52d73da99d8a76b38639b3169b9c30" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E4%BC%98%E5%8C%96/" class="">Claude Platform 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent2/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent3/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E8%A7%A3%E8%AF%BB/" class="">脑和手的解耦</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E5%8E%9F%E6%96%87/" class="">原文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fa07d823cbbab8a5cb211097d19a8b0f" class="toggle"  />
+    <label for="section-fa07d823cbbab8a5cb211097d19a8b0f" class="flex justify-between">
+      <a role="button" class="">Reflection</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91cb2f81fbf96ec25f68405674241162" class="toggle"  />
+    <label for="section-91cb2f81fbf96ec25f68405674241162" class="flex justify-between">
+      <a role="button" class="">Planning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b95bbb7a37b62a6b524cdc440bea4bea" class="toggle"  />
+    <label for="section-b95bbb7a37b62a6b524cdc440bea4bea" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c6918aab8d4437c8353af1df185685d7" class="toggle"  />
+    <label for="section-c6918aab8d4437c8353af1df185685d7" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4bd94f7e5788f6f6b717b9411d5219d7" class="toggle"  />
+    <label for="section-4bd94f7e5788f6f6b717b9411d5219d7" class="flex justify-between">
+      <a role="button" class="">Hermes</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes1/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes2/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes/" class="">Hermes Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e851bc8bb25b6d3ab16779dd8e31e163" class="toggle"  />
+    <label for="section-e851bc8bb25b6d3ab16779dd8e31e163" class="flex justify-between">
+      <a role="button" class="">managed agents</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming1/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a5f1c9d05f8697fe4344602432ed2c1" class="toggle"  />
+    <label for="section-4a5f1c9d05f8697fe4344602432ed2c1" class="flex justify-between">
+      <a role="button" class="">Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/hindsight/" class="">Hindsight</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking/" class="">Openviking</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27631881d59f460a7e82415eae943524" class="toggle"  />
+    <label for="section-27631881d59f460a7e82415eae943524" class="flex justify-between">
+      <a role="button" class="">Openclaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-867db087ab84641b5d4e3bc021355890" class="toggle"  />
+    <label for="section-867db087ab84641b5d4e3bc021355890" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ca53c095705ebe6e57deb96a02c0d3e3" class="toggle"  />
+    <label for="section-ca53c095705ebe6e57deb96a02c0d3e3" class="flex justify-between">
+      <a role="button" class="">Multi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7f3cbaaa32d67178b923d0e7080ddc58" class="toggle"  />
+    <label for="section-7f3cbaaa32d67178b923d0e7080ddc58" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Kanban/" class="">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7c1e99e2bc0dea50268247820e8feb36" class="toggle"  />
+    <label for="section-7c1e99e2bc0dea50268247820e8feb36" class="flex justify-between">
+      <a role="button" class="">Multi-agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b751e6b46c5c7219290e88d9051560d5" class="toggle"  />
+    <label for="section-b751e6b46c5c7219290e88d9051560d5" class="flex justify-between">
+      <a role="button" class="">OpenClaw *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/multiagent2/" class="">OpenClaw 多 Agent*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/mulitagent1/" class="">Mulitagent1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8aff2d658582dd8082936377ce08c46d" class="toggle"  />
+    <label for="section-8aff2d658582dd8082936377ce08c46d" class="flex justify-between">
+      <a role="button" class="">subagent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/Claude-code/" class="">Claude Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/subagent/" class="">Subagent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-78862664423ffb11f8c168297456fbac" class="toggle"  />
+    <label for="section-78862664423ffb11f8c168297456fbac" class="flex justify-between">
+      <a role="button" class="">Teams *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-Teams/" class="">Claude Code Teams</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-TeamsA1/" class="">Claude Code Teams[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ea2d483cc1a4d5a7c6cfbd17430606bb" class="toggle"  />
+    <label for="section-ea2d483cc1a4d5a7c6cfbd17430606bb" class="flex justify-between">
+      <a role="button" class="">Tool &amp; Skill</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a4ce448e940a0cc7a875a292535becae" class="toggle"  />
+    <label for="section-a4ce448e940a0cc7a875a292535becae" class="flex justify-between">
+      <a role="button" class="">Survey &amp; SFT</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6cf3f07e4d6d846c9573f18390cdeeac" class="toggle"  />
+    <label for="section-6cf3f07e4d6d846c9573f18390cdeeac" class="flex justify-between">
+      <a role="button" class="">Tool 演进</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/%E6%BC%94%E8%BF%9B/fc&#43;mcp&#43;cli/" class="">Functioncall-&gt;MCP-&gt;cli &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-48b8e63601785873b1e95d5b2724c4b9" class="toggle"  />
+    <label for="section-48b8e63601785873b1e95d5b2724c4b9" class="flex justify-between">
+      <a role="button" class="">tools</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/Tools/claude-searchTool/" class="">Claude toolsearch</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4096c000af69b7676c635d4ec1e5329f" class="toggle"  />
+    <label for="section-4096c000af69b7676c635d4ec1e5329f" class="flex justify-between">
+      <a role="button" class="">MCP *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f1e9d00f2ecd2bd33d3f2cf3032901a0" class="toggle"  />
+    <label for="section-f1e9d00f2ecd2bd33d3f2cf3032901a0" class="flex justify-between">
+      <a role="button" class="">skill</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/skill/" class="">编写高质量Skill的六大失效模式</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/openclaw/" class="">Openclaw</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/openclaw1/" class="">Openclaw1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle"  />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle"  />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/core/" class="">OpenClaw 核心特性 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/" class="">State</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/" class="">Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/" class="">Security</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%811/" class="">OpenClaw 生态1 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%812/" class="">OpenClaw 生态2 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-406a2e1159d423500a23abb9a994a5a3" class="toggle"  />
+    <label for="section-406a2e1159d423500a23abb9a994a5a3" class="flex justify-between">
+      <a role="button" class="">Hermes Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/apiwebhook/" class="">Api&amp;webhook</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitctureA1/" class="">Arcitcture[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/interrupt/" class="">Interrupt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/" class="">Skill Envolve</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1A1/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/permission/" class="">Permission[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/source-code/" class="">claude code 源码 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-86069d54ccd932a89a9e23b7736965ee" class="toggle"  />
+    <label for="section-86069d54ccd932a89a9e23b7736965ee" class="flex justify-between">
+      <a role="button" class="">Pi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent/" class="">Pi Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent1/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent2/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Tau-Agent/" class="">Tau Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-2e3eee3f31d4bf9a6c3f87751db4d681" class="toggle"  />
+    <label for="section-2e3eee3f31d4bf9a6c3f87751db4d681" class="flex justify-between">
+      <a role="button" class="">实战</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b1ceebdd7e406fc4533519c821a9e4c3" class="toggle"  />
+    <label for="section-b1ceebdd7e406fc4533519c821a9e4c3" class="flex justify-between">
+      <a role="button" class="">Loops engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-01142eb3e9d36b255ac107cb9131d7c2" class="toggle"  />
+    <label for="section-01142eb3e9d36b255ac107cb9131d7c2" class="flex justify-between">
+      <a role="button" class="">goal</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/" class="">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="toggle"  />
+    <label for="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="flex justify-between">
+      <a role="button" class="">loop engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loops/" class="">loops engineering[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loop-engineering1/" class="">Loop Engineering1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b3a0ebe16d532fb38ede799ae1575c3a" class="toggle"  />
+    <label for="section-b3a0ebe16d532fb38ede799ae1575c3a" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/" class="">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/openclaw/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle" checked />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering1/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering2/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-701b3b5cc0f1886a3a73b604d1deac6b" class="toggle" checked />
+    <label for="section-701b3b5cc0f1886a3a73b604d1deac6b" class="flex justify-between">
+      <a role="button" class="">Compress *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/claude-code/" class="">Claude /compact[A1] *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/codex/" class="">CodeX 上下文 compact</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/claude-code2/" class="active">Claude Code2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/claude-code3/" class="">Claude Code3</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-642f5083da01c0a8441cbe8c21b21a7a" class="toggle"  />
+    <label for="section-642f5083da01c0a8441cbe8c21b21a7a" class="flex justify-between">
+      <a role="button" class="">Prompting caching *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/prompt-caching/Prompting-caching/" class="">Claude Prompt Cache [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">context engineering[Manus]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/plan-mode/claude/claude-code-plan-mode-article/" class="">Claude Code Plan Mode Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/plan-mode/claue1/claude-code-plan-mode/" class="">Claude Code Plan Mode</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="toggle"  />
+    <label for="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="flex justify-between">
+      <a role="button" class="">AI Native</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeminimax/" class="">AI原生组织实践(MiniMax)</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Claude-tag/" class="">Claude tag</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Ai-nativeali/" class="">AI native与人机协作[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeclaude/" class="">Bottleneck Shift in AI-native Engineering[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Claude Code2</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#claude-code-会话压缩机制深度解析四层防御体系与工程实践">Claude Code 会话压缩机制深度解析：四层防御体系与工程实践</a>
+      <ul>
+        <li><a href="#一上下文窗口管理全景">一、上下文窗口管理全景</a>
+          <ul>
+            <li><a href="#11-模型配置与窗口大小">1.1 模型配置与窗口大小</a></li>
+            <li><a href="#12-有效上下文窗口effective-context-window">1.2 有效上下文窗口（Effective Context Window）</a></li>
+            <li><a href="#13-context-命令四层过滤的可视化">1.3 <code>/context</code> 命令：四层过滤的可视化</a></li>
+          </ul>
+        </li>
+        <li><a href="#二第一层防御micro-compact微观折叠">二、第一层防御：Micro-Compact（微观折叠）</a>
+          <ul>
+            <li><a href="#21-什么是-micro-compact">2.1 什么是 Micro-Compact</a></li>
+            <li><a href="#22-可折叠的工具类型">2.2 可折叠的工具类型</a></li>
+            <li><a href="#23-micro-compact-的执行时机">2.3 Micro-Compact 的执行时机</a></li>
+            <li><a href="#24-time-based-mc-配置">2.4 Time-Based MC 配置</a></li>
+            <li><a href="#25-cached-micro-compactant-only-内部特性">2.5 Cached Micro-Compact（ant-only 内部特性）</a></li>
+          </ul>
+        </li>
+        <li><a href="#三第二层防御auto-compact自动压缩">三、第二层防御：Auto-Compact（自动压缩）</a>
+          <ul>
+            <li><a href="#31-阈值体系">3.1 阈值体系</a></li>
+            <li><a href="#32-自动压缩的决策树">3.2 自动压缩的决策树</a></li>
+            <li><a href="#33-circuit-breaker熔断器">3.3 Circuit Breaker（熔断器）</a></li>
+            <li><a href="#34-环境变量控制">3.4 环境变量控制</a></li>
+            <li><a href="#35-与-context-collapse-的互斥">3.5 与 Context Collapse 的互斥</a></li>
+          </ul>
+        </li>
+        <li><a href="#四压缩执行引擎compactconversation">四、压缩执行引擎：compactConversation</a>
+          <ul>
+            <li><a href="#41-双路径压缩策略">4.1 双路径压缩策略</a></li>
+            <li><a href="#42-session-memory-compact实验性">4.2 Session Memory Compact（实验性）</a></li>
+            <li><a href="#43-标准压缩流程compactconversation">4.3 标准压缩流程（compactConversation）</a></li>
+            <li><a href="#44-forked-agent-架构">4.4 Forked Agent 架构</a></li>
+            <li><a href="#45-压缩请求的系统提示">4.5 压缩请求的系统提示</a></li>
+          </ul>
+        </li>
+        <li><a href="#五压缩后的消息重建">五、压缩后的消息重建</a>
+          <ul>
+            <li><a href="#51-消息替换机制">5.1 消息替换机制</a></li>
+            <li><a href="#52-compactboundarymessage-结构">5.2 CompactBoundaryMessage 结构</a></li>
+            <li><a href="#53-plan-附件保护">5.3 Plan 附件保护</a></li>
+            <li><a href="#54-recompaction重复压缩追踪">5.4 Recompaction（重复压缩）追踪</a></li>
+          </ul>
+        </li>
+        <li><a href="#六压缩后清理post-compact-cleanup">六、压缩后清理（Post-Compact Cleanup）</a>
+          <ul>
+            <li><a href="#61-清理清单">6.1 清理清单</a></li>
+            <li><a href="#62-不清除的内容">6.2 不清除的内容</a></li>
+            <li><a href="#63-主线程-vs-子进程的隔离">6.3 主线程 vs 子进程的隔离</a></li>
+          </ul>
+        </li>
+        <li><a href="#七prompt-cache-break-detection">七、Prompt Cache Break Detection</a>
+          <ul>
+            <li><a href="#71-问题背景">7.1 问题背景</a></li>
+            <li><a href="#72-解决方案">7.2 解决方案</a></li>
+            <li><a href="#73-session-memory-compact-的特殊处理">7.3 Session Memory Compact 的特殊处理</a></li>
+          </ul>
+        </li>
+        <li><a href="#八与同类工具的对比">八、与同类工具的对比</a></li>
+        <li><a href="#九设计启示与最佳实践">九、设计启示与最佳实践</a>
+          <ul>
+            <li><a href="#91-claude-code-的设计原则">9.1 Claude Code 的设计原则</a></li>
+            <li><a href="#92-用户最佳实践">9.2 用户最佳实践</a></li>
+            <li><a href="#93-对-ai-agent-架构的启示">9.3 对 AI Agent 架构的启示</a></li>
+          </ul>
+        </li>
+        <li><a href="#十总结">十、总结</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="claude-code-会话压缩机制深度解析四层防御体系与工程实践">
+  Claude Code 会话压缩机制深度解析：四层防御体系与工程实践
+  <a class="anchor" href="#claude-code-%e4%bc%9a%e8%af%9d%e5%8e%8b%e7%bc%a9%e6%9c%ba%e5%88%b6%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90%e5%9b%9b%e5%b1%82%e9%98%b2%e5%be%a1%e4%bd%93%e7%b3%bb%e4%b8%8e%e5%b7%a5%e7%a8%8b%e5%ae%9e%e8%b7%b5">#</a>
+</h1>
+<blockquote>
+<p>&ldquo;Every token in the context window costs time and money. The art is knowing what to keep and what to summarize.&rdquo;</p></blockquote>
+<p>Claude Code 是 Anthropic 推出的终端 AI 编程助手（<code>github.com/anthropics/claude-code</code>），其核心源码分析基于社区反向工程仓库 <code>oboard/claude-code-rev</code>。与传统云端 API 不同，Claude Code 运行在开发者自己的机器上，每次请求都需要将完整的会话历史（<code>Message[]</code>）发送给 LLM。</p>
+<p>想象这样一个场景：你让 Claude Code 重构一个 5000 行的模块。经过 20 轮对话后，上下文已经塞满了文件读取结果、Shell 命令输出、代码编辑记录、试错调试过程……当 token 计数逼近 200K 窗口上限时，下一次 API 请求将直接失败。但简单粗暴地截断历史会让 Agent &ldquo;失忆&rdquo;——忘记刚才做了什么、为什么要这样做。</p>
+<p><strong>核心问题</strong>：如何在有限的上下文窗口中，既保留足够的历史信息让 Agent 连贯工作，又不超出 token 上限？</p>
+<p>Claude Code 的答案是一套<strong>四层防御体系</strong>：Micro-Compact（微观折叠）→ Auto-Compact（自动压缩）→ Session Memory Compact（零成本裁剪）→ Manual Compact（手动压缩）。本文将逐层深入源码，剖析这套体系的设计哲学与工程实现。</p>
+<hr>
+<h2 id="一上下文窗口管理全景">
+  一、上下文窗口管理全景
+  <a class="anchor" href="#%e4%b8%80%e4%b8%8a%e4%b8%8b%e6%96%87%e7%aa%97%e5%8f%a3%e7%ae%a1%e7%90%86%e5%85%a8%e6%99%af">#</a>
+</h2>
+<h3 id="11-模型配置与窗口大小">
+  1.1 模型配置与窗口大小
+  <a class="anchor" href="#11-%e6%a8%a1%e5%9e%8b%e9%85%8d%e7%bd%ae%e4%b8%8e%e7%aa%97%e5%8f%a3%e5%a4%a7%e5%b0%8f">#</a>
+</h3>
+<p>Claude Code 支持多种模型，不同模型有不同的上下文窗口配置。核心常量定义在 <code>src/utils/context.ts</code> 中：</p>
+<table>
+  <thead>
+      <tr>
+          <th>常量</th>
+          <th>值</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>MODEL_CONTEXT_WINDOW_DEFAULT</code></td>
+          <td>200,000</td>
+          <td>所有模型的默认基础窗口</td>
+      </tr>
+      <tr>
+          <td><code>COMPACT_MAX_OUTPUT_TOKENS</code></td>
+          <td>20,000</td>
+          <td>压缩请求的最大输出 token</td>
+      </tr>
+      <tr>
+          <td><code>CAPPED_DEFAULT_MAX_TOKENS</code></td>
+          <td>8,000</td>
+          <td>默认输出上限，避免过度预留 slot</td>
+      </tr>
+      <tr>
+          <td><code>ESCALATED_MAX_TOKENS</code></td>
+          <td>64,000</td>
+          <td>重试时的升级输出上限</td>
+      </tr>
+  </tbody>
+</table>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/utils/context.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">MODEL_CONTEXT_WINDOW_DEFAULT</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">200</span><span style="color:#a6e22e">_000</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">COMPACT_MAX_OUTPUT_TOKENS</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">20</span><span style="color:#a6e22e">_000</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">CAPPED_DEFAULT_MAX_TOKENS</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">8</span><span style="color:#a6e22e">_000</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">ESCALATED_MAX_TOKENS</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">64</span><span style="color:#a6e22e">_000</span>
+</span></span></code></pre></div><p><strong>1M 上下文支持</strong>：
+部分模型（如 <code>claude-sonnet-4[1m]</code>、<code>opus-4-6[1m]</code>）支持 1M 上下文，通过 <code>[1m]</code> 后缀显式启用。也可通过环境变量 <code>CLAUDE_CODE_DISABLE_1M_CONTEXT</code> 全局禁用（HIPAA 合规需求）。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/utils/context.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">has1mContext</span>(<span style="color:#a6e22e">model</span>: <span style="color:#66d9ef">string</span>)<span style="color:#f92672">:</span> <span style="color:#66d9ef">boolean</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">is1mContextDisabled</span>()) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#e6db74">/\[1m\]/i</span>.<span style="color:#a6e22e">test</span>(<span style="color:#a6e22e">model</span>)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">modelSupports1M</span>(<span style="color:#a6e22e">model</span>: <span style="color:#66d9ef">string</span>)<span style="color:#f92672">:</span> <span style="color:#66d9ef">boolean</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">is1mContextDisabled</span>()) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">canonical</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">getCanonicalName</span>(<span style="color:#a6e22e">model</span>)
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">canonical</span>.<span style="color:#a6e22e">includes</span>(<span style="color:#e6db74">&#39;claude-sonnet-4&#39;</span>) <span style="color:#f92672">||</span> <span style="color:#a6e22e">canonical</span>.<span style="color:#a6e22e">includes</span>(<span style="color:#e6db74">&#39;opus-4-6&#39;</span>)
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="12-有效上下文窗口effective-context-window">
+  1.2 有效上下文窗口（Effective Context Window）
+  <a class="anchor" href="#12-%e6%9c%89%e6%95%88%e4%b8%8a%e4%b8%8b%e6%96%87%e7%aa%97%e5%8f%a3effective-context-window">#</a>
+</h3>
+<p>压缩需要为摘要生成预留 token。Claude Code 的预留策略基于<strong>实际数据</strong>而非猜测：</p>
+<blockquote>
+<p>基于 BigQuery p99.99 的压缩摘要输出为 17,387 tokens。</p></blockquote>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/autoCompact.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">MAX_OUTPUT_TOKENS_FOR_SUMMARY</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">20</span><span style="color:#a6e22e">_000</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">getEffectiveContextWindowSize</span>(<span style="color:#a6e22e">model</span>: <span style="color:#66d9ef">string</span>)<span style="color:#f92672">:</span> <span style="color:#66d9ef">number</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">reservedTokensForSummary</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">min</span>(
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">getMaxOutputTokensForModel</span>(<span style="color:#a6e22e">model</span>),
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">MAX_OUTPUT_TOKENS_FOR_SUMMARY</span>,
+</span></span><span style="display:flex;"><span>  )
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">let</span> <span style="color:#a6e22e">contextWindow</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">getContextWindowForModel</span>(<span style="color:#a6e22e">model</span>, <span style="color:#a6e22e">getSdkBetas</span>())
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">autoCompactWindow</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">process</span>.<span style="color:#a6e22e">env</span>.<span style="color:#a6e22e">CLAUDE_CODE_AUTO_COMPACT_WINDOW</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">autoCompactWindow</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">parsed</span> <span style="color:#f92672">=</span> parseInt(<span style="color:#a6e22e">autoCompactWindow</span>, <span style="color:#ae81ff">10</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>isNaN(<span style="color:#a6e22e">parsed</span>) <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">parsed</span> <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">contextWindow</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">min</span>(<span style="color:#a6e22e">contextWindow</span>, <span style="color:#a6e22e">parsed</span>)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">contextWindow</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">reservedTokensForSummary</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>计算示例</strong>：</p>
+
+
+<script src="/www6vAIGC/mermaid.min.js"></script>
+
+  <script>mermaid.initialize({
+  "flowchart": {
+    "useMaxWidth":true
+  },
+  "theme": "default"
+}
+)</script>
+
+
+
+<pre class="mermaid">flowchart LR
+    A[200K 窗口] --&gt; B[减去 20K 摘要预留]
+    B --&gt; C[180K 有效窗口]
+    C --&gt; D[减去 13K auto-compact buffer]
+    D --&gt; E[167K 触发阈值]
+    
+    style A fill:#48dbfb
+    style B fill:#f9ca24
+    style C fill:#48dbfb
+    style D fill:#f9ca24
+    style E fill:#ff6b6b</pre>
+<table>
+  <thead>
+      <tr>
+          <th>步骤</th>
+          <th>值</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>模型窗口</td>
+          <td>200,000</td>
+          <td><code>getContextWindowForModel()</code> 返回</td>
+      </tr>
+      <tr>
+          <td>摘要预留</td>
+          <td>-20,000</td>
+          <td><code>MAX_OUTPUT_TOKENS_FOR_SUMMARY</code></td>
+      </tr>
+      <tr>
+          <td>有效窗口</td>
+          <td>180,000</td>
+          <td>实际可用于对话的空间</td>
+      </tr>
+      <tr>
+          <td>Auto-Compact Buffer</td>
+          <td>-13,000</td>
+          <td><code>AUTOCOMPACT_BUFFER_TOKENS</code></td>
+      </tr>
+      <tr>
+          <td><strong>触发阈值</strong></td>
+          <td><strong>167,000</strong></td>
+          <td>达到此值时自动压缩</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="13-context-命令四层过滤的可视化">
+  1.3 <code>/context</code> 命令：四层过滤的可视化
+  <a class="anchor" href="#13-context-%e5%91%bd%e4%bb%a4%e5%9b%9b%e5%b1%82%e8%bf%87%e6%bb%a4%e7%9a%84%e5%8f%af%e8%a7%86%e5%8c%96">#</a>
+</h3>
+<p><code>/context</code> 命令不是简单统计所有消息的 token 数，而是经过<strong>四层过滤</strong>后计算模型实际看到的内容：</p>
+
+<pre class="mermaid">flowchart TD
+    A[原始消息列表&lt;br/&gt;Message[]] --&gt; B[getMessagesAfterCompactBoundary]
+    B --&gt; C{CONTEXT_COLLAPSE&lt;br/&gt;特性开启?}
+    C --&gt;|是| D[projectView]
+    C --&gt;|否| E[microcompactMessages]
+    D --&gt; E
+    E --&gt; F[analyzeContextUsage]
+    F --&gt; G[ContextVisualization 渲染]
+    
+    style A fill:#ff6b6b
+    style B fill:#f9ca24
+    style D fill:#48dbfb
+    style E fill:#2ed573
+    style F fill:#a4f0c4
+    style G fill:#2ed573</pre>
+<table>
+  <thead>
+      <tr>
+          <th>过滤层</th>
+          <th>函数</th>
+          <th>作用</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1. 边界过滤</td>
+          <td><code>getMessagesAfterCompactBoundary()</code></td>
+          <td>只统计压缩边界之后的消息</td>
+      </tr>
+      <tr>
+          <td>2. 投影过滤</td>
+          <td><code>projectView()</code></td>
+          <td>CONTEXT_COLLAPSE 特性的上下文投影</td>
+      </tr>
+      <tr>
+          <td>3. 微观折叠</td>
+          <td><code>microcompactMessages()</code></td>
+          <td>折叠旧的工具调用结果</td>
+      </tr>
+      <tr>
+          <td>4. 分析统计</td>
+          <td><code>analyzeContextUsage()</code></td>
+          <td>计算各分类 token 占比</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>关键设计洞察</strong>：</p>
+<blockquote>
+<p>&ldquo;Apply the same context transforms query.ts does before the API call, so /context shows what the model actually sees rather than the REPL&rsquo;s raw history.&rdquo;</p></blockquote>
+<p>如果不经过这些过滤，用户会看到&quot;180K，3 spans collapsed&quot;，但模型实际只看到 120K——这会导致用户对上下文状态的误判。</p>
+<hr>
+<h2 id="二第一层防御micro-compact微观折叠">
+  二、第一层防御：Micro-Compact（微观折叠）
+  <a class="anchor" href="#%e4%ba%8c%e7%ac%ac%e4%b8%80%e5%b1%82%e9%98%b2%e5%be%a1micro-compact%e5%be%ae%e8%a7%82%e6%8a%98%e5%8f%a0">#</a>
+</h2>
+<p><strong>源码位置</strong>：<code>src/services/compact/microCompact.ts</code>（19.5KB）</p>
+<h3 id="21-什么是-micro-compact">
+  2.1 什么是 Micro-Compact
+  <a class="anchor" href="#21-%e4%bb%80%e4%b9%88%e6%98%af-micro-compact">#</a>
+</h3>
+<p>Micro-compact 不是真正的&quot;压缩&quot;——它<strong>不调用 LLM</strong>，而是<strong>就地折叠</strong>（collapse）过时的工具调用结果，用占位符替换：</p>
+<pre tabindex="0"><code>原始消息：
+User: Read file src/main.py (15,000 tokens)
+Assistant: [tool result: 完整的 15,000 token 文件内容]
+User: Edit file src/main.py
+Assistant: [tool result: 编辑成功]
+
+micro-compact 后：
+User: Read file src/main.py (已折叠)
+Assistant: [Old tool result content cleared]
+User: Edit file src/main.py
+Assistant: [tool result: 编辑成功]
+</code></pre><p><strong>关键常量</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/microCompact.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">TIME_BASED_MC_CLEARED_MESSAGE</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;[Old tool result content cleared]&#39;</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">IMAGE_MAX_TOKEN_SIZE</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">2000</span>
+</span></span></code></pre></div><h3 id="22-可折叠的工具类型">
+  2.2 可折叠的工具类型
+  <a class="anchor" href="#22-%e5%8f%af%e6%8a%98%e5%8f%a0%e7%9a%84%e5%b7%a5%e5%85%b7%e7%b1%bb%e5%9e%8b">#</a>
+</h3>
+<p>不是所有工具结果都可以折叠。Claude Code 只折叠那些<strong>输出量大、但过时后价值低</strong>的工具：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/microCompact.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">COMPACTABLE_TOOLS</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Set</span>&lt;<span style="color:#f92672">string</span>&gt;([
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">FILE_READ_TOOL_NAME</span>,      <span style="color:#75715e">// Read - 文件读取（最大 token 消费者）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  ...<span style="color:#a6e22e">SHELL_TOOL_NAMES</span>,       <span style="color:#75715e">// Bash - Shell 命令
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">GREP_TOOL_NAME</span>,           <span style="color:#75715e">// Grep - 文本搜索
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">GLOB_TOOL_NAME</span>,           <span style="color:#75715e">// Glob - 文件匹配
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">WEB_SEARCH_TOOL_NAME</span>,     <span style="color:#75715e">// WebSearch - 网络搜索
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">WEB_FETCH_TOOL_NAME</span>,      <span style="color:#75715e">// WebFetch - 网页获取
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">FILE_EDIT_TOOL_NAME</span>,      <span style="color:#75715e">// Edit - 文件编辑
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">FILE_WRITE_TOOL_NAME</span>,     <span style="color:#75715e">// Write - 文件写入
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>])
+</span></span></code></pre></div><p><strong>不折叠的工具</strong>：</p>
+<ul>
+<li><code>Agent</code>（子 Agent 调用）</li>
+<li><code>Skill</code>（技能调用）</li>
+<li><code>TodoWrite</code>（任务列表）</li>
+<li>用户消息和助手文本回复</li>
+</ul>
+<h3 id="23-micro-compact-的执行时机">
+  2.3 Micro-Compact 的执行时机
+  <a class="anchor" href="#23-micro-compact-%e7%9a%84%e6%89%a7%e8%a1%8c%e6%97%b6%e6%9c%ba">#</a>
+</h3>
+<p>Micro-compact 在<strong>每次 API 请求前</strong>自动执行：</p>
+
+<pre class="mermaid">sequenceDiagram
+    participant User as 用户输入
+    participant REPL as REPL 循环
+    participant MC as microcompactMessages()
+    participant API as API 请求
+    
+    User-&gt;&gt;REPL: 输入新消息
+    REPL-&gt;&gt;MC: 调用 microcompactMessages(messages)
+    MC-&gt;&gt;MC: 遍历消息，标记可折叠工具
+    MC-&gt;&gt;MC: 替换为占位符
+    MC--&gt;&gt;REPL: 返回折叠后的消息
+    REPL-&gt;&gt;API: 发送折叠后的消息</pre>
+<h3 id="24-time-based-mc-配置">
+  2.4 Time-Based MC 配置
+  <a class="anchor" href="#24-time-based-mc-%e9%85%8d%e7%bd%ae">#</a>
+</h3>
+<p>micro-compact 支持基于时间的配置策略（<code>TimeBasedMCConfig</code>），在不同会话阶段采用不同的折叠策略。这允许系统：</p>
+<ul>
+<li>在会话初期保留更多上下文</li>
+<li>在会话后期更激进地折叠旧结果</li>
+<li>根据工具类型调整折叠阈值</li>
+</ul>
+<h3 id="25-cached-micro-compactant-only-内部特性">
+  2.5 Cached Micro-Compact（ant-only 内部特性）
+  <a class="anchor" href="#25-cached-micro-compactant-only-%e5%86%85%e9%83%a8%e7%89%b9%e6%80%a7">#</a>
+</h3>
+<p>内部版本支持<strong>缓存的微折叠状态</strong>，通过 <code>CacheEditsBlock</code> 和 <code>PinnedCacheEdits</code> 机制实现：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/microCompact.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">getCachedMCModule</span>()<span style="color:#f92672">:</span> <span style="color:#a6e22e">Promise</span>&lt;<span style="color:#f92672">typeof</span> <span style="color:#a6e22e">import</span><span style="color:#960050;background-color:#1e0010">(</span><span style="color:#e6db74">&#39;./cachedMicrocompact.js&#39;</span><span style="color:#960050;background-color:#1e0010">)</span>&gt; {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">cachedMCModule</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">cachedMCModule</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#66d9ef">import</span>(<span style="color:#e6db74">&#39;./cachedMicrocompact.js&#39;</span>)
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">cachedMCModule</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">consumePendingCacheEdits</span>()<span style="color:#f92672">:</span> <span style="color:#a6e22e">CacheEditsBlock</span> <span style="color:#f92672">|</span> <span style="color:#66d9ef">null</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">edits</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">pendingCacheEdits</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">pendingCacheEdits</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">null</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">edits</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">getPinnedCacheEdits</span>()<span style="color:#f92672">:</span> <span style="color:#a6e22e">PinnedCacheEdits</span>[] {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">cachedMCState</span>) <span style="color:#66d9ef">return</span> []
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">cachedMCState</span>.<span style="color:#a6e22e">pinnedEdits</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>设计洞察</strong>：
+Cached Micro-Compact 的核心价值是<strong>在保持 Prompt Cache 命中率的同时折叠旧内容</strong>。它通过 <code>PinnedCacheEdits</code> 将折叠信息固定在特定位置，确保 API 请求的缓存键保持不变，从而避免缓存失效带来的成本增加。</p>
+<hr>
+<h2 id="三第二层防御auto-compact自动压缩">
+  三、第二层防御：Auto-Compact（自动压缩）
+  <a class="anchor" href="#%e4%b8%89%e7%ac%ac%e4%ba%8c%e5%b1%82%e9%98%b2%e5%be%a1auto-compact%e8%87%aa%e5%8a%a8%e5%8e%8b%e7%bc%a9">#</a>
+</h2>
+<p><strong>源码位置</strong>：<code>src/services/compact/autoCompact.ts</code>（12.9KB）</p>
+<h3 id="31-阈值体系">
+  3.1 阈值体系
+  <a class="anchor" href="#31-%e9%98%88%e5%80%bc%e4%bd%93%e7%b3%bb">#</a>
+</h3>
+<p>Auto-compact 的触发不基于简单的百分比，而是基于<strong>绝对 token 数量 buffer</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>阈值常量</th>
+          <th>值</th>
+          <th>含义</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>AUTOCOMPACT_BUFFER_TOKENS</code></td>
+          <td>13,000</td>
+          <td>自动压缩触发 buffer</td>
+      </tr>
+      <tr>
+          <td><code>WARNING_THRESHOLD_BUFFER_TOKENS</code></td>
+          <td>20,000</td>
+          <td>警告阈值 buffer</td>
+      </tr>
+      <tr>
+          <td><code>ERROR_THRESHOLD_BUFFER_TOKENS</code></td>
+          <td>20,000</td>
+          <td>错误阈值 buffer</td>
+      </tr>
+      <tr>
+          <td><code>MANUAL_COMPACT_BUFFER_TOKENS</code></td>
+          <td>3,000</td>
+          <td>手动压缩时的更小 buffer</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>实际触发点计算</strong>：</p>
+<pre tabindex="0"><code>autoCompactThreshold = effectiveContextWindow - AUTOCOMPACT_BUFFER_TOKENS
+                     = 180,000 - 13,000
+                     = 167,000 tokens
+</code></pre><h3 id="32-自动压缩的决策树">
+  3.2 自动压缩的决策树
+  <a class="anchor" href="#32-%e8%87%aa%e5%8a%a8%e5%8e%8b%e7%bc%a9%e7%9a%84%e5%86%b3%e7%ad%96%e6%a0%91">#</a>
+</h3>
+<p>Auto-compact 不是简单地检查 token 数就触发。源码中 <code>shouldAutoCompact()</code> 函数包含<strong>多层守卫检查</strong>：</p>
+
+<pre class="mermaid">flowchart TD
+    A[新请求到达] --&gt; B{DISABLE_COMPACT?}
+    B --&gt;|是| Z[跳过]
+    B --&gt;|否| C{连续失败 &gt;= 3?}
+    C --&gt;|是| Z
+    C --&gt;|否| D[querySource 检查]
+    D --&gt;|session_memory/compact&lt;br/&gt;marble_origami| Z
+    D --&gt;|其他| E{REACTIVE_COMPACT 开启?}
+    E --&gt;|是| Z
+    E --&gt;|否| F{CONTEXT_COLLAPSE 开启?}
+    F --&gt;|是| Z
+    F --&gt;|否| G[tokenCount &gt;= threshold?]
+    G --&gt;|是| H[✅ 触发压缩]
+    G --&gt;|否| Z[❌ 不触发]
+    
+    style H fill:#2ed573
+    style Z fill:#ff6b6b</pre>
+<p><strong>关键守卫逻辑</strong>（源码原文）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/autoCompact.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// Recursion guards. session_memory and compact are forked agents that
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// would deadlock.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">querySource</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#39;session_memory&#39;</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">querySource</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#39;compact&#39;</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// marble_origami is the ctx-agent — if ITS context blows up and
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// autocompact fires, runPostCompactCleanup calls resetContextCollapse()
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// which destroys the MAIN thread&#39;s committed log...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">feature</span>(<span style="color:#e6db74">&#39;CONTEXT_COLLAPSE&#39;</span>)) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">querySource</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#39;marble_origami&#39;</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Context-collapse mode: same suppression. Collapse IS the context
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// management system when it&#39;s on — the 90% commit / 95% blocking-spawn
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// flow owns the headroom problem. Autocompact firing at effective-13k
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// (~93% of effective) sits right between collapse&#39;s commit-start (90%)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// and blocking (95%), so it would race collapse and usually win, nuking
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// granular context that collapse was about to save.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">feature</span>(<span style="color:#e6db74">&#39;CONTEXT_COLLAPSE&#39;</span>)) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> { <span style="color:#a6e22e">isContextCollapseEnabled</span> } <span style="color:#f92672">=</span> <span style="color:#66d9ef">require</span>(<span style="color:#e6db74">&#39;../contextCollapse/index.js&#39;</span>)
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">isContextCollapseEnabled</span>()) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="33-circuit-breaker熔断器">
+  3.3 Circuit Breaker（熔断器）
+  <a class="anchor" href="#33-circuit-breaker%e7%86%94%e6%96%ad%e5%99%a8">#</a>
+</h3>
+<p>这是 Auto-Compact 设计中最<strong>实用主义</strong>的一环。Anthropic 通过 BigQuery 数据分析发现了一个严重问题：</p>
+<blockquote>
+<p>BQ 2026-03-10: 1,279 个会话在单个会话中出现 50+ 次连续自动压缩失败（最多 3,272 次），每天浪费约 250K 次 API 调用。</p></blockquote>
+<p>解决方案：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/autoCompact.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// Stop trying autocompact after this many consecutive failures.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">3</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">autoCompactIfNeeded</span>(...)<span style="color:#f92672">:</span> <span style="color:#a6e22e">Promise</span>&lt;<span style="color:#f92672">...</span>&gt; {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// Circuit breaker: stop retrying after N consecutive failures.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// Without this, sessions where context is irrecoverably over the limit
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// hammer the API with doomed compaction attempts on every turn.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">if</span> (
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">tracking</span><span style="color:#f92672">?</span>.<span style="color:#a6e22e">consecutiveFailures</span> <span style="color:#f92672">!==</span> <span style="color:#66d9ef">undefined</span> <span style="color:#f92672">&amp;&amp;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">tracking</span>.<span style="color:#a6e22e">consecutiveFailures</span> <span style="color:#f92672">&gt;=</span> <span style="color:#a6e22e">MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES</span>
+</span></span><span style="display:flex;"><span>  ) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">wasCompacted</span>: <span style="color:#66d9ef">false</span> }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// ... 压缩逻辑 ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">catch</span> (<span style="color:#a6e22e">error</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Increment consecutive failure count for circuit breaker.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">prevFailures</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">tracking</span><span style="color:#f92672">?</span>.<span style="color:#a6e22e">consecutiveFailures</span> <span style="color:#f92672">??</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">nextFailures</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">prevFailures</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">nextFailures</span> <span style="color:#f92672">&gt;=</span> <span style="color:#a6e22e">MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">logForDebugging</span>(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">`autocompact: circuit breaker tripped after </span><span style="color:#e6db74">${</span><span style="color:#a6e22e">nextFailures</span><span style="color:#e6db74">}</span><span style="color:#e6db74"> consecutive failures — skipping future attempts this session`</span>,
+</span></span><span style="display:flex;"><span>        { <span style="color:#a6e22e">level</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;warn&#39;</span> },
+</span></span><span style="display:flex;"><span>      )
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">wasCompacted</span>: <span style="color:#66d9ef">false</span>, <span style="color:#a6e22e">consecutiveFailures</span>: <span style="color:#66d9ef">nextFailures</span> }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="34-环境变量控制">
+  3.4 环境变量控制
+  <a class="anchor" href="#34-%e7%8e%af%e5%a2%83%e5%8f%98%e9%87%8f%e6%8e%a7%e5%88%b6">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>环境变量</th>
+          <th>作用</th>
+          <th>示例</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>DISABLE_COMPACT</code></td>
+          <td>完全禁用压缩</td>
+          <td><code>DISABLE_COMPACT=true claude</code></td>
+      </tr>
+      <tr>
+          <td><code>CLAUDE_CODE_AUTO_COMPACT_WINDOW</code></td>
+          <td>覆盖上下文窗口大小</td>
+          <td><code>CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000</code></td>
+      </tr>
+      <tr>
+          <td><code>CLAUDE_AUTOCOMPACT_PCT_OVERRIDE</code></td>
+          <td>百分比覆盖触发阈值（便于测试）</td>
+          <td><code>CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=80</code></td>
+      </tr>
+      <tr>
+          <td><code>CLAUDE_CODE_DISABLE_1M_CONTEXT</code></td>
+          <td>禁用 1M 上下文（HIPAA 合规）</td>
+          <td><code>CLAUDE_CODE_DISABLE_1M_CONTEXT=true</code></td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="35-与-context-collapse-的互斥">
+  3.5 与 Context Collapse 的互斥
+  <a class="anchor" href="#35-%e4%b8%8e-context-collapse-%e7%9a%84%e4%ba%92%e6%96%a5">#</a>
+</h3>
+<p>当 <code>CONTEXT_COLLAPSE</code> 特性开启时（一个更细粒度的上下文管理系统），auto-compact 会被<strong>完全禁用</strong>。原因在源码注释中写得很清楚：</p>
+<blockquote>
+<p>&ldquo;Collapse IS the context management system when it&rsquo;s on — the 90% commit / 95% blocking-spawn flow owns the headroom problem. Autocompact firing at effective-13k (~93% of effective) sits right between collapse&rsquo;s commit-start (90%) and blocking (95%), so it would race collapse and usually win, nuking granular context that collapse was about to save.&rdquo;</p></blockquote>
+<p>简单来说：Context Collapse 在 90% 时提交、95% 时阻塞，而 auto-compact 在 ~93% 触发。如果两者同时运行，auto-compact 会在 Context Collapse 即将提交时抢先压缩，破坏 Context Collapse 的精细管理。</p>
+<hr>
+<h2 id="四压缩执行引擎compactconversation">
+  四、压缩执行引擎：compactConversation
+  <a class="anchor" href="#%e5%9b%9b%e5%8e%8b%e7%bc%a9%e6%89%a7%e8%a1%8c%e5%bc%95%e6%93%8ecompactconversation">#</a>
+</h2>
+<p><strong>源码位置</strong>：<code>src/services/compact/compact.ts</code>（60.7KB，最大核心文件）</p>
+<h3 id="41-双路径压缩策略">
+  4.1 双路径压缩策略
+  <a class="anchor" href="#41-%e5%8f%8c%e8%b7%af%e5%be%84%e5%8e%8b%e7%bc%a9%e7%ad%96%e7%95%a5">#</a>
+</h3>
+<p>当压缩被触发时，Claude Code 首先尝试<strong>零成本</strong>的 Session Memory Compact，失败后再走标准的 LLM 压缩路径：</p>
+
+<pre class="mermaid">flowchart LR
+    A[触发压缩] --&gt; B{有 custom instructions?}
+    B --&gt;|否| C[trySessionMemoryCompaction]
+    C --&gt; D{成功?}
+    D --&gt;|是| E[✅ 零成本完成]
+    D --&gt;|否| F[compactConversation&lt;br/&gt;Forked Agent &#43; LLM]
+    B --&gt;|是| F
+    
+    style E fill:#2ed573
+    style F fill:#48dbfb</pre>
+<p><strong>为什么先试 Session Memory Compact？</strong></p>
+<ul>
+<li>不需要调用 LLM → <strong>零成本</strong></li>
+<li>不需要生成摘要 → <strong>极速</strong></li>
+<li>通过裁剪消息直接降低 token 数</li>
+<li>但有局限性：不支持自定义指令，保留的信息较少</li>
+</ul>
+<h3 id="42-session-memory-compact实验性">
+  4.2 Session Memory Compact（实验性）
+  <a class="anchor" href="#42-session-memory-compact%e5%ae%9e%e9%aa%8c%e6%80%a7">#</a>
+</h3>
+<p><strong>源码位置</strong>：<code>src/services/compact/sessionMemoryCompact.ts</code>（21KB）</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/sessionMemoryCompact.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_SM_COMPACT_CONFIG</span>: <span style="color:#66d9ef">SessionMemoryCompactConfig</span> <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">minTokens</span>: <span style="color:#66d9ef">10_000</span>,           <span style="color:#75715e">// 压缩后最少保留 token 数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">minTextBlockMessages</span>: <span style="color:#66d9ef">5</span>,     <span style="color:#75715e">// 最少保留的文本消息数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">maxTokens</span>: <span style="color:#66d9ef">40_000</span>,           <span style="color:#75715e">// 压缩后最多保留 token 数（硬上限）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><p><strong>配置来源</strong>：
+配置从 GrowthBook（Anthropic 的特性管理平台）远程加载，允许动态调整：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">initSessionMemoryCompactConfig</span>()<span style="color:#f92672">:</span> <span style="color:#a6e22e">Promise</span>&lt;<span style="color:#f92672">void</span>&gt; {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">configInitialized</span>) <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">configInitialized</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">remoteConfig</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">getDynamicConfig_BLOCKS_ON_INIT</span><span style="color:#f92672">&lt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">Partial</span>&lt;<span style="color:#f92672">SessionMemoryCompactConfig</span>&gt;
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&gt;</span>(<span style="color:#e6db74">&#39;tengu_sm_compact_config&#39;</span>, {})
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">config</span>: <span style="color:#66d9ef">SessionMemoryCompactConfig</span> <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">minTokens</span>: <span style="color:#66d9ef">remoteConfig.minTokens</span> <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span> 
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">?</span> <span style="color:#a6e22e">remoteConfig.minTokens</span> 
+</span></span><span style="display:flex;"><span>      : <span style="color:#66d9ef">DEFAULT_SM_COMPACT_CONFIG.minTokens</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>行为</strong>：
+从 compact boundary 开始向前裁剪，保留最近的消息，直到满足 token 阈值。不调用 LLM，直接操作消息列表。</p>
+<h3 id="43-标准压缩流程compactconversation">
+  4.3 标准压缩流程（compactConversation）
+  <a class="anchor" href="#43-%e6%a0%87%e5%87%86%e5%8e%8b%e7%bc%a9%e6%b5%81%e7%a8%8bcompactconversation">#</a>
+</h3>
+
+<pre class="mermaid">sequenceDiagram
+    participant CLI as /compact 命令
+    participant Hooks as Pre-Compact Hooks
+    participant Fork as Forked Agent
+    participant LLM as Compact Model
+    participant Builder as buildPostCompactMessages()
+    participant Store as 会话存储
+    participant Cleanup as Post-Compact Cleanup
+    
+    CLI-&gt;&gt;CLI: getMessagesAfterCompactBoundary()
+    CLI-&gt;&gt;Hooks: executePreCompactHooks()
+    CLI-&gt;&gt;Fork: runForkedAgent(compact prompt)
+    Fork-&gt;&gt;LLM: 发送压缩请求&lt;br/&gt;(系统提示 &#43; 全部消息)
+    LLM--&gt;&gt;Fork: 返回结构化摘要
+    Fork--&gt;&gt;CLI: CompactionResult
+    
+    CLI-&gt;&gt;Builder: annotateBoundaryWithPreservedSegment()
+    CLI-&gt;&gt;Builder: buildPostCompactMessages()
+    Builder-&gt;&gt;Store: 写入压缩后的消息
+    CLI-&gt;&gt;Cleanup: runPostCompactCleanup()
+    Cleanup--&gt;&gt;CLI: 完成</pre>
+<p><strong>压缩请求的关键参数</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/compact.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">compactionResult</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">compactConversation</span>(
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">messages</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">toolUseContext</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">cacheSafeParams</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">true</span>,              <span style="color:#75715e">// suppress_user_questions: 自动压缩时不提问
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">undefined</span>,         <span style="color:#75715e">// customInstructions: 自动压缩无自定义指令
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">true</span>,              <span style="color:#75715e">// isAutoCompact: 标记为自动压缩
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">recompactionInfo</span>,  <span style="color:#75715e">// 重复压缩信息
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>)
+</span></span></code></pre></div><h3 id="44-forked-agent-架构">
+  4.4 Forked Agent 架构
+  <a class="anchor" href="#44-forked-agent-%e6%9e%b6%e6%9e%84">#</a>
+</h3>
+<p>压缩通过 <code>runForkedAgent()</code> 在<strong>隔离的子进程</strong>中执行：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/compact.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">import</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">type</span> <span style="color:#a6e22e">CacheSafeParams</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">runForkedAgent</span>,
+</span></span><span style="display:flex;"><span>} <span style="color:#66d9ef">from</span> <span style="color:#e6db74">&#39;../../utils/forkedAgent.js&#39;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 使用 CacheSafeParams 确保 Prompt Cache 安全
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">compactionResult</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">runForkedAgent</span>&lt;<span style="color:#f92672">CompactionResult</span>&gt;(
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">cacheSafeParams</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">async</span> (<span style="color:#a6e22e">agent</span>) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 在子进程中执行压缩逻辑
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">compactConversation</span>(...)
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>)
+</span></span></code></pre></div><p><strong>为什么用 Forked Agent？</strong></p>
+<ol>
+<li><strong>隔离性</strong>：压缩过程不会干扰主线程的会话状态</li>
+<li><strong>安全性</strong>：<code>CacheSafeParams</code> 确保 Prompt Cache 键不受压缩影响</li>
+<li><strong>可控制</strong>：<code>suppress_user_questions: true</code> 确保自动压缩时不会向用户提问</li>
+</ol>
+<h3 id="45-压缩请求的系统提示">
+  4.5 压缩请求的系统提示
+  <a class="anchor" href="#45-%e5%8e%8b%e7%bc%a9%e8%af%b7%e6%b1%82%e7%9a%84%e7%b3%bb%e7%bb%9f%e6%8f%90%e7%a4%ba">#</a>
+</h3>
+<p>压缩使用<strong>独立于主循环</strong>的系统提示，指示模型如何生成摘要：</p>
+<ul>
+<li>保留关键决策和代码状态</li>
+<li>丢弃冗余的工具输出和试错过程</li>
+<li>生成结构化的会话摘要</li>
+<li>保留当前活跃的文件和上下文</li>
+</ul>
+<hr>
+<h2 id="五压缩后的消息重建">
+  五、压缩后的消息重建
+  <a class="anchor" href="#%e4%ba%94%e5%8e%8b%e7%bc%a9%e5%90%8e%e7%9a%84%e6%b6%88%e6%81%af%e9%87%8d%e5%bb%ba">#</a>
+</h2>
+<h3 id="51-消息替换机制">
+  5.1 消息替换机制
+  <a class="anchor" href="#51-%e6%b6%88%e6%81%af%e6%9b%bf%e6%8d%a2%e6%9c%ba%e5%88%b6">#</a>
+</h3>
+<p>压缩不是简单地把早期消息删掉替换成一段文本。Claude Code 使用 <code>SystemCompactBoundaryMessage</code> 标记压缩边界，保持消息结构的完整性：</p>
+<pre tabindex="0"><code>压缩前（167K+ tokens）：
+┌──────────────────────────────────────────────┐
+│ System Prompt (config, skills, tools...)     │
+│ System Messages (away summary, bridge...)    │
+│ Turn 1:  用户 - Read src/main.py (15K)       │
+│ Turn 2:  用户 - Bash npm install (8K)        │
+│ Turn 3:  用户 - Edit src/utils.ts (12K)      │
+│ ... (早期对话，约 150K tokens)                │
+│ Turn N-1: 用户 - Read src/api.ts (20K)       │  ← 保留原文
+│ Turn N:  用户当前请求 (2K)                    │  ← 保留原文
+└──────────────────────────────────────────────┘
+
+压缩后（~60K tokens）：
+┌──────────────────────────────────────────────┐
+│ System Prompt (config, skills, tools...)     │
+│ System Messages (away summary, bridge...)    │
+│ [COMPACT BOUNDARY ↑]                         │  ← SystemCompactBoundaryMessage
+│ &#34;用户要求实现 REST API，已完成：              │
+│  - src/main.py: 路由配置完成                  │
+│  - src/utils.ts: 工具函数已修改               │
+│ 当前状态: 正在调试 src/api.ts 的认证逻辑...  │
+│ 关键决策: 选择了 JWT 方案而非 Session         │&#34;
+│ [COMPACT BOUNDARY ↓]                         │
+│ Turn N-1: 用户 - Read src/api.ts (20K)       │  ← 保留原文
+│ Turn N:  用户当前请求 (2K)                    │  ← 保留原文
+│ [Plan Attachment] (如有)                     │  ← 自动附加计划文件
+└──────────────────────────────────────────────┘
+</code></pre><h3 id="52-compactboundarymessage-结构">
+  5.2 CompactBoundaryMessage 结构
+  <a class="anchor" href="#52-compactboundarymessage-%e7%bb%93%e6%9e%84">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/types/message.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">interface</span> <span style="color:#a6e22e">SystemCompactBoundaryMessage</span> <span style="color:#66d9ef">extends</span> <span style="color:#a6e22e">SystemMessage</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">type</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;system&#39;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">level</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;compact-boundary&#39;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">partialDirection</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;up_to&#39;</span> <span style="color:#f92672">|</span> <span style="color:#e6db74">&#39;from&#39;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">summarizeMetadata</span><span style="color:#f92672">?:</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">messagesSummarized</span>: <span style="color:#66d9ef">number</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">direction</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;up_to&#39;</span> <span style="color:#f92672">|</span> <span style="color:#e6db74">&#39;from&#39;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">userContext?</span>: <span style="color:#66d9ef">string</span>
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><table>
+  <thead>
+      <tr>
+          <th>字段</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>partialDirection</code></td>
+          <td><code>&quot;up_to&quot;</code>（压缩到此点）或 <code>&quot;from&quot;</code>（从此点开始压缩）</td>
+      </tr>
+      <tr>
+          <td><code>summarizeMetadata.messagesSummarized</code></td>
+          <td>被压缩的消息数量</td>
+      </tr>
+      <tr>
+          <td><code>summarizeMetadata.userContext</code></td>
+          <td>用户自定义的压缩指令（如 <code>/compact 保留 API 相关讨论</code>）</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="53-plan-附件保护">
+  5.3 Plan 附件保护
+  <a class="anchor" href="#53-plan-%e9%99%84%e4%bb%b6%e4%bf%9d%e6%8a%a4">#</a>
+</h3>
+<p>压缩完成后，<code>createPlanAttachmentIfNeeded()</code> 确保当前计划文件（plan）作为附件保留在压缩后的消息中：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/compact.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">createPlanAttachmentIfNeeded</span>(<span style="color:#a6e22e">messages</span>: <span style="color:#66d9ef">Message</span>[])<span style="color:#f92672">:</span> <span style="color:#66d9ef">void</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">plan</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">getPlan</span>()
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">planPath</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">getPlanFilePath</span>()
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">plan</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">planPath</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 将计划文件作为附件附加到压缩后的消息中
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#a6e22e">messages</span>.<span style="color:#a6e22e">push</span>(<span style="color:#a6e22e">createAttachmentMessage</span>(<span style="color:#a6e22e">plan</span>, <span style="color:#a6e22e">planPath</span>))
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>为什么需要这个？</strong> 计划文件通常包含用户的关键需求和任务分解，如果压缩时丢失，Agent 会忘记要做什么。</p>
+<h3 id="54-recompaction重复压缩追踪">
+  5.4 Recompaction（重复压缩）追踪
+  <a class="anchor" href="#54-recompaction%e9%87%8d%e5%a4%8d%e5%8e%8b%e7%bc%a9%e8%bf%bd%e8%b8%aa">#</a>
+</h3>
+<p>当一次压缩不够（摘要仍然太大或新对话快速增长），Claude Code 会进行<strong>重复压缩</strong>。<code>RecompactionInfo</code> 追踪压缩链：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/compact.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">interface</span> <span style="color:#a6e22e">RecompactionInfo</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">isRecompactionInChain</span>: <span style="color:#66d9ef">boolean</span>      <span style="color:#75715e">// 是否在连续压缩链中
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">turnsSincePreviousCompact</span>: <span style="color:#66d9ef">number</span>   <span style="color:#75715e">// 距上次压缩的轮数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">previousCompactTurnId</span>: <span style="color:#66d9ef">string</span>       <span style="color:#75715e">// 上次压缩的唯一 ID
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">autoCompactThreshold</span>: <span style="color:#66d9ef">number</span>        <span style="color:#75715e">// 触发阈值
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">querySource?</span>: <span style="color:#66d9ef">QuerySource</span>           <span style="color:#75715e">// 查询来源
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><p><strong>使用场景</strong>：</p>
+<ul>
+<li>分析压缩效率：如果 <code>turnsSincePreviousCompact</code> 很小，说明压缩效果不佳</li>
+<li>调试问题：<code>previousCompactTurnId</code> 帮助追踪压缩链</li>
+<li>优化阈值：<code>autoCompactThreshold</code> 记录帮助调整触发点</li>
+</ul>
+<hr>
+<h2 id="六压缩后清理post-compact-cleanup">
+  六、压缩后清理（Post-Compact Cleanup）
+  <a class="anchor" href="#%e5%85%ad%e5%8e%8b%e7%bc%a9%e5%90%8e%e6%b8%85%e7%90%86post-compact-cleanup">#</a>
+</h2>
+<p><strong>源码位置</strong>：<code>src/services/compact/postCompactCleanup.ts</code>（3.8KB）</p>
+<h3 id="61-清理清单">
+  6.1 清理清单
+  <a class="anchor" href="#61-%e6%b8%85%e7%90%86%e6%b8%85%e5%8d%95">#</a>
+</h3>
+<p>压缩完成后，大量缓存和追踪状态需要重置：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/postCompactCleanup.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">runPostCompactCleanup</span>(<span style="color:#a6e22e">querySource?</span>: <span style="color:#66d9ef">QuerySource</span>)<span style="color:#f92672">:</span> <span style="color:#66d9ef">void</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">resetMicrocompactState</span>()          <span style="color:#75715e">// 重置 micro-compact 状态
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">resetContextCollapse</span>()            <span style="color:#75715e">// 重置上下文折叠（如启用）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">getUserContext</span>.<span style="color:#a6e22e">cache</span>.<span style="color:#a6e22e">clear</span>()      <span style="color:#75715e">// 清除用户上下文缓存
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">resetGetMemoryFilesCache</span>()        <span style="color:#75715e">// 重置记忆文件缓存
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">clearSystemPromptSections</span>()       <span style="color:#75715e">// 清除系统提示片段
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">clearClassifierApprovals</span>()        <span style="color:#75715e">// 清除分类器审批
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">clearSpeculativeChecks</span>()          <span style="color:#75715e">// 清除推测检查
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">clearBetaTracingState</span>()           <span style="color:#75715e">// 清除追踪状态
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">sweepFileContentCache</span>()           <span style="color:#75715e">// 清扫文件内容缓存
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">clearSessionMessagesCache</span>()       <span style="color:#75715e">// 清除会话消息缓存
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><h3 id="62-不清除的内容">
+  6.2 不清除的内容
+  <a class="anchor" href="#62-%e4%b8%8d%e6%b8%85%e9%99%a4%e7%9a%84%e5%86%85%e5%ae%b9">#</a>
+</h3>
+<p>有些内容<strong>必须跨压缩保留</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// Intentionally NOT calling resetSentSkillNames(): re-injecting the full
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// skill_listing (~4K tokens) post-compact is pure cache_creation. The
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// model still has SkillTool in schema, invoked_skills preserves used
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// skills, and dynamic additions are handled by skillChangeDetector /
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// cacheUtils resets.
+</span></span></span></code></pre></div><table>
+  <thead>
+      <tr>
+          <th>不清除的内容</th>
+          <th>原因</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>resetSentSkillNames()</code></td>
+          <td>重新注入完整的 skill_listing（~4K tokens）是纯 cache_creation，没有收益</td>
+      </tr>
+      <tr>
+          <td>invoked skill 内容</td>
+          <td>skill 内容需要在多次压缩间保留，<code>createSkillAttachmentIfNeeded()</code> 依赖它</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="63-主线程-vs-子进程的隔离">
+  6.3 主线程 vs 子进程的隔离
+  <a class="anchor" href="#63-%e4%b8%bb%e7%ba%bf%e7%a8%8b-vs-%e5%ad%90%e8%bf%9b%e7%a8%8b%e7%9a%84%e9%9a%94%e7%a6%bb">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/postCompactCleanup.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">isMainThreadCompact</span> <span style="color:#f92672">=</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">querySource</span> <span style="color:#f92672">===</span> <span style="color:#66d9ef">undefined</span> <span style="color:#f92672">||</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">querySource</span>.<span style="color:#a6e22e">startsWith</span>(<span style="color:#e6db74">&#39;repl_main_thread&#39;</span>) <span style="color:#f92672">||</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">querySource</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#39;sdk&#39;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">isMainThreadCompact</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">getUserContext</span>.<span style="color:#a6e22e">cache</span>.<span style="color:#a6e22e">clear</span><span style="color:#f92672">?</span>.()
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">resetGetMemoryFilesCache</span>(<span style="color:#e6db74">&#39;compact&#39;</span>)
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><p><strong>关键设计</strong>：
+子进程（<code>agent:*</code>）与主线程共享模块级状态。如果子进程压缩时重置这些状态，会<strong>破坏主线程的上下文</strong>。因此只有主线程压缩才重置模块级状态。</p>
+<hr>
+<h2 id="七prompt-cache-break-detection">
+  七、Prompt Cache Break Detection
+  <a class="anchor" href="#%e4%b8%83prompt-cache-break-detection">#</a>
+</h2>
+<p><strong>源码位置</strong>：<code>src/services/api/promptCacheBreakDetection.ts</code></p>
+<h3 id="71-问题背景">
+  7.1 问题背景
+  <a class="anchor" href="#71-%e9%97%ae%e9%a2%98%e8%83%8c%e6%99%af">#</a>
+</h3>
+<p>Claude 的 API 支持 <strong>Prompt Caching</strong>——相同的系统提示和早期消息可以缓存，大幅降低成本。但压缩会改变消息内容，导致缓存失效。</p>
+<p>如果不通知缓存系统，会误报为&quot;系统提示变更&quot;：</p>
+<blockquote>
+<p>BQ 数据显示：缺少 <code>notifyCompaction()</code> 导致 20% 的 <code>tengu_prompt_cache_break</code> 事件为误报（<code>systemPromptChanged=true, timeSinceLastAssistantMsg=-1</code>）。</p></blockquote>
+<h3 id="72-解决方案">
+  7.2 解决方案
+  <a class="anchor" href="#72-%e8%a7%a3%e5%86%b3%e6%96%b9%e6%a1%88">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/services/compact/compact.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">feature</span>(<span style="color:#e6db74">&#39;PROMPT_CACHE_BREAK_DETECTION&#39;</span>)) {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">notifyCompaction</span>(<span style="color:#a6e22e">querySource</span> <span style="color:#f92672">??</span> <span style="color:#e6db74">&#39;compact&#39;</span>, <span style="color:#a6e22e">toolUseContext</span>.<span style="color:#a6e22e">agentId</span>)
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><code>notifyCompaction()</code> 通知缓存系统：</p>
+<ol>
+<li>记录压缩事件</li>
+<li>重置 cache read baseline</li>
+<li>避免将缓存未命中误报为&quot;系统提示变更&quot;</li>
+</ol>
+<h3 id="73-session-memory-compact-的特殊处理">
+  7.3 Session Memory Compact 的特殊处理
+  <a class="anchor" href="#73-session-memory-compact-%e7%9a%84%e7%89%b9%e6%ae%8a%e5%a4%84%e7%90%86">#</a>
+</h3>
+<p>Session Memory Compact 不调用 LLM，所以不会自动通知缓存系统。需要显式调用：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// compact.ts 中处理 session memory compact 结果
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">sessionMemoryResult</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">runPostCompactCleanup</span>()
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">feature</span>(<span style="color:#e6db74">&#39;PROMPT_CACHE_BREAK_DETECTION&#39;</span>)) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">notifyCompaction</span>(<span style="color:#a6e22e">querySource</span> <span style="color:#f92672">??</span> <span style="color:#e6db74">&#39;compact&#39;</span>, <span style="color:#a6e22e">toolUseContext</span>.<span style="color:#a6e22e">agentId</span>)
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">markPostCompaction</span>()
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><blockquote>
+<p>&ldquo;Reset cache read baseline so the post-compact drop isn&rsquo;t flagged as a break. compactConversation does this internally; SM-compact doesn&rsquo;t.&rdquo;</p></blockquote>
+<hr>
+<h2 id="八与同类工具的对比">
+  八、与同类工具的对比
+  <a class="anchor" href="#%e5%85%ab%e4%b8%8e%e5%90%8c%e7%b1%bb%e5%b7%a5%e5%85%b7%e7%9a%84%e5%af%b9%e6%af%94">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>Claude Code</th>
+          <th>OpenClaw</th>
+          <th>Cursor</th>
+          <th>Aider</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>压缩触发</strong></td>
+          <td>自动阈值（13K buffer）+ 手动 <code>/compact</code></td>
+          <td>手动 <code>/compact</code> + 智能触发</td>
+          <td>❌ 无内置压缩</td>
+          <td>滑动窗口</td>
+      </tr>
+      <tr>
+          <td><strong>压缩方式</strong></td>
+          <td>LLM forked agent 生成结构化摘要</td>
+          <td>LLM 生成摘要</td>
+          <td>滑动窗口截断</td>
+          <td>滑动窗口截断</td>
+      </tr>
+      <tr>
+          <td><strong>微观折叠</strong></td>
+          <td>✅ micro-compact（折叠旧工具结果）</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>❌</td>
+      </tr>
+      <tr>
+          <td><strong>零成本压缩</strong></td>
+          <td>✅ session memory compact（不调用 LLM）</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>❌</td>
+      </tr>
+      <tr>
+          <td><strong>递归压缩</strong></td>
+          <td>✅ recompaction tracking</td>
+          <td>支持</td>
+          <td>N/A</td>
+          <td>N/A</td>
+      </tr>
+      <tr>
+          <td><strong>缓存感知</strong></td>
+          <td>✅ Prompt Cache break detection</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>❌</td>
+      </tr>
+      <tr>
+          <td><strong>熔断器</strong></td>
+          <td>✅ 连续 3 次失败后停止</td>
+          <td>❌</td>
+          <td>N/A</td>
+          <td>N/A</td>
+      </tr>
+      <tr>
+          <td><strong>上下文可视化</strong></td>
+          <td><code>/context</code> 命令（实时分类统计）</td>
+          <td>配置查看</td>
+          <td>❌</td>
+          <td><code>/tokens</code></td>
+      </tr>
+      <tr>
+          <td><strong>Context Collapse</strong></td>
+          <td>实验性特性（更细粒度的上下文管理）</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>N/A</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="九设计启示与最佳实践">
+  九、设计启示与最佳实践
+  <a class="anchor" href="#%e4%b9%9d%e8%ae%be%e8%ae%a1%e5%90%af%e7%a4%ba%e4%b8%8e%e6%9c%80%e4%bd%b3%e5%ae%9e%e8%b7%b5">#</a>
+</h2>
+<h3 id="91-claude-code-的设计原则">
+  9.1 Claude Code 的设计原则
+  <a class="anchor" href="#91-claude-code-%e7%9a%84%e8%ae%be%e8%ae%a1%e5%8e%9f%e5%88%99">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>原则</th>
+          <th>体现</th>
+          <th>源码证据</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>多层防御</strong></td>
+          <td>micro-compact → auto-compact → session-memory → manual</td>
+          <td>四层独立模块</td>
+      </tr>
+      <tr>
+          <td><strong>Forked Agent 隔离</strong></td>
+          <td>压缩在子进程执行，不干扰主线程</td>
+          <td><code>runForkedAgent()</code></td>
+      </tr>
+      <tr>
+          <td><strong>零成本优先</strong></td>
+          <td>先尝试 session memory compact（不调用 LLM）</td>
+          <td><code>trySessionMemoryCompaction()</code> 优先</td>
+      </tr>
+      <tr>
+          <td><strong>熔断保护</strong></td>
+          <td>连续 3 次失败后停止</td>
+          <td><code>MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3</code></td>
+      </tr>
+      <tr>
+          <td><strong>缓存感知</strong></td>
+          <td>Prompt Cache break detection</td>
+          <td><code>notifyCompaction()</code></td>
+      </tr>
+      <tr>
+          <td><strong>特性门控</strong></td>
+          <td>CONTEXT_COLLAPSE、REACTIVE_COMPACT 等独立演进</td>
+          <td><code>feature()</code> 门控</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="92-用户最佳实践">
+  9.2 用户最佳实践
+  <a class="anchor" href="#92-%e7%94%a8%e6%88%b7%e6%9c%80%e4%bd%b3%e5%ae%9e%e8%b7%b5">#</a>
+</h3>
+<ol>
+<li><strong>善用 <code>/context</code> 监控</strong>：在 60-80% 时主动 <code>/compact</code>，保留更多缓存命中</li>
+<li><strong>自定义压缩指令</strong>：<code>/compact 保留所有 API 变更相关的讨论</code>，让摘要更精准</li>
+<li><strong>分段工作</strong>：大任务拆分为多个会话，避免单次会话过长</li>
+<li><strong>选择合适模型</strong>：Opus 5 的 1M 上下文适合长会话，Sonnet 4 需要更频繁压缩</li>
+<li><strong>理解 micro-compact</strong>：旧的工具结果会被自动折叠，无需手动清理</li>
+</ol>
+<h3 id="93-对-ai-agent-架构的启示">
+  9.3 对 AI Agent 架构的启示
+  <a class="anchor" href="#93-%e5%af%b9-ai-agent-%e6%9e%b6%e6%9e%84%e7%9a%84%e5%90%af%e7%a4%ba">#</a>
+</h3>
+<ol>
+<li><strong>主动压缩优于被动截断</strong>：LLM 生成的结构化摘要远优于直接丢弃早期消息</li>
+<li><strong>多层策略组合</strong>：micro-compact（折叠）+ auto-compact（摘要）+ session-memory（裁剪）组合拳</li>
+<li><strong>隔离执行</strong>：压缩在 forked agent 中执行，避免干扰主流程</li>
+<li><strong>熔断机制</strong>：对不可恢复的场景及时止损，避免无意义的重试循环</li>
+</ol>
+<hr>
+<h2 id="十总结">
+  十、总结
+  <a class="anchor" href="#%e5%8d%81%e6%80%bb%e7%bb%93">#</a>
+</h2>
+<p>Claude Code 的会话压缩机制是一个<strong>工程深度与实用主义相结合</strong>的典范。它不是简单的&quot;一个 <code>/compact</code> 命令&quot;，而是由四个层次组成的完整防御体系：</p>
+<table>
+  <thead>
+      <tr>
+          <th>层次</th>
+          <th>机制</th>
+          <th>成本</th>
+          <th>触发方式</th>
+          <th>效果</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>第一层</strong></td>
+          <td>Micro-Compact</td>
+          <td>零成本</td>
+          <td>每次请求前自动</td>
+          <td>折叠旧工具结果</td>
+      </tr>
+      <tr>
+          <td><strong>第二层</strong></td>
+          <td>Auto-Compact</td>
+          <td>一次 LLM 调用</td>
+          <td>token 超阈值自动</td>
+          <td>生成结构化摘要</td>
+      </tr>
+      <tr>
+          <td><strong>第三层</strong></td>
+          <td>Session Memory</td>
+          <td>零成本</td>
+          <td>Auto-compact 内优先尝试</td>
+          <td>裁剪旧消息</td>
+      </tr>
+      <tr>
+          <td><strong>第四层</strong></td>
+          <td>Manual Compact</td>
+          <td>一次 LLM 调用</td>
+          <td>用户主动 <code>/compact</code></td>
+          <td>自定义指令摘要</td>
+      </tr>
+  </tbody>
+</table>
+<p>这套体系的核心价值在于：</p>
+<ul>
+<li><strong>架构上</strong>：多层防御，每一层解决不同规模的问题</li>
+<li><strong>执行上</strong>：Forked Agent 隔离执行，保证主线程状态不受干扰</li>
+<li><strong>成本上</strong>：零成本的 session memory compact 优先，标准压缩作为后备</li>
+<li><strong>可靠性上</strong>：熔断器防止无限重试，Prompt Cache break detection 减少误报</li>
+<li><strong>演进上</strong>：通过特性门控独立演进实验性功能</li>
+</ul>
+<p>对开发者而言，理解这套机制不仅有助于更高效地使用 Claude Code，也为构建自己的 AI Agent 系统提供了可借鉴的上下文管理范式。</p>
+<hr>
+<p><em>本文基于 <code>oboard/claude-code-rev</code> GitHub 仓库的真实源码编写。所有代码片段、常量、函数名、版本号和注释均经过源码验证。核心源码文件：<code>src/services/compact/compact.ts</code>（60.7KB）、<code>src/services/compact/autoCompact.ts</code>（12.9KB）、<code>src/services/compact/microCompact.ts</code>（19.5KB）、<code>src/services/compact/sessionMemoryCompact.ts</code>（21KB）、<code>src/services/compact/postCompactCleanup.ts</code>（3.8KB）。</em></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#claude-code-会话压缩机制深度解析四层防御体系与工程实践">Claude Code 会话压缩机制深度解析：四层防御体系与工程实践</a>
+      <ul>
+        <li><a href="#一上下文窗口管理全景">一、上下文窗口管理全景</a>
+          <ul>
+            <li><a href="#11-模型配置与窗口大小">1.1 模型配置与窗口大小</a></li>
+            <li><a href="#12-有效上下文窗口effective-context-window">1.2 有效上下文窗口（Effective Context Window）</a></li>
+            <li><a href="#13-context-命令四层过滤的可视化">1.3 <code>/context</code> 命令：四层过滤的可视化</a></li>
+          </ul>
+        </li>
+        <li><a href="#二第一层防御micro-compact微观折叠">二、第一层防御：Micro-Compact（微观折叠）</a>
+          <ul>
+            <li><a href="#21-什么是-micro-compact">2.1 什么是 Micro-Compact</a></li>
+            <li><a href="#22-可折叠的工具类型">2.2 可折叠的工具类型</a></li>
+            <li><a href="#23-micro-compact-的执行时机">2.3 Micro-Compact 的执行时机</a></li>
+            <li><a href="#24-time-based-mc-配置">2.4 Time-Based MC 配置</a></li>
+            <li><a href="#25-cached-micro-compactant-only-内部特性">2.5 Cached Micro-Compact（ant-only 内部特性）</a></li>
+          </ul>
+        </li>
+        <li><a href="#三第二层防御auto-compact自动压缩">三、第二层防御：Auto-Compact（自动压缩）</a>
+          <ul>
+            <li><a href="#31-阈值体系">3.1 阈值体系</a></li>
+            <li><a href="#32-自动压缩的决策树">3.2 自动压缩的决策树</a></li>
+            <li><a href="#33-circuit-breaker熔断器">3.3 Circuit Breaker（熔断器）</a></li>
+            <li><a href="#34-环境变量控制">3.4 环境变量控制</a></li>
+            <li><a href="#35-与-context-collapse-的互斥">3.5 与 Context Collapse 的互斥</a></li>
+          </ul>
+        </li>
+        <li><a href="#四压缩执行引擎compactconversation">四、压缩执行引擎：compactConversation</a>
+          <ul>
+            <li><a href="#41-双路径压缩策略">4.1 双路径压缩策略</a></li>
+            <li><a href="#42-session-memory-compact实验性">4.2 Session Memory Compact（实验性）</a></li>
+            <li><a href="#43-标准压缩流程compactconversation">4.3 标准压缩流程（compactConversation）</a></li>
+            <li><a href="#44-forked-agent-架构">4.4 Forked Agent 架构</a></li>
+            <li><a href="#45-压缩请求的系统提示">4.5 压缩请求的系统提示</a></li>
+          </ul>
+        </li>
+        <li><a href="#五压缩后的消息重建">五、压缩后的消息重建</a>
+          <ul>
+            <li><a href="#51-消息替换机制">5.1 消息替换机制</a></li>
+            <li><a href="#52-compactboundarymessage-结构">5.2 CompactBoundaryMessage 结构</a></li>
+            <li><a href="#53-plan-附件保护">5.3 Plan 附件保护</a></li>
+            <li><a href="#54-recompaction重复压缩追踪">5.4 Recompaction（重复压缩）追踪</a></li>
+          </ul>
+        </li>
+        <li><a href="#六压缩后清理post-compact-cleanup">六、压缩后清理（Post-Compact Cleanup）</a>
+          <ul>
+            <li><a href="#61-清理清单">6.1 清理清单</a></li>
+            <li><a href="#62-不清除的内容">6.2 不清除的内容</a></li>
+            <li><a href="#63-主线程-vs-子进程的隔离">6.3 主线程 vs 子进程的隔离</a></li>
+          </ul>
+        </li>
+        <li><a href="#七prompt-cache-break-detection">七、Prompt Cache Break Detection</a>
+          <ul>
+            <li><a href="#71-问题背景">7.1 问题背景</a></li>
+            <li><a href="#72-解决方案">7.2 解决方案</a></li>
+            <li><a href="#73-session-memory-compact-的特殊处理">7.3 Session Memory Compact 的特殊处理</a></li>
+          </ul>
+        </li>
+        <li><a href="#八与同类工具的对比">八、与同类工具的对比</a></li>
+        <li><a href="#九设计启示与最佳实践">九、设计启示与最佳实践</a>
+          <ul>
+            <li><a href="#91-claude-code-的设计原则">9.1 Claude Code 的设计原则</a></li>
+            <li><a href="#92-用户最佳实践">9.2 用户最佳实践</a></li>
+            <li><a href="#93-对-ai-agent-架构的启示">9.3 对 AI Agent 架构的启示</a></li>
+          </ul>
+        </li>
+        <li><a href="#十总结">十、总结</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+

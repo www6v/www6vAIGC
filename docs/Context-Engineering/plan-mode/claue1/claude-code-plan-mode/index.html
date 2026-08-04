@@ -1,0 +1,6454 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  Claude Code Plan Mode 是如何做 Plan 的 —— 源码级剖析
+  #
+
+
+基于 oboard/claude-code-rev 逆向源码树 &#43; Windy3f3f3f3f/how-claude-code-works 源码分析 &#43; 官方文档。
+
+
+  引言
+  #
+
+想象这个场景：你让 Claude Code &ldquo;重构整个认证系统&rdquo;。它毫不迟疑地开始修改文件 —— 改了 12 个文件，删了 3 个函数，引入了一个你从未想要的 JWT 库。你唯一的办法是 git checkout . 重新开始。
+这是没有 Plan Mode 的世界。
+Claude Code 的 Plan Mode 解决了一个根本性问题：对于复杂任务，先让模型探索，再让模型规划，最后只在用户明确批准后才行动。 它通过权限降级（禁用所有写操作），强制模型进入&quot;只读探索 &#43; 输出计划&quot;的工作流，直到用户明确批准计划并恢复写权限。
+
+
+
+
+  
+
+
+
+flowchart TD
+    A[&#34;❌ 没有 Plan Mode&lt;br/&gt;直接修改文件&lt;br/&gt;改了 12 个文件&lt;br/&gt;引入你不想要的库&lt;br/&gt;→ git checkout .&#34;] --&gt; B[浪费 10 分钟 &#43; 回滚]
+    C[&#34;✅ 有 Plan Mode&lt;br/&gt;先探索代码库&lt;br/&gt;提出方案&lt;br/&gt;你审查并批准&lt;br/&gt;→ 按计划执行&#34;] --&gt; D[9 分钟，零返工]
+
+    style A fill:#ffcdd2
+    style B fill:#ef5350
+    style C fill:#c8e6c9
+    style D fill:#4caf50
+核心设计原则：Think before you act —— Plan Mode 是 Claude Code 中模型主动降级自身权限以换取用户信任的唯一机制。">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Context-Engineering/plan-mode/claue1/claude-code-plan-mode/">
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="Claude Code Plan Mode 是如何做 Plan 的 —— 源码级剖析 # 基于 oboard/claude-code-rev 逆向源码树 &#43; Windy3f3f3f3f/how-claude-code-works 源码分析 &#43; 官方文档。
+引言 # 想象这个场景：你让 Claude Code “重构整个认证系统”。它毫不迟疑地开始修改文件 —— 改了 12 个文件，删了 3 个函数，引入了一个你从未想要的 JWT 库。你唯一的办法是 git checkout . 重新开始。
+这是没有 Plan Mode 的世界。
+Claude Code 的 Plan Mode 解决了一个根本性问题：对于复杂任务，先让模型探索，再让模型规划，最后只在用户明确批准后才行动。 它通过权限降级（禁用所有写操作），强制模型进入&#34;只读探索 &#43; 输出计划&#34;的工作流，直到用户明确批准计划并恢复写权限。
+flowchart TD A[&#34;❌ 没有 Plan Mode&lt;br/&gt;直接修改文件&lt;br/&gt;改了 12 个文件&lt;br/&gt;引入你不想要的库&lt;br/&gt;→ git checkout .&#34;] --&gt; B[浪费 10 分钟 &#43; 回滚] C[&#34;✅ 有 Plan Mode&lt;br/&gt;先探索代码库&lt;br/&gt;提出方案&lt;br/&gt;你审查并批准&lt;br/&gt;→ 按计划执行&#34;] --&gt; D[9 分钟，零返工] style A fill:#ffcdd2 style B fill:#ef5350 style C fill:#c8e6c9 style D fill:#4caf50 核心设计原则：Think before you act —— Plan Mode 是 Claude Code 中模型主动降级自身权限以换取用户信任的唯一机制。">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="docs">
+<title>Claude Code Plan Mode | Modern Agent</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Context-Engineering/plan-mode/claue1/claude-code-plan-mode/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.7d591902a0455dea7b7deabcdc401020d27d3727bf3a34cd0586c67491e6838a.js" integrity="sha256-fVkZAqBFXep7feq83EAQINJ9Nye/OjTNBYbGdJHmg4o=" crossorigin="anonymous"></script>
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc5f0ae22069720f7a930c5c075f1c7f" class="toggle"  />
+    <label for="section-bc5f0ae22069720f7a930c5c075f1c7f" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a0836060fdf8ba190a5fac2d0943b91" class="toggle"  />
+    <label for="section-1a0836060fdf8ba190a5fac2d0943b91" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-53c3fa928a6ea204801cc4f0e647e11c" class="toggle"  />
+    <label for="section-53c3fa928a6ea204801cc4f0e647e11c" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall/" class="">Rag Recall</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/" class="">Rag Recall 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f983f8649ed7c18c40a527b381aa5d86" class="toggle"  />
+    <label for="section-f983f8649ed7c18c40a527b381aa5d86" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-227244fb63b5d06d0aa24ee5c048c9b6" class="toggle"  />
+    <label for="section-227244fb63b5d06d0aa24ee5c048c9b6" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-969e066f20490fe0eeebd25a6552fd68" class="toggle"  />
+    <label for="section-969e066f20490fe0eeebd25a6552fd68" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c17b8be3de519d2259cbf534730656a9" class="toggle"  />
+    <label for="section-c17b8be3de519d2259cbf534730656a9" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cc96aa92b1fe4deb19f2780a910b3a84" class="toggle"  />
+    <label for="section-cc96aa92b1fe4deb19f2780a910b3a84" class="flex justify-between">
+      <a role="button" class="">Dify</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="toggle"  />
+    <label for="section-6f1ccfb8fc3e3c3365a0b74e9e3781cb" class="flex justify-between">
+      <a role="button" class="">产品</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/list/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="toggle"  />
+    <label for="section-eb1e8926c1aae94b5e3ef5533d96da6a" class="flex justify-between">
+      <a role="button" class="">Sandbox</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/opensource/" class="">Opensource</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-42ab09fd6e839492b699ee2fa4656e2f" class="toggle"  />
+    <label for="section-42ab09fd6e839492b699ee2fa4656e2f" class="flex justify-between">
+      <a role="button" class="">SDK</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk%E5%85%BC%E5%AE%B9%E6%80%A7/" class="">AI SDK 向后兼容性*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk%E5%85%BC%E5%AE%B9%E6%80%A71/" class="">Sdk兼容性1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f52d73da99d8a76b38639b3169b9c30" class="toggle"  />
+    <label for="section-9f52d73da99d8a76b38639b3169b9c30" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E4%BC%98%E5%8C%96/" class="">Claude Platform 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent2/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent3/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E8%A7%A3%E8%AF%BB/" class="">脑和手的解耦</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E5%8E%9F%E6%96%87/" class="">原文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6e2460a7a885c2c75a83ab0cd0086962" class="toggle"  />
+    <label for="section-6e2460a7a885c2c75a83ab0cd0086962" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bd0290ddab8edf698cb67507a6e74b97" class="toggle"  />
+    <label for="section-bd0290ddab8edf698cb67507a6e74b97" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5b26accdda8a68c7dc414030c1c0fd5c" class="toggle"  />
+    <label for="section-5b26accdda8a68c7dc414030c1c0fd5c" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fa07d823cbbab8a5cb211097d19a8b0f" class="toggle"  />
+    <label for="section-fa07d823cbbab8a5cb211097d19a8b0f" class="flex justify-between">
+      <a role="button" class="">Reflection</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91cb2f81fbf96ec25f68405674241162" class="toggle"  />
+    <label for="section-91cb2f81fbf96ec25f68405674241162" class="flex justify-between">
+      <a role="button" class="">Planning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b95bbb7a37b62a6b524cdc440bea4bea" class="toggle"  />
+    <label for="section-b95bbb7a37b62a6b524cdc440bea4bea" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c6918aab8d4437c8353af1df185685d7" class="toggle"  />
+    <label for="section-c6918aab8d4437c8353af1df185685d7" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4bd94f7e5788f6f6b717b9411d5219d7" class="toggle"  />
+    <label for="section-4bd94f7e5788f6f6b717b9411d5219d7" class="flex justify-between">
+      <a role="button" class="">Hermes</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes1/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes2/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes/" class="">Hermes Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e851bc8bb25b6d3ab16779dd8e31e163" class="toggle"  />
+    <label for="section-e851bc8bb25b6d3ab16779dd8e31e163" class="flex justify-between">
+      <a role="button" class="">managed agents</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming1/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a5f1c9d05f8697fe4344602432ed2c1" class="toggle"  />
+    <label for="section-4a5f1c9d05f8697fe4344602432ed2c1" class="flex justify-between">
+      <a role="button" class="">Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/hindsight/" class="">Hindsight</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking/" class="">Openviking</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27631881d59f460a7e82415eae943524" class="toggle"  />
+    <label for="section-27631881d59f460a7e82415eae943524" class="flex justify-between">
+      <a role="button" class="">Openclaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-867db087ab84641b5d4e3bc021355890" class="toggle"  />
+    <label for="section-867db087ab84641b5d4e3bc021355890" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ca53c095705ebe6e57deb96a02c0d3e3" class="toggle"  />
+    <label for="section-ca53c095705ebe6e57deb96a02c0d3e3" class="flex justify-between">
+      <a role="button" class="">Multi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7f3cbaaa32d67178b923d0e7080ddc58" class="toggle"  />
+    <label for="section-7f3cbaaa32d67178b923d0e7080ddc58" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Kanban/" class="">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7c1e99e2bc0dea50268247820e8feb36" class="toggle"  />
+    <label for="section-7c1e99e2bc0dea50268247820e8feb36" class="flex justify-between">
+      <a role="button" class="">Multi-agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b751e6b46c5c7219290e88d9051560d5" class="toggle"  />
+    <label for="section-b751e6b46c5c7219290e88d9051560d5" class="flex justify-between">
+      <a role="button" class="">OpenClaw *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/multiagent2/" class="">OpenClaw 多 Agent*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/mulitagent1/" class="">Mulitagent1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8aff2d658582dd8082936377ce08c46d" class="toggle"  />
+    <label for="section-8aff2d658582dd8082936377ce08c46d" class="flex justify-between">
+      <a role="button" class="">subagent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/Claude-code/" class="">Claude Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/subagent/" class="">Subagent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-78862664423ffb11f8c168297456fbac" class="toggle"  />
+    <label for="section-78862664423ffb11f8c168297456fbac" class="flex justify-between">
+      <a role="button" class="">Teams *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-Teams/" class="">Claude Code Teams</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-TeamsA1/" class="">Claude Code Teams[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ea2d483cc1a4d5a7c6cfbd17430606bb" class="toggle"  />
+    <label for="section-ea2d483cc1a4d5a7c6cfbd17430606bb" class="flex justify-between">
+      <a role="button" class="">Tool &amp; Skill</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a4ce448e940a0cc7a875a292535becae" class="toggle"  />
+    <label for="section-a4ce448e940a0cc7a875a292535becae" class="flex justify-between">
+      <a role="button" class="">Survey &amp; SFT</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6cf3f07e4d6d846c9573f18390cdeeac" class="toggle"  />
+    <label for="section-6cf3f07e4d6d846c9573f18390cdeeac" class="flex justify-between">
+      <a role="button" class="">Tool 演进</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/%E6%BC%94%E8%BF%9B/fc&#43;mcp&#43;cli/" class="">Functioncall-&gt;MCP-&gt;cli &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-48b8e63601785873b1e95d5b2724c4b9" class="toggle"  />
+    <label for="section-48b8e63601785873b1e95d5b2724c4b9" class="flex justify-between">
+      <a role="button" class="">tools</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/Tools/claude-searchTool/" class="">Claude toolsearch</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4096c000af69b7676c635d4ec1e5329f" class="toggle"  />
+    <label for="section-4096c000af69b7676c635d4ec1e5329f" class="flex justify-between">
+      <a role="button" class="">MCP *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f1e9d00f2ecd2bd33d3f2cf3032901a0" class="toggle"  />
+    <label for="section-f1e9d00f2ecd2bd33d3f2cf3032901a0" class="flex justify-between">
+      <a role="button" class="">skill</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/skill/" class="">编写高质量Skill的六大失效模式</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/openclaw/" class="">Openclaw</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/openclaw1/" class="">Openclaw1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f788b1ea9aee312d84765ed3f8eacd" class="toggle"  />
+    <label for="section-d1f788b1ea9aee312d84765ed3f8eacd" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5a32a0b16f77ac5a1baeea4704ab8378" class="toggle"  />
+    <label for="section-5a32a0b16f77ac5a1baeea4704ab8378" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-95f7e45b74b5d189ca1626989b1534a3" class="toggle"  />
+    <label for="section-95f7e45b74b5d189ca1626989b1534a3" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/core/" class="">OpenClaw 核心特性 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/" class="">State</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/" class="">Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/" class="">Security</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%811/" class="">OpenClaw 生态1 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%812/" class="">OpenClaw 生态2 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-406a2e1159d423500a23abb9a994a5a3" class="toggle"  />
+    <label for="section-406a2e1159d423500a23abb9a994a5a3" class="flex justify-between">
+      <a role="button" class="">Hermes Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/apiwebhook/" class="">Api&amp;webhook</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitctureA1/" class="">Arcitcture[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/interrupt/" class="">Interrupt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/" class="">Skill Envolve</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ba566908a8af592bc79af4063769c99" class="toggle"  />
+    <label for="section-6ba566908a8af592bc79af4063769c99" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1A1/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/permission/" class="">Permission[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/source-code/" class="">claude code 源码 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-86069d54ccd932a89a9e23b7736965ee" class="toggle"  />
+    <label for="section-86069d54ccd932a89a9e23b7736965ee" class="flex justify-between">
+      <a role="button" class="">Pi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent/" class="">Pi Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent1/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent2/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Tau-Agent/" class="">Tau Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-2e3eee3f31d4bf9a6c3f87751db4d681" class="toggle"  />
+    <label for="section-2e3eee3f31d4bf9a6c3f87751db4d681" class="flex justify-between">
+      <a role="button" class="">实战</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b1ceebdd7e406fc4533519c821a9e4c3" class="toggle"  />
+    <label for="section-b1ceebdd7e406fc4533519c821a9e4c3" class="flex justify-between">
+      <a role="button" class="">Loops engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-01142eb3e9d36b255ac107cb9131d7c2" class="toggle"  />
+    <label for="section-01142eb3e9d36b255ac107cb9131d7c2" class="flex justify-between">
+      <a role="button" class="">goal</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/" class="">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="toggle"  />
+    <label for="section-39ede5fe6c0dc8dfa1e76311d06e64a3" class="flex justify-between">
+      <a role="button" class="">loop engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loops/" class="">loops engineering[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loop-engineering1/" class="">Loop Engineering1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b3a0ebe16d532fb38ede799ae1575c3a" class="toggle"  />
+    <label for="section-b3a0ebe16d532fb38ede799ae1575c3a" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/" class="">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/openclaw/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1669c1145df15c970068d5a332134846" class="toggle" checked />
+    <label for="section-1669c1145df15c970068d5a332134846" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering1/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering2/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-701b3b5cc0f1886a3a73b604d1deac6b" class="toggle"  />
+    <label for="section-701b3b5cc0f1886a3a73b604d1deac6b" class="flex justify-between">
+      <a role="button" class="">Compress *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/claude-code/" class="">Claude /compact[A1] *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/codex/" class="">CodeX 上下文 compact</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/claude-code2/" class="">Claude Code2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/claude-code3/" class="">Claude Code3</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-642f5083da01c0a8441cbe8c21b21a7a" class="toggle"  />
+    <label for="section-642f5083da01c0a8441cbe8c21b21a7a" class="flex justify-between">
+      <a role="button" class="">Prompting caching *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/prompt-caching/Prompting-caching/" class="">Claude Prompt Cache [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">context engineering[Manus]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/plan-mode/claude/claude-code-plan-mode-article/" class="">Claude Code Plan Mode Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/plan-mode/claue1/claude-code-plan-mode/" class="active">Claude Code Plan Mode</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-91fcdf5001be732237a99b9825d96186" class="toggle"  />
+    <label for="section-91fcdf5001be732237a99b9825d96186" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b20c542192027a8424b70ab6515ddfd" class="toggle"  />
+    <label for="section-9b20c542192027a8424b70ab6515ddfd" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="toggle"  />
+    <label for="section-5e965576d91fb4c69aa61a2f3a9f8bf3" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80bdfd9000177aee275c9503498f92ab" class="toggle"  />
+    <label for="section-80bdfd9000177aee275c9503498f92ab" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="toggle"  />
+    <label for="section-9b9e0f2329fcde1ff80c7bad22d19d8c" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60ef828f1779f643d1df0918fdc102ac" class="toggle"  />
+    <label for="section-60ef828f1779f643d1df0918fdc102ac" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9f31ef3af6246464fc33089e29fb0307" class="toggle"  />
+    <label for="section-9f31ef3af6246464fc33089e29fb0307" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="toggle"  />
+    <label for="section-37fdf7c4f4331ed19d86cd02ab7c9e12" class="flex justify-between">
+      <a role="button" class="">AI Native</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeminimax/" class="">AI原生组织实践(MiniMax)</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Claude-tag/" class="">Claude tag</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Ai-nativeali/" class="">AI native与人机协作[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeclaude/" class="">Bottleneck Shift in AI-native Engineering[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f836a52581085b952fb6dd532022dfb8" class="toggle"  />
+    <label for="section-f836a52581085b952fb6dd532022dfb8" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-12efb1db778cdc137122c32356d4feb3" class="toggle"  />
+    <label for="section-12efb1db778cdc137122c32356d4feb3" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d370072df9ae4dfa196d449144ec75a3" class="toggle"  />
+    <label for="section-d370072df9ae4dfa196d449144ec75a3" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Claude Code Plan Mode</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#claude-code-plan-mode-是如何做-plan-的--源码级剖析">Claude Code Plan Mode 是如何做 Plan 的 —— 源码级剖析</a>
+      <ul>
+        <li><a href="#引言">引言</a></li>
+        <li><a href="#一plan-mode-的本质一个可降级的权限状态">一、Plan Mode 的本质：一个可降级的权限状态</a>
+          <ul>
+            <li><a href="#11-permission-context-状态机">1.1 Permission Context 状态机</a></li>
+            <li><a href="#12-两条进入路径收敛到同一个状态转换函数">1.2 两条进入路径，收敛到同一个状态转换函数</a></li>
+            <li><a href="#13-模型何时知道该进入-plan-mode">1.3 模型何时知道该进入 Plan Mode？</a></li>
+            <li><a href="#14-进入路径的可视化决策流">1.4 进入路径的可视化决策流</a></li>
+          </ul>
+        </li>
+        <li><a href="#二plan-mode-的两种工作流5-阶段-vs-迭代循环">二、Plan Mode 的两种工作流：5 阶段 vs 迭代循环</a>
+          <ul>
+            <li><a href="#21-v1-工作流严格的-5-阶段模型">2.1 V1 工作流：严格的 5 阶段模型</a></li>
+            <li><a href="#22-v2-工作流迭代循环interview-phase">2.2 V2 工作流：迭代循环（Interview Phase）</a></li>
+            <li><a href="#23-两种工作流对比">2.3 两种工作流对比</a></li>
+          </ul>
+        </li>
+        <li><a href="#三子-agent-协同plan-mode-的并行探索引擎">三、子 Agent 协同：Plan Mode 的并行探索引擎</a>
+          <ul>
+            <li><a href="#31-三种内置子-agent">3.1 三种内置子 Agent</a></li>
+            <li><a href="#32-并行-agent-的成本考量">3.2 并行 Agent 的成本考量</a></li>
+          </ul>
+        </li>
+        <li><a href="#四计划文件存储格式与-ab-实验">四、计划文件：存储、格式与 A/B 实验</a>
+          <ul>
+            <li><a href="#41-计划文件存储">4.1 计划文件存储</a></li>
+            <li><a href="#42-计划文件-ab-实验tengu_pewter_ledger">4.2 计划文件 A/B 实验（tengu_pewter_ledger）</a></li>
+            <li><a href="#43-计划文件恢复5-层恢复策略">4.3 计划文件恢复：5 层恢复策略</a></li>
+          </ul>
+        </li>
+        <li><a href="#五progressive-reminderplan-mode-的节流提醒机制">五、Progressive Reminder：Plan Mode 的节流提醒机制</a>
+          <ul>
+            <li><a href="#51-为什么不每轮都注入完整指令">5.1 为什么不每轮都注入完整指令？</a></li>
+            <li><a href="#52-节流策略">5.2 节流策略</a></li>
+            <li><a href="#53-attachments-系统">5.3 Attachments 系统</a></li>
+          </ul>
+        </li>
+        <li><a href="#六exitplanmode退出与审批的复杂性">六、ExitPlanMode：退出与审批的复杂性</a>
+          <ul>
+            <li><a href="#61-退出流程全貌">6.1 退出流程全貌</a></li>
+            <li><a href="#62-模型为什么会忘记已退出-plan-mode">6.2 模型为什么会&quot;忘记&quot;已退出 Plan Mode？</a></li>
+            <li><a href="#63-计划同步编辑后的计划如何回传">6.3 计划同步：编辑后的计划如何回传</a></li>
+          </ul>
+        </li>
+        <li><a href="#七plan-mode-与-compaction-的交互">七、Plan Mode 与 Compaction 的交互</a></li>
+        <li><a href="#八与-openclaw-的对比">八、与 OpenClaw 的对比</a></li>
+        <li><a href="#结语">结语</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="claude-code-plan-mode-是如何做-plan-的--源码级剖析">
+  Claude Code Plan Mode 是如何做 Plan 的 —— 源码级剖析
+  <a class="anchor" href="#claude-code-plan-mode-%e6%98%af%e5%a6%82%e4%bd%95%e5%81%9a-plan-%e7%9a%84--%e6%ba%90%e7%a0%81%e7%ba%a7%e5%89%96%e6%9e%90">#</a>
+</h1>
+<blockquote>
+<p>基于 <code>oboard/claude-code-rev</code> 逆向源码树 + <code>Windy3f3f3f3f/how-claude-code-works</code> 源码分析 + 官方文档。</p></blockquote>
+<hr>
+<h2 id="引言">
+  引言
+  <a class="anchor" href="#%e5%bc%95%e8%a8%80">#</a>
+</h2>
+<p>想象这个场景：你让 Claude Code &ldquo;重构整个认证系统&rdquo;。它毫不迟疑地开始修改文件 —— 改了 12 个文件，删了 3 个函数，引入了一个你从未想要的 JWT 库。你唯一的办法是 <code>git checkout .</code> 重新开始。</p>
+<p><strong>这是没有 Plan Mode 的世界。</strong></p>
+<p>Claude Code 的 Plan Mode 解决了一个根本性问题：<strong>对于复杂任务，先让模型探索，再让模型规划，最后只在用户明确批准后才行动。</strong> 它通过权限降级（禁用所有写操作），强制模型进入&quot;只读探索 + 输出计划&quot;的工作流，直到用户明确批准计划并恢复写权限。</p>
+
+
+<script src="/www6vAIGC/mermaid.min.js"></script>
+
+  <script>mermaid.initialize({
+  "flowchart": {
+    "useMaxWidth":true
+  },
+  "theme": "default"
+}
+)</script>
+
+
+
+<pre class="mermaid">flowchart TD
+    A[&#34;❌ 没有 Plan Mode&lt;br/&gt;直接修改文件&lt;br/&gt;改了 12 个文件&lt;br/&gt;引入你不想要的库&lt;br/&gt;→ git checkout .&#34;] --&gt; B[浪费 10 分钟 &#43; 回滚]
+    C[&#34;✅ 有 Plan Mode&lt;br/&gt;先探索代码库&lt;br/&gt;提出方案&lt;br/&gt;你审查并批准&lt;br/&gt;→ 按计划执行&#34;] --&gt; D[9 分钟，零返工]
+
+    style A fill:#ffcdd2
+    style B fill:#ef5350
+    style C fill:#c8e6c9
+    style D fill:#4caf50</pre>
+<p><strong>核心设计原则</strong>：Think before you act —— Plan Mode 是 Claude Code 中模型<strong>主动降级自身权限</strong>以换取用户信任的唯一机制。</p>
+<p>本文将从逆向源码的视角，完整拆解 Plan Mode 的进入、探索、规划、审批、退出全链路。</p>
+<hr>
+<h2 id="一plan-mode-的本质一个可降级的权限状态">
+  一、Plan Mode 的本质：一个可降级的权限状态
+  <a class="anchor" href="#%e4%b8%80plan-mode-%e7%9a%84%e6%9c%ac%e8%b4%a8%e4%b8%80%e4%b8%aa%e5%8f%af%e9%99%8d%e7%ba%a7%e7%9a%84%e6%9d%83%e9%99%90%e7%8a%b6%e6%80%81">#</a>
+</h2>
+<h3 id="11-permission-context-状态机">
+  1.1 Permission Context 状态机
+  <a class="anchor" href="#11-permission-context-%e7%8a%b6%e6%80%81%e6%9c%ba">#</a>
+</h3>
+<p>Claude Code 的权限系统是一个状态机，Plan Mode 是其中一个可进入、可退出的状态。</p>
+
+<pre class="mermaid">graph TD
+    A[default&lt;br/&gt;标准模式&lt;br/&gt;读写 &#43; 审批] --&gt;|&#34;EnterPlanMode&#34;| B[&#34;plan&lt;br/&gt;只读模式&lt;br/&gt;禁用所有写操作&#34;]
+    B --&gt;|&#34;ExitPlanMode&lt;br/&gt;精确恢复&#34;| A
+
+    C[bypassPermissions&lt;br/&gt;跳过审批] --&gt;|&#34;EnterPlanMode&#34;| B
+    B --&gt;|&#34;ExitPlanMode&lt;br/&gt;精确恢复&#34;| C
+
+    D[auto&lt;br/&gt;自动模式] --&gt;|&#34;EnterPlanMode&#34;| B
+    B --&gt;|&#34;ExitPlanMode&lt;br/&gt;精确恢复&#34;| D
+
+    style A fill:#c8e6c9
+    style B fill:#ffcc80
+    style C fill:#e1bee7
+    style D fill:#bbdefb</pre>
+<p><strong>Plan Mode（<code>plan</code>）的核心行为</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>操作</th>
+          <th>允许？</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>读取文件</td>
+          <td>✅</td>
+      </tr>
+      <tr>
+          <td>搜索代码</td>
+          <td>✅</td>
+      </tr>
+      <tr>
+          <td>Grep</td>
+          <td>✅</td>
+      </tr>
+      <tr>
+          <td>修改文件</td>
+          <td>❌</td>
+      </tr>
+      <tr>
+          <td>执行命令</td>
+          <td>❌</td>
+      </tr>
+      <tr>
+          <td>写入文件</td>
+          <td>❌</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>嵌套插入层（nestable insertion layer）</strong>：无论从 <code>default</code> / <code>auto</code> / <code>bypassPermissions</code> 哪种模式进入，退出时都精确恢复到进入前的状态。源码实现的关键是保存原始模式（<code>prePlanMode</code>），退出时精确还原：</p>
+<pre tabindex="0"><code>save prePlanMode = currentMode
+setMode: &#39;plan&#39;
+...
+restore: setMode(prePlanMode)
+</code></pre><p>这个对称性保证了 Plan Mode 是一个<strong>可嵌套的插入层</strong>——无论你在什么模式下进入 Plan Mode，退出后都能无缝回到之前的状态。</p>
+<h3 id="12-两条进入路径收敛到同一个状态转换函数">
+  1.2 两条进入路径，收敛到同一个状态转换函数
+  <a class="anchor" href="#12-%e4%b8%a4%e6%9d%a1%e8%bf%9b%e5%85%a5%e8%b7%af%e5%be%84%e6%94%b6%e6%95%9b%e5%88%b0%e5%90%8c%e4%b8%80%e4%b8%aa%e7%8a%b6%e6%80%81%e8%bd%ac%e6%8d%a2%e5%87%bd%e6%95%b0">#</a>
+</h3>
+
+<pre class="mermaid">flowchart LR
+    A[&#34;/plan 命令&lt;br/&gt;用户主动触发&lt;br/&gt;src/commands/plan/plan.tsx&#34;] --&gt; C[handlePlanModeTransition]
+    B[&#34;EnterPlanMode 工具&lt;br/&gt;模型主动调用&lt;br/&gt;src/tools/EnterPlanModeTool/EnterPlanModeTool.ts&#34;] --&gt; C
+    C --&gt; D[prepareContextForPlanMode]
+    D --&gt; E[&#34;setMode: &#39;plan&#39;&lt;br/&gt;写入 session 级 context&#34;]
+
+    style A fill:#ff8a80
+    style B fill:#82b1ff
+    style C fill:#ffcc80
+    style D fill:#ffe0b2
+    style E fill:#c8e6c9</pre>
+<p><strong>路径一：用户主动触发（<code>/plan</code> 命令）</strong></p>
+<p>源码位于 <code>src/commands/plan/plan.tsx:64-121</code>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">currentMode</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">appState</span>.<span style="color:#a6e22e">toolPermissionContext</span>.<span style="color:#a6e22e">mode</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">currentMode</span> <span style="color:#f92672">!==</span> <span style="color:#e6db74">&#39;plan&#39;</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">handlePlanModeTransition</span>(<span style="color:#a6e22e">currentMode</span>, <span style="color:#e6db74">&#39;plan&#39;</span>)
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">setAppState</span>(<span style="color:#a6e22e">prev</span> <span style="color:#f92672">=&gt;</span> ({
+</span></span><span style="display:flex;"><span>    ...<span style="color:#a6e22e">prev</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">toolPermissionContext</span>: <span style="color:#66d9ef">applyPermissionUpdate</span>(
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">prepareContextForPlanMode</span>(<span style="color:#a6e22e">prev</span>.<span style="color:#a6e22e">toolPermissionContext</span>),
+</span></span><span style="display:flex;"><span>      { <span style="color:#66d9ef">type</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;setMode&#39;</span>, <span style="color:#a6e22e">mode</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;plan&#39;</span>, <span style="color:#a6e22e">destination</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;session&#39;</span> },
+</span></span><span style="display:flex;"><span>    ),
+</span></span><span style="display:flex;"><span>  }))
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>如果命令附带描述（如 <code>/plan refactor the auth system</code>），描述同时作为用户消息提交，触发完整查询循环——模型在 plan 模式下收到这个消息，开始探索。</p>
+<p><strong>路径二：模型主动调用（<code>EnterPlanMode</code> 工具）</strong></p>
+<p>源码位于 <code>src/tools/EnterPlanModeTool/EnterPlanModeTool.ts:77-101</code>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#a6e22e">call</span>(<span style="color:#a6e22e">_input</span>, <span style="color:#a6e22e">context</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 子 Agent 不能进入 plan mode —— plan 是用户级决策
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">context</span>.<span style="color:#a6e22e">agentId</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">throw</span> <span style="color:#66d9ef">new</span> Error(<span style="color:#e6db74">&#39;EnterPlanMode tool cannot be used in agent contexts&#39;</span>)
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">appState</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">context</span>.<span style="color:#a6e22e">getAppState</span>()
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">handlePlanModeTransition</span>(<span style="color:#a6e22e">appState</span>.<span style="color:#a6e22e">toolPermissionContext</span>.<span style="color:#a6e22e">mode</span>, <span style="color:#e6db74">&#39;plan&#39;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">context</span>.<span style="color:#a6e22e">setAppState</span>(<span style="color:#a6e22e">prev</span> <span style="color:#f92672">=&gt;</span> ({
+</span></span><span style="display:flex;"><span>    ...<span style="color:#a6e22e">prev</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">toolPermissionContext</span>: <span style="color:#66d9ef">applyPermissionUpdate</span>(
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">prepareContextForPlanMode</span>(<span style="color:#a6e22e">prev</span>.<span style="color:#a6e22e">toolPermissionContext</span>),
+</span></span><span style="display:flex;"><span>      { <span style="color:#66d9ef">type</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;setMode&#39;</span>, <span style="color:#a6e22e">mode</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;plan&#39;</span>, <span style="color:#a6e22e">destination</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;session&#39;</span> },
+</span></span><span style="display:flex;"><span>    ),
+</span></span><span style="display:flex;"><span>  }))
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">data</span><span style="color:#f92672">:</span> { <span style="color:#a6e22e">message</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;Entered plan mode. You should now focus on exploring...&#39;</span> },
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>关键约束</strong>：注意 <code>context.agentId</code> 检查 —— <strong>子 Agent 不能进入 Plan Mode</strong>。原因直接：Plan Mode 需要用户交互（审批计划），而子 Agent 在后台运行，没有直接用户交互能力。如果子 Agent 被允许进入 Plan Mode，它将永远卡在等待审批的状态。</p>
+<h3 id="13-模型何时知道该进入-plan-mode">
+  1.3 模型何时知道该进入 Plan Mode？
+  <a class="anchor" href="#13-%e6%a8%a1%e5%9e%8b%e4%bd%95%e6%97%b6%e7%9f%a5%e9%81%93%e8%af%a5%e8%bf%9b%e5%85%a5-plan-mode">#</a>
+</h3>
+<p>答案是<strong>工具提示词（tool prompt）</strong>。Claude Code 通过精心构造的 Prompt 引导模型的判断。</p>
+<p><strong>EnterPlanMode 工具的 Prompt</strong>（<code>src/tools/EnterPlanModeTool/prompt.ts:16-99</code>）列出了 7 个条件：</p>
+
+<pre class="mermaid">flowchart TD
+    A[模型判断是否需要&lt;br/&gt;进入 Plan Mode] --&gt; B{满足以下任一条件?}
+
+    B --&gt; C1[1. 新功能实现&lt;br/&gt;添加有意义的功能]
+    B --&gt; C2[2. 多种可行方案&lt;br/&gt;任务有多种解决路径]
+    B --&gt; C3[3. 代码修改&lt;br/&gt;影响现有行为或结构]
+    B --&gt; C4[4. 架构决策&lt;br/&gt;需要在模式/技术间选择]
+    B --&gt; C5[5. 多文件修改&lt;br/&gt;涉及 2-3 个以上文件]
+    B --&gt; C6[6. 需求不明确&lt;br/&gt;需先探索才能理解范围]
+    B --&gt; C7[7. 用户偏好很重要&lt;br/&gt;实现方向可能有多种]
+
+    C1 --&gt; D[✅ 进入 Plan Mode]
+    C2 --&gt; D
+    C3 --&gt; D
+    C4 --&gt; D
+    C5 --&gt; D
+    C6 --&gt; D
+    C7 --&gt; D
+
+    style B fill:#ffcc80
+    style D fill:#4caf50</pre>
+<table>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>条件</th>
+          <th>示例</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td>新功能实现</td>
+          <td>添加有意义的功能</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td>多种可行方案</td>
+          <td>任务有多种解决路径</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td>代码修改</td>
+          <td>影响现有行为或结构</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td>架构决策</td>
+          <td>需要在模式或技术间选择</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td>多文件修改</td>
+          <td>涉及 2-3 个以上文件</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td>需求不明确</td>
+          <td>需要先探索才能理解范围</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td>用户偏好很重要</td>
+          <td>实现方向可能有多种合理选择</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>内外部用户的差异</strong>：对于 Anthropic 内部用户，Prompt 更保守——只有在&quot;真正的架构模糊性&quot;时才建议进入 Plan Mode，避免过度规划拖慢开发速度。这反映了一个实际观察：内部用户通常更熟悉代码库，不需要那么多&quot;先规划再行动&quot;的保护。</p>
+<h3 id="14-进入路径的可视化决策流">
+  1.4 进入路径的可视化决策流
+  <a class="anchor" href="#14-%e8%bf%9b%e5%85%a5%e8%b7%af%e5%be%84%e7%9a%84%e5%8f%af%e8%a7%86%e5%8c%96%e5%86%b3%e7%ad%96%e6%b5%81">#</a>
+</h3>
+
+<pre class="mermaid">flowchart TD
+    A[用户输入任务] --&gt; B{任务是否复杂?}
+
+    B --&gt;|用户主动| C[输入 /plan &lt;任务描述&gt;]
+    B --&gt;|模型判断| D[模型调用 EnterPlanMode 工具]
+
+    C --&gt; E[handlePlanModeTransition]
+    D --&gt; E
+
+    E --&gt; F[prepareContextForPlanMode]
+    F --&gt; G[setMode: &#39;plan&#39;]
+    G --&gt; H[注入 plan_mode attachment&lt;br/&gt;5 阶段工作流指令]
+    H --&gt; I[Plan Mode 激活&lt;br/&gt;开始探索]
+
+    style A fill:#e3f2fd
+    style B fill:#ffcc80
+    style E fill:#ffe0b2
+    style G fill:#c8e6c9
+    style I fill:#4caf50</pre>
+<hr>
+<h2 id="二plan-mode-的两种工作流5-阶段-vs-迭代循环">
+  二、Plan Mode 的两种工作流：5 阶段 vs 迭代循环
+  <a class="anchor" href="#%e4%ba%8cplan-mode-%e7%9a%84%e4%b8%a4%e7%a7%8d%e5%b7%a5%e4%bd%9c%e6%b5%815-%e9%98%b6%e6%ae%b5-vs-%e8%bf%ad%e4%bb%a3%e5%be%aa%e7%8e%af">#</a>
+</h2>
+<p>Claude Code 实际上有<strong>两种完全不同的 Plan Mode 工作流</strong>，通过特性门控（feature gates）切换。</p>
+<h3 id="21-v1-工作流严格的-5-阶段模型">
+  2.1 V1 工作流：严格的 5 阶段模型
+  <a class="anchor" href="#21-v1-%e5%b7%a5%e4%bd%9c%e6%b5%81%e4%b8%a5%e6%a0%bc%e7%9a%84-5-%e9%98%b6%e6%ae%b5%e6%a8%a1%e5%9e%8b">#</a>
+</h3>
+<p>这是大多数用户看到的模式（<code>src/utils/messages.ts:3207-3297</code>）。注入的系统消息将整个规划过程分为 5 个严格阶段：</p>
+
+<pre class="mermaid">sequenceDiagram
+    participant M as 主模型
+    participant EA as Explore Agent&lt;br/&gt;(最多 3 个并行)
+    participant PA as Plan Agent&lt;br/&gt;(按订阅 1-3 个)
+    participant U as 用户
+    participant PF as 计划文件&lt;br/&gt;~/.claude/plans/slug.md
+
+    Note over M,PF: Phase 1: 初始理解
+    M-&gt;&gt;EA: 启动 Explore Agent&lt;br/&gt;并行探索代码库
+    Note over EA: &#34;此阶段你只能&lt;br/&gt;使用 Explore 子 Agent&#34;
+    EA--&gt;&gt;M: 返回代码结构分析
+
+    Note over M,PF: Phase 2: 设计
+    M-&gt;&gt;PA: 启动 Plan Agent&lt;br/&gt;并行设计实现方案
+    PA--&gt;&gt;M: 返回多角度设计方案
+
+    Note over M,PF: Phase 3: 审查
+    M-&gt;&gt;M: 综合 Agent 结果
+    M-&gt;&gt;U: 向用户提出澄清问题
+    U--&gt;&gt;M: 回答
+
+    Note over M,PF: Phase 4: 最终计划
+    M-&gt;&gt;PF: 写入最终计划到文件
+
+    Note over M,PF: Phase 5: 调用 ExitPlanMode
+    M-&gt;&gt;U: 提交计划供用户审批</pre>
+<p><strong>各阶段详解</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>阶段</th>
+          <th>动作</th>
+          <th>限制</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Phase 1: 初始理解</strong></td>
+          <td>启动 Explore Agent 探索代码库</td>
+          <td>&ldquo;此阶段你只能使用 Explore 子 Agent&rdquo;</td>
+      </tr>
+      <tr>
+          <td><strong>Phase 2: 设计</strong></td>
+          <td>启动 Plan Agent 设计方案</td>
+          <td>可并行启动多个 Agent 从不同角度设计</td>
+      </tr>
+      <tr>
+          <td><strong>Phase 3: 审查</strong></td>
+          <td>综合 Agent 结果，向用户提问</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td><strong>Phase 4: 最终计划</strong></td>
+          <td>将最终计划写入计划文件</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td><strong>Phase 5: 调用 ExitPlanMode</strong></td>
+          <td>提交计划供用户审批</td>
+          <td>-</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>Agent 数量的秘密</strong>（<code>src/utils/planModeV2.ts:5-29</code>）：</p>
+
+<pre class="mermaid">flowchart TD
+    A[确定 Agent 数量] --&gt; B{检查环境变量}
+    B --&gt;|CLAUDE_CODE_PLAN_V2_AGENT_COUNT| C[使用环境变量值]
+    B --&gt;|未设置| D{检查订阅类型}
+
+    D --&gt;|Max 20x 订阅| E[3 个并行 Plan Agent]
+    D --&gt;|Enterprise / Team| E
+    D --&gt;|其他| F[1 个 Plan Agent]
+
+    C --&gt; G[返回数量]
+    E --&gt; G
+    F --&gt; G
+
+    style C fill:#ffe0b2
+    style E fill:#c8e6c9
+    style F fill:#bbdefb</pre>
+<ul>
+<li><strong>Phase 1 Explore Agent</strong>：固定最多 <strong>3 个</strong>，与订阅等级无关（<code>getPlanModeV2ExploreAgentCount()</code> 无条件返回 3，只能通过 <code>CLAUDE_CODE_PLAN_V2_EXPLORE_AGENT_COUNT</code> 环境变量覆盖）</li>
+<li><strong>Phase 2 Plan Agent</strong>：数量取决于订阅等级
+<ul>
+<li>Max 20x 订阅 + 默认 Claude Max 20x 限流层：<strong>3 个并行</strong></li>
+<li>Enterprise / Team：<strong>3 个</strong></li>
+<li>其他：<strong>1 个</strong></li>
+</ul>
+</li>
+</ul>
+<h3 id="22-v2-工作流迭代循环interview-phase">
+  2.2 V2 工作流：迭代循环（Interview Phase）
+  <a class="anchor" href="#22-v2-%e5%b7%a5%e4%bd%9c%e6%b5%81%e8%bf%ad%e4%bb%a3%e5%be%aa%e7%8e%afinterview-phase">#</a>
+</h3>
+<p>这是一个更灵活的替代方案（<code>src/utils/messages.ts:3323-3383</code>），由 <code>isPlanModeInterviewPhaseEnabled()</code> 控制。</p>
+
+<pre class="mermaid">flowchart TD
+    A[启动] --&gt; B[Explore&lt;br/&gt;快速扫描关键文件]
+    B --&gt; C[Update Plan&lt;br/&gt;将发现写入计划文件]
+    C --&gt; D[Ask User&lt;br/&gt;遇到歧义时提问]
+    D --&gt; E{计划是否完整?}
+    E --&gt;|否| B
+    E --&gt;|是| F[Finalize Plan&lt;br/&gt;格式化最终计划]
+    F --&gt; G[ExitPlanMode&lt;br/&gt;提交审批]
+
+    style B fill:#e3f2fd
+    style C fill:#fff9c4
+    style D fill:#ffcc80
+    style F fill:#c8e6c9
+    style G fill:#ff8a80</pre>
+<p><strong>关键区别</strong>：没有严格阶段——是一个<strong>持续循环</strong>：</p>
+<pre tabindex="0"><code>Loop:
+  1. Explore — 用只读工具读取代码
+  2. Update the plan file — 每次发现立即写入计划文件
+  3. Ask the user — 遇到歧义时提问
+  → 回到 1，直到计划完成
+</code></pre><p><strong>Prompt 差异决定了行为风格</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>Prompt 风格</th>
+          <th>行为特征</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>5 阶段模式</strong></td>
+          <td>&ldquo;并行启动最多 3 个 Explore Agent&rdquo;</td>
+          <td>鼓励充分探索，然后综合</td>
+      </tr>
+      <tr>
+          <td><strong>迭代模式</strong></td>
+          <td>&ldquo;先快速扫描几个关键文件&hellip;然后写一个骨架计划，问用户第一轮问题。<strong>不要在和用户互动前做详尽探索</strong>&rdquo;</td>
+          <td>鼓励快速交互，渐进深入</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="23-两种工作流对比">
+  2.3 两种工作流对比
+  <a class="anchor" href="#23-%e4%b8%a4%e7%a7%8d%e5%b7%a5%e4%bd%9c%e6%b5%81%e5%af%b9%e6%af%94">#</a>
+</h3>
+
+<pre class="mermaid">graph TD
+    A[Plan Mode 工作流对比] --&gt; B[V1: 5 阶段]
+    A --&gt; C[V2: 迭代循环]
+
+    B --&gt; B1[严格阶段划分]
+    B --&gt; B2[并行启动多个 Explore &#43; Plan Agent]
+    B --&gt; B3[先探索完再提问]
+    B --&gt; B4[适合大型架构任务]
+
+    C --&gt; C1[无阶段，持续循环]
+    C --&gt; C2[按需启动 Agent]
+    C --&gt; C3[边探索边提问]
+    C --&gt; C4[适合渐进式规划&lt;br/&gt;不确定性高的任务]
+
+    style A fill:#bbdefb
+    style B fill:#ffcc80
+    style C fill:#e1bee7</pre>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>V1（5 阶段）</th>
+          <th>V2（迭代）</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>阶段划分</td>
+          <td>严格 5 阶段</td>
+          <td>无阶段，持续循环</td>
+      </tr>
+      <tr>
+          <td>Agent 使用</td>
+          <td>并行启动多个 Explore + Plan</td>
+          <td>按需启动</td>
+      </tr>
+      <tr>
+          <td>交互模式</td>
+          <td>先探索完再提问</td>
+          <td>边探索边提问</td>
+      </tr>
+      <tr>
+          <td>适用场景</td>
+          <td>大型架构任务</td>
+          <td>渐进式规划、不确定性高的任务</td>
+      </tr>
+      <tr>
+          <td>代码特征</td>
+          <td>&ldquo;并行启动最多 3 个 Explore Agent&rdquo;</td>
+          <td>&ldquo;先快速扫描&hellip;不要做详尽探索&rdquo;</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="三子-agent-协同plan-mode-的并行探索引擎">
+  三、子 Agent 协同：Plan Mode 的并行探索引擎
+  <a class="anchor" href="#%e4%b8%89%e5%ad%90-agent-%e5%8d%8f%e5%90%8cplan-mode-%e7%9a%84%e5%b9%b6%e8%a1%8c%e6%8e%a2%e7%b4%a2%e5%bc%95%e6%93%8e">#</a>
+</h2>
+<h3 id="31-三种内置子-agent">
+  3.1 三种内置子 Agent
+  <a class="anchor" href="#31-%e4%b8%89%e7%a7%8d%e5%86%85%e7%bd%ae%e5%ad%90-agent">#</a>
+</h3>
+
+<pre class="mermaid">graph TD
+    subgraph &#34;内置子 Agent&#34;
+        A[&#34;Explore Agent&lt;br/&gt;默认 Haiku 模型&lt;br/&gt;只读，快速理解代码&#34;]
+        B[&#34;Plan Agent&lt;br/&gt;根据订阅模型&lt;br/&gt;设计实现方案&#34;]
+        C[&#34;General-purpose Agent&lt;br/&gt;主模型&lt;br/&gt;通用任务&#34;]
+    end
+
+    subgraph &#34;Plan Mode 中的角色&#34;
+        D[&#34;Phase 1: Explore Agent&lt;br/&gt;并行探索代码库结构&#34;]
+        E[&#34;Phase 2: Plan Agent&lt;br/&gt;并行设计多角度方案&#34;]
+        F[&#34;Phase 3-4: 主模型&lt;br/&gt;综合结果，写入计划&#34;]
+    end
+
+    A -.提供.-&gt; D
+    B -.提供.-&gt; E
+    C -.可选.-&gt; F
+
+    style A fill:#bbdefb
+    style B fill:#e1bee7
+    style C fill:#c8e6c9
+    style D fill:#90caf9
+    style E fill:#ce93d8
+    style F fill:#a5d6a7</pre>
+<table>
+  <thead>
+      <tr>
+          <th>Agent</th>
+          <th>默认模型</th>
+          <th>权限</th>
+          <th>在 Plan Mode 中的角色</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Explore</strong></td>
+          <td>Haiku</td>
+          <td>只读</td>
+          <td>Phase 1：快速理解代码库结构</td>
+      </tr>
+      <tr>
+          <td><strong>Plan</strong></td>
+          <td>根据订阅</td>
+          <td>只读</td>
+          <td>Phase 2：设计实现方案</td>
+      </tr>
+      <tr>
+          <td><strong>General-purpose</strong></td>
+          <td>主模型</td>
+          <td>读写</td>
+          <td>Plan Mode 外：实际执行</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>关键设计洞察</strong>（Boris Cherny）：</p>
+<blockquote>
+<p>人类审查门在 <strong>Plan 和 Execute 之间</strong>，不是 Explore 和 Plan 之间。探索是便宜的——让 Agent 自由读取。计划是分析的——让 Agent 设计方案。但在让任何 Agent 修改文件之前，你想看到计划并批准它。</p></blockquote>
+<p><strong>环境变量控制</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>环境变量</th>
+          <th>作用</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>CLAUDE_CODE_PLAN_V2_EXPLORE_AGENT_COUNT</code></td>
+          <td>覆盖 Explore Agent 数量</td>
+      </tr>
+      <tr>
+          <td><code>CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS=1</code></td>
+          <td>禁用所有内置 Agent</td>
+      </tr>
+      <tr>
+          <td><code>CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1</code></td>
+          <td>禁用 Explore/Plan Agent</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="32-并行-agent-的成本考量">
+  3.2 并行 Agent 的成本考量
+  <a class="anchor" href="#32-%e5%b9%b6%e8%a1%8c-agent-%e7%9a%84%e6%88%90%e6%9c%ac%e8%80%83%e9%87%8f">#</a>
+</h3>
+
+<pre class="mermaid">flowchart TD
+    A[为什么限制 Plan Agent 数量?] --&gt; B[每个 Agent 独立探索代码库]
+    B --&gt; C[消耗大量 token]
+    C --&gt; D[Opus 输出成本是输入的 5 倍]
+    D --&gt; E[只有高配额用户&lt;br/&gt;能负担 3 Agent 并行成本]
+    E --&gt; F[订阅等级决定&lt;br/&gt;并行 Agent 数量上限]
+
+    style A fill:#ffcc80
+    style B fill:#e3f2fd
+    style C fill:#ffcdd2
+    style D fill:#ff9800
+    style E fill:#e1bee7
+    style F fill:#c8e6c9</pre>
+<p><strong>实际原因</strong>：Plan Agent 消耗大量 token（每个 Agent 独立探索代码库），只有高配额用户能负担 3 个 Agent 并行的成本。</p>
+<p><strong>Anthropic 的务实选择</strong>：对普通用户只开放 1 个 Plan Agent，对 Max/Enterprise/Team 用户开放 3 个。这不是技术限制，而是<strong>成本控制策略</strong>。</p>
+<hr>
+<h2 id="四计划文件存储格式与-ab-实验">
+  四、计划文件：存储、格式与 A/B 实验
+  <a class="anchor" href="#%e5%9b%9b%e8%ae%a1%e5%88%92%e6%96%87%e4%bb%b6%e5%ad%98%e5%82%a8%e6%a0%bc%e5%bc%8f%e4%b8%8e-ab-%e5%ae%9e%e9%aa%8c">#</a>
+</h2>
+<h3 id="41-计划文件存储">
+  4.1 计划文件存储
+  <a class="anchor" href="#41-%e8%ae%a1%e5%88%92%e6%96%87%e4%bb%b6%e5%ad%98%e5%82%a8">#</a>
+</h3>
+<pre tabindex="0"><code>~/.claude/plans/bold-eagle.md          ← 主会话的计划
+~/.claude/plans/bold-eagle-agent-7.md  ← 子 Agent 7 的计划
+</code></pre>
+<pre class="mermaid">graph TD
+    A[会话开始] --&gt; B[生成 word slug&lt;br/&gt;如 bold-eagle]
+    B --&gt; C[缓存到 planSlugCache&lt;br/&gt;Map&lt;SessionId, string&gt;]
+    C --&gt; D[写入 ~/.claude/plans/bold-eagle.md]
+    D --&gt; E[同会话始终写同一文件]
+
+    style B fill:#ffcc80
+    style C fill:#bbdefb
+    style D fill:#c8e6c9
+    style E fill:#e1bee7</pre>
+<p><strong>为什么用 word slug（如 <code>bold-eagle</code>）而不是 UUID？</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>方案</th>
+          <th>可读性</th>
+          <th>可编辑性</th>
+          <th>记忆性</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>bold-eagle.md</code></td>
+          <td>✅ 高</td>
+          <td>✅ 用户可手动打开编辑</td>
+          <td>✅ 容易识别和记忆</td>
+      </tr>
+      <tr>
+          <td><code>a3f7b2c1-4d5e-6f78.md</code></td>
+          <td>❌ 低</td>
+          <td>❌ 不友好</td>
+          <td>❌ 无法记忆</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>Slug 缓存</strong>：按会话缓存（<code>planSlugCache: Map&lt;SessionId, string&gt;</code>），同会话始终写同一文件。文件名冲突时最多重试 10 次（<code>MAX_SLUG_RETRIES = 10</code>）。</p>
+<p><strong>Fork 时的关键细节</strong>：Fork 会话时（<code>copyPlanForFork()</code>），必须生成新的 slug。如果复用原 slug，原始和 Fork 会话会写同一个文件——导致互相覆盖。</p>
+<h3 id="42-计划文件-ab-实验tengu_pewter_ledger">
+  4.2 计划文件 A/B 实验（tengu_pewter_ledger）
+  <a class="anchor" href="#42-%e8%ae%a1%e5%88%92%e6%96%87%e4%bb%b6-ab-%e5%ae%9e%e9%aa%8ctengu_pewter_ledger">#</a>
+</h3>
+<p>这是 Anthropic 正在进行的一个 A/B 实验（<code>src/utils/messages.ts:3156-3205</code>），有四个变体：</p>
+
+<pre class="mermaid">flowchart TD
+    A[Phase 4 格式实验] --&gt; B[&#34;control&lt;br/&gt;完整格式&#34;]
+    A --&gt; C[&#34;trim&lt;br/&gt;中等压缩&#34;]
+    A --&gt; D[&#34;cut&lt;br/&gt;重度压缩&#34;]
+    A --&gt; E[&#34;cap&lt;br/&gt;最大压缩&#34;]
+
+    B --&gt; B1[&#34;Context 段落&lt;br/&gt;&#43; 推荐方案&lt;br/&gt;&#43; 文件路径&lt;br/&gt;&#43; 验证步骤&#34;]
+    C --&gt; C1[&#34;单行 Context&lt;br/&gt;&#43; 单个验证命令&#34;]
+    D --&gt; D1[&#34;无 Context 段&lt;br/&gt;&#43; 每文件一行&lt;br/&gt;&#43; 单个验证命令&#34;]
+    E --&gt; E1[&#34;无散文&lt;br/&gt;&#43; 每文件一个 bullet&lt;br/&gt;&#43; 硬限制 40 行&#34;]
+
+    style B fill:#bbdefb
+    style C fill:#fff9c4
+    style D fill:#ffcc80
+    style E fill:#ffcdd2</pre>
+<table>
+  <thead>
+      <tr>
+          <th>变体</th>
+          <th>关键差异</th>
+          <th>目标</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>control</strong></td>
+          <td>Context + 推荐方案 + 文件路径 + 验证步骤</td>
+          <td>基线</td>
+      </tr>
+      <tr>
+          <td><strong>trim</strong></td>
+          <td>单行 Context + 单个验证命令</td>
+          <td>中等压缩</td>
+      </tr>
+      <tr>
+          <td><strong>cut</strong></td>
+          <td>无 Context 段 + 每文件一行 + 单个验证命令</td>
+          <td>重度压缩</td>
+      </tr>
+      <tr>
+          <td><strong>cap</strong></td>
+          <td>无散文 + 每文件一个 bullet + <strong>硬限制 40 行</strong></td>
+          <td>最大压缩</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>实验动机</strong>（生产数据揭示的真相）：</p>
+
+<pre class="mermaid">graph TD
+    A[生产数据] --&gt; B[基线计划文件统计]
+    A --&gt; C[Opus 输出成本 = 5× 输入]
+    A --&gt; D[拒绝率与计划长度正相关]
+
+    B --&gt; B1[&#34;p50: 4,906 字符&lt;br/&gt;p90: 11,617 字符&lt;br/&gt;均值: 6,207 字符&#34;]
+
+    D --&gt; D1[&#34;&lt; 2K: 20% 拒绝率&lt;br/&gt;&gt; 20K: 50% 拒绝率&#34;]
+
+    style B fill:#bbdefb
+    style C fill:#ffcdd2
+    style D fill:#ffcc80
+    style D1 fill:#ef5350</pre>
+<p><strong>结论</strong>：计划越长，用户越不满意。</p>
+<ul>
+<li>基线（control）计划文件：p50 = 4,906 字符，p90 = 11,617 字符，均值 = 6,207 字符</li>
+<li>Opus 输出成本是输入的 <strong>5 倍</strong>，过长计划文件直接推高成本</li>
+<li><strong>拒绝率与计划长度正相关</strong>：&lt;2K 的 20% 拒绝率，&gt;20K 的 50% 拒绝率</li>
+</ul>
+<h3 id="43-计划文件恢复5-层恢复策略">
+  4.3 计划文件恢复：5 层恢复策略
+  <a class="anchor" href="#43-%e8%ae%a1%e5%88%92%e6%96%87%e4%bb%b6%e6%81%a2%e5%a4%8d5-%e5%b1%82%e6%81%a2%e5%a4%8d%e7%ad%96%e7%95%a5">#</a>
+</h3>
+
+<pre class="mermaid">flowchart TD
+    A[恢复会话] --&gt; B{本地还是远程?}
+
+    B --&gt;|本地| C[&#34;Layer 1: 直接读取文件&lt;br/&gt;文件在 ~/.claude/plans/ 中&lt;br/&gt;✅ 最可靠路径&#34;]
+    B --&gt;|远程| D[远程 Pod 可能已被回收&lt;br/&gt;文件可能已不存在]
+
+    D --&gt; E[&#34;Layer 2: 从 file_snapshot&lt;br/&gt;系统消息恢复&#34;]
+    D --&gt; F[&#34;Layer 3: 从 ExitPlanMode&lt;br/&gt;tool_use 的 plan 字段提取&#34;]
+    D --&gt; G[&#34;Layer 4: 从 user 消息的&lt;br/&gt;planContent 字段提取&#34;]
+    D --&gt; H[&#34;Layer 5: 从 auto-compact&lt;br/&gt;创建的 attachments 提取&#34;]
+
+    style C fill:#4caf50
+    style E fill:#ffcc80
+    style F fill:#ffe0b2
+    style G fill:#ffcdd2
+    style H fill:#ffcdd2</pre>
+<p><strong>为什么需要 5 层恢复？</strong></p>
+<ul>
+<li><strong>本地用户</strong>：计划文件安全存储在 <code>~/.claude/plans/</code> 中，恢复直接</li>
+<li><strong>远程用户（CCR）</strong>：Pod 可能随时被回收，文件可能已不存在</li>
+<li>所以系统必须从转录本的各个位置尝试恢复</li>
+</ul>
+<p><strong>持久化通道</strong>：系统只在特定时刻调用 <code>persistFileSnapshotIfRemote()</code>：</p>
+<ul>
+<li><code>normalizeToolInput()</code> 处理 ExitPlanMode 工具时（<code>src/utils/api.ts:578</code> 的 <code>EXIT_PLAN_MODE_V2_TOOL_NAME</code> 分支）</li>
+<li><code>ExitPlanMode.call()</code> 写入用户编辑后的计划时（<code>ExitPlanModeV2Tool.ts:260</code>）</li>
+</ul>
+<p><strong>不是每次 <code>normalizeToolInput()</code> 都写</strong>——只在 ExitPlanMode 相关的路径中写。将计划内容作为 <code>file_snapshot</code> 系统消息写入转录本——这是远程会话<strong>唯一可靠的持久化通道</strong>。</p>
+<hr>
+<h2 id="五progressive-reminderplan-mode-的节流提醒机制">
+  五、Progressive Reminder：Plan Mode 的节流提醒机制
+  <a class="anchor" href="#%e4%ba%94progressive-reminderplan-mode-%e7%9a%84%e8%8a%82%e6%b5%81%e6%8f%90%e9%86%92%e6%9c%ba%e5%88%b6">#</a>
+</h2>
+<h3 id="51-为什么不每轮都注入完整指令">
+  5.1 为什么不每轮都注入完整指令？
+  <a class="anchor" href="#51-%e4%b8%ba%e4%bb%80%e4%b9%88%e4%b8%8d%e6%af%8f%e8%bd%ae%e9%83%bd%e6%b3%a8%e5%85%a5%e5%ae%8c%e6%95%b4%e6%8c%87%e4%bb%a4">#</a>
+</h3>
+<p>这是一个精心设计的答案，涉及两个问题：</p>
+<ol>
+<li><strong>Token 浪费</strong>：每轮重复完整指令消耗大量 token</li>
+<li><strong>指令疲劳</strong>：过于频繁的重复反而会导致模型对指令产生&quot;疲劳&quot;——<strong>过度频繁的重复实际上削弱了指令的有效性</strong></li>
+</ol>
+<h3 id="52-节流策略">
+  5.2 节流策略
+  <a class="anchor" href="#52-%e8%8a%82%e6%b5%81%e7%ad%96%e7%95%a5">#</a>
+</h3>
+
+<pre class="mermaid">gantt
+    title Plan Mode 提醒注入节奏
+    dateFormat X
+    axisFormat Turn %N
+
+    section Turn 1
+    完整指令 (full)     :milestone, 0, 0
+    section Turn 2-4
+    无注入              :active, 1, 3
+    section Turn 5
+    简短提醒 (sparse)    :milestone, 4, 0
+    section Turn 6-9
+    无注入              :active, 5, 4
+    section Turn 10
+    简短提醒            :milestone, 9, 0
+    section Turn 11-24
+    无注入/稀疏交替       :active, 10, 14
+    section Turn 25
+    完整指令            :milestone, 24, 0</pre>
+<p>源码实现于 <code>src/utils/attachments.ts:1189-1242</code>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>Turn</th>
+          <th>注入内容</th>
+          <th>原因</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Turn 1</strong></td>
+          <td>完整指令（full）</td>
+          <td>模型首次进入，需要完整上下文建立规则认知</td>
+      </tr>
+      <tr>
+          <td><strong>Turns 2-4</strong></td>
+          <td>无</td>
+          <td>节省 token，模型短期记忆应还记得</td>
+      </tr>
+      <tr>
+          <td><strong>Turn 5</strong></td>
+          <td>简短提醒（sparse）</td>
+          <td>防止模型&quot;忘记&quot;在 Plan Mode 中</td>
+      </tr>
+      <tr>
+          <td><strong>Turns 6-9</strong></td>
+          <td>无</td>
+          <td>继续节省</td>
+      </tr>
+      <tr>
+          <td><strong>Turn 10</strong></td>
+          <td>简短提醒</td>
+          <td>保持提醒频率</td>
+      </tr>
+      <tr>
+          <td><strong>每 25 个 Turn</strong></td>
+          <td>完整指令</td>
+          <td>长会话的完整上下文刷新</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>配置常量</strong>（<code>src/utils/attachments.ts:259-262</code>）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">PLAN_MODE_ATTACHMENT_CONFIG</span> <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">TURNS_BETWEEN_ATTACHMENTS</span>: <span style="color:#66d9ef">5</span>,      <span style="color:#75715e">// 每 5 turn 注入一次
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">FULL_REMINDER_EVERY_N_ATTACHMENTS</span>: <span style="color:#66d9ef">5</span>,  <span style="color:#75715e">// 每 5 次注入中有 1 次是完整指令
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><p><strong>计算</strong>：完整指令约每 25 turn 出现一次（5 × 5），其余使用超短稀疏提醒（~300 字符）维持模型对当前模式的感知。</p>
+
+<pre class="mermaid">graph TD
+    A[节流机制效果] --&gt; B[Turn 1: 建立规则认知]
+    B --&gt; C[Turns 2-4: 信任短期记忆]
+    C --&gt; D[Turn 5: 轻量刷新&lt;br/&gt;~300 字符]
+    D --&gt; E[Turns 6-9: 信任短期记忆]
+    E --&gt; F[Turn 10: 再次轻量刷新]
+    F --&gt; G[... 持续交替]
+    G --&gt; H[Turn 25: 完整上下文刷新]
+
+    style B fill:#c8e6c9
+    style D fill:#fff9c4
+    style F fill:#fff9c4
+    style H fill:#bbdefb</pre>
+<h3 id="53-attachments-系统">
+  5.3 Attachments 系统
+  <a class="anchor" href="#53-attachments-%e7%b3%bb%e7%bb%9f">#</a>
+</h3>
+<p>Plan Mode 的指令不是通过系统提示词注入的，而是通过 Claude Code 的 <strong>Attachment System</strong> 在每次对话轮次中注入。</p>
+
+<pre class="mermaid">flowchart TD
+    A[Attachment System] --&gt; B[plan_mode attachment&lt;br/&gt;进入 Plan Mode 时注入]
+    A --&gt; C[plan_mode_exit attachment&lt;br/&gt;退出 Plan Mode 时注入]
+    A --&gt; D[Progressive Reminder&lt;br/&gt;按节流策略注入]
+
+    B --&gt; B1[&#34;5 阶段工作流指令&lt;br/&gt;&#39;你只能读，不能写&#39;&#34;]
+    C --&gt; C1[&#34;&#39;You&#39;ve exited plan mode&lt;br/&gt;proceed with implementation&#39;&#34;]
+    D --&gt; D1[&#34;Full: 完整指令&lt;br/&gt;Sparse: ~300 字符简短提醒&#34;]
+
+    style A fill:#bbdefb
+    style B fill:#ffcc80
+    style C fill:#e1bee7
+    style D fill:#fff9c4</pre>
+<p><strong>关键洞察</strong>：指令不是每轮完整注入——那会浪费太多 token。Plan Mode 系统消息本质上是模型的行为护栏（&ldquo;你只能读，不能写&rdquo;），但节流策略确保了指令的有效性和经济性。</p>
+<hr>
+<h2 id="六exitplanmode退出与审批的复杂性">
+  六、ExitPlanMode：退出与审批的复杂性
+  <a class="anchor" href="#%e5%85%adexitplanmode%e9%80%80%e5%87%ba%e4%b8%8e%e5%ae%a1%e6%89%b9%e7%9a%84%e5%a4%8d%e6%9d%82%e6%80%a7">#</a>
+</h2>
+<h3 id="61-退出流程全貌">
+  6.1 退出流程全貌
+  <a class="anchor" href="#61-%e9%80%80%e5%87%ba%e6%b5%81%e7%a8%8b%e5%85%a8%e8%b2%8c">#</a>
+</h3>
+<p>退出是 Plan Mode 中最复杂的部分，因为它必须同时处理<strong>权限恢复、用户审批、计划同步、多执行上下文</strong>。</p>
+
+<pre class="mermaid">sequenceDiagram
+    participant M as 模型
+    participant T as ExitPlanModeV2Tool&lt;br/&gt;(src/tools/ExitPlanModeTool/&lt;br/&gt;ExitPlanModeV2Tool.ts)
+    participant U as 用户
+    participant S as State Machine
+    participant PF as Plan File
+
+    M-&gt;&gt;T: 调用 ExitPlanMode
+    T-&gt;&gt;T: validateInput&lt;br/&gt;检查当前模式是否为 plan
+
+    alt 不在 plan 模式
+        T--&gt;&gt;M: 错误: &#34;You are not in plan mode...&#34;
+    else 在 plan 模式
+        T-&gt;&gt;U: checkPermissions&lt;br/&gt;弹出审批对话框
+        Note over U: 显示计划内容&lt;br/&gt;用户可编辑计划
+
+        U-&gt;&gt;T: 批准（可先编辑计划）
+        T-&gt;&gt;PF: 写入用户编辑后的计划
+        T-&gt;&gt;PF: persistFileSnapshotIfRemote&lt;br/&gt;作为 file_snapshot 写入转录本
+        T-&gt;&gt;S: restore prePlanMode
+        T-&gt;&gt;S: setHasExitedPlanMode(true)
+        T--&gt;&gt;M: 返回批准的计划文本
+    end
+
+    Note over M: 系统注入 plan_mode_exit attachment&lt;br/&gt;&#34;You&#39;ve exited plan mode, proceed with implementation&#34;
+    M-&gt;&gt;M: 开始按计划编辑文件</pre>
+<h3 id="62-模型为什么会忘记已退出-plan-mode">
+  6.2 模型为什么会&quot;忘记&quot;已退出 Plan Mode？
+  <a class="anchor" href="#62-%e6%a8%a1%e5%9e%8b%e4%b8%ba%e4%bb%80%e4%b9%88%e4%bc%9a%e5%bf%98%e8%ae%b0%e5%b7%b2%e9%80%80%e5%87%ba-plan-mode">#</a>
+</h3>
+<p><code>ExitPlanModeV2Tool</code> 的第一个检查（<code>src/tools/ExitPlanModeTool/ExitPlanModeV2Tool.ts:195-219</code>）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#a6e22e">validateInput</span>(<span style="color:#a6e22e">_input</span>, { <span style="color:#a6e22e">getAppState</span>, <span style="color:#a6e22e">options</span> }) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">isTeammate</span>()) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">result</span>: <span style="color:#66d9ef">true</span> }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">mode</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">getAppState</span>().<span style="color:#a6e22e">toolPermissionContext</span>.<span style="color:#a6e22e">mode</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">mode</span> <span style="color:#f92672">!==</span> <span style="color:#e6db74">&#39;plan&#39;</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">logEvent</span>(<span style="color:#e6db74">&#39;tengu_exit_plan_mode_called_outside_plan&#39;</span>, { ... })
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">result</span>: <span style="color:#66d9ef">false</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">message</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;You are not in plan mode. This tool is only for exiting plan mode...&#39;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">errorCode</span>: <span style="color:#66d9ef">1</span>,
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">result</span>: <span style="color:#66d9ef">true</span> }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>为什么需要这个检查？</strong> 因为模型有时会&quot;忘记&quot;它已经退出了 Plan Mode，再次调用 ExitPlanMode。这种&quot;健忘症&quot;有三个主要原因：</p>
+
+<pre class="mermaid">flowchart TD
+    A[模型&#34;忘记&#34;已退出&lt;br/&gt;Plan Mode] --&gt; B[原因 1: 上下文压缩]
+    A --&gt; C[原因 2: 延迟工具列表误导]
+    A --&gt; D[原因 3: 模式状态缺乏显式标记]
+
+    B --&gt; B1[之前的 ExitPlanMode&lt;br/&gt;成功消息被压缩丢弃&lt;br/&gt;模型没有&#34;已退出&#34;的证据]
+
+    C --&gt; C1[模型仍然在工具列表中&lt;br/&gt;看到 ExitPlanMode 可用&lt;br/&gt;容易误以为还在 Plan Mode]
+
+    D --&gt; D1[当前模式信息主要通过&lt;br/&gt;系统附件传递&lt;br/&gt;如果因节流未注入&lt;br/&gt;模型可能混淆状态]
+
+    style B fill:#ffcdd2
+    style C fill:#ffcc80
+    style D fill:#e1bee7</pre>
+<table>
+  <thead>
+      <tr>
+          <th>原因</th>
+          <th>机制</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>上下文压缩（Compaction）</strong></td>
+          <td>之前的 ExitPlanMode 成功消息可能被压缩丢弃，模型没有&quot;已退出&quot;的证据</td>
+      </tr>
+      <tr>
+          <td><strong>延迟工具列表误导</strong></td>
+          <td>模型仍然在工具列表中看到 ExitPlanMode 可用，容易误以为还在 Plan Mode</td>
+      </tr>
+      <tr>
+          <td><strong>模式状态缺乏显式标记</strong></td>
+          <td>当前模式信息主要通过系统附件传递，如果因节流未注入附件，模型可能混淆状态</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>这个检查防止了状态因重复退出而损坏。</strong></p>
+<h3 id="63-计划同步编辑后的计划如何回传">
+  6.3 计划同步：编辑后的计划如何回传
+  <a class="anchor" href="#63-%e8%ae%a1%e5%88%92%e5%90%8c%e6%ad%a5%e7%bc%96%e8%be%91%e5%90%8e%e7%9a%84%e8%ae%a1%e5%88%92%e5%a6%82%e4%bd%95%e5%9b%9e%e4%bc%a0">#</a>
+</h3>
+
+<pre class="mermaid">flowchart TD
+    A[用户审批] --&gt; B[用户在对话框中编辑计划]
+    B --&gt; C[ExitPlanModeV2Tool.ts:260&lt;br/&gt;写入用户编辑后的计划]
+    C --&gt; D[persistFileSnapshotIfRemote]
+    D --&gt; E[作为 file_snapshot&lt;br/&gt;系统消息写入转录本]
+    E --&gt; F[返回批准的计划文本给模型]
+    F --&gt; G[模型按计划执行]
+
+    style A fill:#e3f2fd
+    style C fill:#bbdefb
+    style E fill:#c8e6c9
+    style F fill:#ffcc80
+    style G fill:#4caf50</pre>
+<p><strong>远程会话的唯一可靠持久化通道</strong>：<code>persistFileSnapshotIfRemote()</code> 将计划内容作为 <code>file_snapshot</code> 系统消息写入转录本。这不是每次 <code>normalizeToolInput()</code> 都写——只在 ExitPlanMode 相关路径中写。</p>
+<hr>
+<h2 id="七plan-mode-与-compaction-的交互">
+  七、Plan Mode 与 Compaction 的交互
+  <a class="anchor" href="#%e4%b8%83plan-mode-%e4%b8%8e-compaction-%e7%9a%84%e4%ba%a4%e4%ba%92">#</a>
+</h2>
+
+<pre class="mermaid">flowchart TD
+    A[Compaction 发生时] --&gt; B{Plan Mode 活跃?}
+
+    B --&gt;|是| C[计划文件已在磁盘上&lt;br/&gt;~/.claude/plans/*.md]
+    C --&gt; D[Compaction 压缩转录本&lt;br/&gt;但计划文件不受影响]
+    D --&gt; E[模型可能&#34;忘记&#34;计划内容]
+    E --&gt; F[✅ 可以通过重新读取&lt;br/&gt;计划文件恢复精确状态]
+
+    B --&gt;|否| G[Compaction 压缩转录本&lt;br/&gt;早期对话历史被摘要替代]
+    G --&gt; H[⚠️ Plan Mode 相关的&lt;br/&gt;早期附件可能被丢弃]
+
+    style C fill:#4caf50
+    style F fill:#4caf50
+    style E fill:#ffcc80
+    style H fill:#ffcdd2</pre>
+<p><strong>关键洞察</strong>：计划文件（<code>~/.claude/plans/*.md</code>）是<strong>磁盘上的持久化存储</strong>，不受 Compaction 影响。这就是为什么 5 层恢复策略中，Layer 1（直接读取文件）是最可靠的路径。</p>
+<hr>
+<h2 id="八与-openclaw-的对比">
+  八、与 OpenClaw 的对比
+  <a class="anchor" href="#%e5%85%ab%e4%b8%8e-openclaw-%e7%9a%84%e5%af%b9%e6%af%94">#</a>
+</h2>
+
+<pre class="mermaid">graph TD
+    subgraph &#34;Claude Code&#34;
+        A1[&#34;/plan 命令&lt;br/&gt;EnterPlanMode 工具&#34;]
+        A2[&#34;permissionMode: &#39;plan&#39;&lt;br/&gt;只读权限降级&#34;]
+        A3[&#34;Explore/Plan 子 Agent 并行&lt;br/&gt;最多 3×3&#34;]
+        A4[&#34;~/.claude/plans/slug.md&lt;br/&gt;计划文件存储&#34;]
+        A5[&#34;Progressive Reminder&lt;br/&gt;节流注入&#34;]
+        A6[&#34;ExitPlanMode &#43;&lt;br/&gt;用户审批对话框&#34;]
+        A7[&#34;5 层恢复策略&#34;]
+        A8[&#34;tengu_pewter_ledger&lt;br/&gt;4 种格式变体&#34;]
+    end
+
+    subgraph &#34;OpenClaw&#34;
+        B1[&#34;无对应 Plan Mode&#34;]
+        B2[&#34;Agent Skill Allowlist&lt;br/&gt;控制可见工具&#34;]
+        B3[&#34;sessions_spawn&lt;br/&gt;子 Agent&#34;]
+        B4[&#34;用户手动写文件&lt;br/&gt;PLAN.md&#34;]
+        B5[&#34;无，依赖用户指令&#34;]
+        B6[&#34;无内置审批流程&#34;]
+        B7[&#34;从文件系统加载&lt;br/&gt;bootstrap/context files&#34;]
+        B8[&#34;无&#34;]
+    end
+
+    A1 -.对比.-&gt; B1
+    A2 -.对比.-&gt; B2
+    A3 -.对比.-&gt; B3
+    A4 -.对比.-&gt; B4
+    A5 -.对比.-&gt; B5
+    A6 -.对比.-&gt; B6
+    A7 -.对比.-&gt; B7
+    A8 -.对比.-&gt; B8
+
+    style A1 fill:#ff8a80
+    style A2 fill:#82b1ff
+    style A3 fill:#ce93d8
+    style A4 fill:#90caf9
+    style A5 fill:#fff9c4
+    style A6 fill:#ffcc80
+    style A7 fill:#c8e6c9
+    style A8 fill:#ffe0b2
+    style B1 fill:#ffcdd2
+    style B2 fill:#bbdefb
+    style B3 fill:#e1bee7
+    style B4 fill:#e3f2fd
+    style B5 fill:#fff9c4
+    style B6 fill:#ffe0b2
+    style B7 fill:#c8e6c9
+    style B8 fill:#f5f5f5</pre>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>Claude Code Plan Mode</th>
+          <th>OpenClaw</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>进入机制</strong></td>
+          <td><code>/plan</code> 命令 + <code>EnterPlanMode</code> 工具</td>
+          <td>无对应 Plan Mode</td>
+      </tr>
+      <tr>
+          <td><strong>权限降级</strong></td>
+          <td><code>permissionMode: 'plan'</code>（只读）</td>
+          <td>Agent Skill Allowlist 控制可见工具</td>
+      </tr>
+      <tr>
+          <td><strong>并行探索</strong></td>
+          <td>Explore/Plan 子 Agent 并行（最多 3×3）</td>
+          <td><code>sessions_spawn</code> 子 Agent</td>
+      </tr>
+      <tr>
+          <td><strong>计划存储</strong></td>
+          <td><code>~/.claude/plans/slug.md</code></td>
+          <td>用户手动写文件（PLAN.md）</td>
+      </tr>
+      <tr>
+          <td><strong>提醒机制</strong></td>
+          <td>Progressive Reminder（节流注入）</td>
+          <td>无，依赖用户指令</td>
+      </tr>
+      <tr>
+          <td><strong>审批流程</strong></td>
+          <td>ExitPlanMode 工具 + 用户审批对话框</td>
+          <td>无内置审批流程</td>
+      </tr>
+      <tr>
+          <td><strong>状态恢复</strong></td>
+          <td>5 层恢复策略</td>
+          <td>从文件系统加载 bootstrap/context files</td>
+      </tr>
+      <tr>
+          <td><strong>A/B 实验</strong></td>
+          <td>tengu_pewter_ledger（4 种格式变体）</td>
+          <td>无</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="结语">
+  结语
+  <a class="anchor" href="#%e7%bb%93%e8%af%ad">#</a>
+</h2>
+<p>Plan Mode 的核心创新可以用一句话概括：<strong>让模型主动降级自身权限</strong>——不是强制限制，而是引导模型自愿进入只读模式，在用户批准后才恢复写权限。</p>
+
+<pre class="mermaid">flowchart TD
+    A[Plan Mode 核心认知] --&gt; B[人类审查门在 Plan 和 Execute 之间]
+    A --&gt; C[节流提醒解决 token 浪费和指令疲劳]
+    A --&gt; D[计划越长，用户越不满意]
+    A --&gt; E[子 Agent 不能进入 Plan Mode]
+    A --&gt; F[5 层恢复策略保证远程会话可靠性]
+
+    style A fill:#bbdefb
+    style B fill:#c8e6c9
+    style C fill:#c8e6c9
+    style D fill:#c8e6c9
+    style E fill:#c8e6c9
+    style F fill:#c8e6c9</pre>
+<p><strong>五条关键洞察</strong>：</p>
+<ol>
+<li><strong>人类审查门在 Plan 和 Execute 之间</strong>，不是 Explore 和 Plan 之间——探索是便宜的，计划是分析的，但修改文件前必须让人类看到计划</li>
+<li><strong>节流提醒机制</strong>（Progressive Reminder）解决了长会话中的 token 浪费和指令疲劳问题——完整指令每 25 turn 才注入一次</li>
+<li><strong>A/B 实验数据揭示的真相</strong>：计划越长，用户越不满意——&lt;2K 的 20% 拒绝率 vs &gt;20K 的 50% 拒绝率，简洁的计划优于详尽的计划</li>
+<li><strong>子 Agent 不能进入 Plan Mode</strong>——这是硬约束，因为子 Agent 没有用户交互能力</li>
+<li><strong>98.4% 的工程基础设施</strong>（MBZUAI 研究）提醒我们：好的 AI Agent，工程架构比算法更重要——Plan Mode 的价值不在 AI 决策逻辑的代码量上，而在于围绕它的权限管理、状态机、持久化和恢复机制的完善程度</li>
+</ol>
+<hr>
+<p><em>本文基于 <code>oboard/claude-code-rev</code>（source map 逆向恢复）、<code>Windy3f3f3f3f/how-claude-code-works</code> 源码分析和 Claude Code 官方文档编写。Plan Mode 和子 Agent 特性演进迅速，建议以官方文档为准。</em></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#claude-code-plan-mode-是如何做-plan-的--源码级剖析">Claude Code Plan Mode 是如何做 Plan 的 —— 源码级剖析</a>
+      <ul>
+        <li><a href="#引言">引言</a></li>
+        <li><a href="#一plan-mode-的本质一个可降级的权限状态">一、Plan Mode 的本质：一个可降级的权限状态</a>
+          <ul>
+            <li><a href="#11-permission-context-状态机">1.1 Permission Context 状态机</a></li>
+            <li><a href="#12-两条进入路径收敛到同一个状态转换函数">1.2 两条进入路径，收敛到同一个状态转换函数</a></li>
+            <li><a href="#13-模型何时知道该进入-plan-mode">1.3 模型何时知道该进入 Plan Mode？</a></li>
+            <li><a href="#14-进入路径的可视化决策流">1.4 进入路径的可视化决策流</a></li>
+          </ul>
+        </li>
+        <li><a href="#二plan-mode-的两种工作流5-阶段-vs-迭代循环">二、Plan Mode 的两种工作流：5 阶段 vs 迭代循环</a>
+          <ul>
+            <li><a href="#21-v1-工作流严格的-5-阶段模型">2.1 V1 工作流：严格的 5 阶段模型</a></li>
+            <li><a href="#22-v2-工作流迭代循环interview-phase">2.2 V2 工作流：迭代循环（Interview Phase）</a></li>
+            <li><a href="#23-两种工作流对比">2.3 两种工作流对比</a></li>
+          </ul>
+        </li>
+        <li><a href="#三子-agent-协同plan-mode-的并行探索引擎">三、子 Agent 协同：Plan Mode 的并行探索引擎</a>
+          <ul>
+            <li><a href="#31-三种内置子-agent">3.1 三种内置子 Agent</a></li>
+            <li><a href="#32-并行-agent-的成本考量">3.2 并行 Agent 的成本考量</a></li>
+          </ul>
+        </li>
+        <li><a href="#四计划文件存储格式与-ab-实验">四、计划文件：存储、格式与 A/B 实验</a>
+          <ul>
+            <li><a href="#41-计划文件存储">4.1 计划文件存储</a></li>
+            <li><a href="#42-计划文件-ab-实验tengu_pewter_ledger">4.2 计划文件 A/B 实验（tengu_pewter_ledger）</a></li>
+            <li><a href="#43-计划文件恢复5-层恢复策略">4.3 计划文件恢复：5 层恢复策略</a></li>
+          </ul>
+        </li>
+        <li><a href="#五progressive-reminderplan-mode-的节流提醒机制">五、Progressive Reminder：Plan Mode 的节流提醒机制</a>
+          <ul>
+            <li><a href="#51-为什么不每轮都注入完整指令">5.1 为什么不每轮都注入完整指令？</a></li>
+            <li><a href="#52-节流策略">5.2 节流策略</a></li>
+            <li><a href="#53-attachments-系统">5.3 Attachments 系统</a></li>
+          </ul>
+        </li>
+        <li><a href="#六exitplanmode退出与审批的复杂性">六、ExitPlanMode：退出与审批的复杂性</a>
+          <ul>
+            <li><a href="#61-退出流程全貌">6.1 退出流程全貌</a></li>
+            <li><a href="#62-模型为什么会忘记已退出-plan-mode">6.2 模型为什么会&quot;忘记&quot;已退出 Plan Mode？</a></li>
+            <li><a href="#63-计划同步编辑后的计划如何回传">6.3 计划同步：编辑后的计划如何回传</a></li>
+          </ul>
+        </li>
+        <li><a href="#七plan-mode-与-compaction-的交互">七、Plan Mode 与 Compaction 的交互</a></li>
+        <li><a href="#八与-openclaw-的对比">八、与 OpenClaw 的对比</a></li>
+        <li><a href="#结语">结语</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
