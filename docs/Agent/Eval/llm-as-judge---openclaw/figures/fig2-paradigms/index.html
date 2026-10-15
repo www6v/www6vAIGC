@@ -4,60 +4,72 @@
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="
-  OpenViking 架构深度解析：AI Agent 的上下文数据库
+  图2：四种评估范式对比
   #
 
 
-&ldquo;Data is abundant, but high-quality context is hard to come by. We aim to define a minimalist context interaction paradigm for Agents.&rdquo;
-—— OpenViking Official Vision
 
 
 
-  一、引言：从 RAG 到 Context Database 的范式跃迁
-  #
-
-在 AI Agent 开发中，上下文（Context）管理一直是一个碎片化且充满痛点的问题：记忆散落在代码里，RAG 资源躺在向量数据库中，Skills 又是单独的配置文件。OpenViking（volcengine/OpenViking, 26,431⭐）由字节跳动火山引擎开源，试图通过一个统一文件系统范式（Unified Filesystem Paradigm）来解决这一难题。
-它不仅仅是一个存储层，更是一个**&ldquo;自我进化&rdquo;（Self-evolving）的上下文数据库**。它引入了分层加载、记忆热度管理，甚至包含了一套基于&quot;体验梯度&quot;（Experience Gradient）的自动化策略优化框架。
-本文将深入源码层面，拆解 OpenViking 的核心架构与设计哲学。
+  
 
 
-  二、核心理念：文件系统范式（Filesystem Paradigm）
-  #
 
-OpenViking 最核心的创新在于它抛弃了传统向量数据库的扁平存储模型，转而采用类似操作系统的文件结构来组织 Agent 的上下文：
-viking://
-├── memory/              # Agent 记忆
-│   ├── profile.md       # 用户偏好
-│   └── events.md        # 历史事件
-├── knowledge/           # RAG 知识库
-│   ├── docs/            # 文档
-│   └── code/            # 代码片段
-└── skills/              # Agent 技能
-    ├── web_search/      # 搜索技能定义
-    └── code_gen/        # 代码生成技能
-这种设计带来了三个直接好处：">
+flowchart TD
+    subgraph 范式A[&#34;Pairwise 点对点比较&#34;]
+        direction LR
+        A1[&#34;模型A输出&#34;] --&gt; A0[&#34;LLM Judge 对比&#34;]
+        A2[&#34;模型B输出&#34;] --&gt; A0
+        A0 --&gt; A3[&#34;输出: A &gt; B&#34;]
+    end
+    
+    subgraph 范式B[&#34;Pointwise 绝对打分&#34;]
+        direction LR
+        B1[&#34;单个输出&#34;] --&gt; B0[&#34;LLM Judge 评分&#34;]
+        B0 --&gt; B2[&#34;输出: 4/5 分&#34;]
+        B0 --&gt; B3[&#34;维度: 流畅性, 事实性, 安全性&#34;]
+    end
+    
+    subgraph 范式C[&#34;Listwise 排序评估&#34;]
+        direction LR
+        C1[&#34;输出A&#34;] --&gt; C0[&#34;LLM Judge 排序&#34;]
+        C2[&#34;输出B&#34;] --&gt; C0
+        C3[&#34;输出C&#34;] --&gt; C0
+        C0 --&gt; C4[&#34;输出: A &gt; C &gt; B&#34;]
+    end
+    
+    subgraph 范式D[&#34;Reference-based 参考式&#34;]
+        direction LR
+        D1[&#34;模型输出&#34;] --&gt; D0[&#34;LLM Judge 对比&#34;]
+        D2[&#34;Golden Answer&#34;] --&gt; D0
+        D0 --&gt; D3[&#34;输出: 相似度 92%&#34;]
+    end
+    
+    范式A --&gt; T[&#34;✅ 适合排行榜\n❌ O(n²) 成本高&#34;]
+    范式B --&gt; T2[&#34;✅ 高效可批量\n❌ 绝对分数难校准&#34;]
+    范式C --&gt; T3[&#34;✅ 充分利用上下文\n❌ 位置偏差严重&#34;]
+    范式D --&gt; T4[&#34;✅ 有ground truth时最准\n❌ 开放域不可用&#34;]
+    
+    style 范式A fill:#e3f2fd
+    style 范式B fill:#e8f5e9
+    style 范式C fill:#fff3e0
+    style 范式D fill:#f3e5f5">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
-<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Agent-Memory/independent/openviking/">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig2-paradigms/">
   <meta property="og:site_name" content="Modern Agent">
   <meta property="og:title" content="Modern Agent">
-  <meta property="og:description" content="OpenViking 架构深度解析：AI Agent 的上下文数据库 # “Data is abundant, but high-quality context is hard to come by. We aim to define a minimalist context interaction paradigm for Agents.”
-—— OpenViking Official Vision
-一、引言：从 RAG 到 Context Database 的范式跃迁 # 在 AI Agent 开发中，上下文（Context）管理一直是一个碎片化且充满痛点的问题：记忆散落在代码里，RAG 资源躺在向量数据库中，Skills 又是单独的配置文件。OpenViking（volcengine/OpenViking, 26,431⭐）由字节跳动火山引擎开源，试图通过一个统一文件系统范式（Unified Filesystem Paradigm）来解决这一难题。
-它不仅仅是一个存储层，更是一个**“自我进化”（Self-evolving）的上下文数据库**。它引入了分层加载、记忆热度管理，甚至包含了一套基于&#34;体验梯度&#34;（Experience Gradient）的自动化策略优化框架。
-本文将深入源码层面，拆解 OpenViking 的核心架构与设计哲学。
-二、核心理念：文件系统范式（Filesystem Paradigm） # OpenViking 最核心的创新在于它抛弃了传统向量数据库的扁平存储模型，转而采用类似操作系统的文件结构来组织 Agent 的上下文：
-viking:// ├── memory/ # Agent 记忆 │ ├── profile.md # 用户偏好 │ └── events.md # 历史事件 ├── knowledge/ # RAG 知识库 │ ├── docs/ # 文档 │ └── code/ # 代码片段 └── skills/ # Agent 技能 ├── web_search/ # 搜索技能定义 └── code_gen/ # 代码生成技能 这种设计带来了三个直接好处：">
+  <meta property="og:description" content="图2：四种评估范式对比 # flowchart TD subgraph 范式A[&#34;Pairwise 点对点比较&#34;] direction LR A1[&#34;模型A输出&#34;] --&gt; A0[&#34;LLM Judge 对比&#34;] A2[&#34;模型B输出&#34;] --&gt; A0 A0 --&gt; A3[&#34;输出: A &gt; B&#34;] end subgraph 范式B[&#34;Pointwise 绝对打分&#34;] direction LR B1[&#34;单个输出&#34;] --&gt; B0[&#34;LLM Judge 评分&#34;] B0 --&gt; B2[&#34;输出: 4/5 分&#34;] B0 --&gt; B3[&#34;维度: 流畅性, 事实性, 安全性&#34;] end subgraph 范式C[&#34;Listwise 排序评估&#34;] direction LR C1[&#34;输出A&#34;] --&gt; C0[&#34;LLM Judge 排序&#34;] C2[&#34;输出B&#34;] --&gt; C0 C3[&#34;输出C&#34;] --&gt; C0 C0 --&gt; C4[&#34;输出: A &gt; C &gt; B&#34;] end subgraph 范式D[&#34;Reference-based 参考式&#34;] direction LR D1[&#34;模型输出&#34;] --&gt; D0[&#34;LLM Judge 对比&#34;] D2[&#34;Golden Answer&#34;] --&gt; D0 D0 --&gt; D3[&#34;输出: 相似度 92%&#34;] end 范式A --&gt; T[&#34;✅ 适合排行榜\n❌ O(n²) 成本高&#34;] 范式B --&gt; T2[&#34;✅ 高效可批量\n❌ 绝对分数难校准&#34;] 范式C --&gt; T3[&#34;✅ 充分利用上下文\n❌ 位置偏差严重&#34;] 范式D --&gt; T4[&#34;✅ 有ground truth时最准\n❌ 开放域不可用&#34;] style 范式A fill:#e3f2fd style 范式B fill:#e8f5e9 style 范式C fill:#fff3e0 style 范式D fill:#f3e5f5">
   <meta property="og:locale" content="en">
-  <meta property="og:type" content="website">
-<title>Openviking | Modern Agent</title>
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="docs">
+<title>Fig2 Paradigms | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
-<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Agent-Memory/independent/openviking/">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig2-paradigms/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.3257a7ce7c061eb5dfc72257c356229b1470dc77ce9b982ac220c02542f9f04f.css" integrity="sha256-MlenznwGHrXfxyJXw1YimxRw3HfOm5gqwiDAJUL58E8=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.e39ff8857409c5c1e72139f3211004d75508369348d9bf85ffa5e2f0c7cbca8e.js" integrity="sha256-45/4hXQJxcHnITnzIRAE11UINpNI2b&#43;F/6Xi8MfLyo4=" crossorigin="anonymous"></script>
-<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Agent-Memory/independent/openviking/index.xml" title="Modern Agent" />
+  <script defer src="/www6vAIGC/en.search.min.991cf8c58dc2955fbe1ed5362c25ecbf741ca6a7f45973cae9bd186590d62e9d.js" integrity="sha256-mRz4xY3ClV&#43;&#43;HtU2LCXsv3Qcpqf0WXPK6b0YZZDWLp0=" crossorigin="anonymous"></script>
 <!--
 Made with Book Theme
 https://github.com/alex-shpak/hugo-book
@@ -1315,7 +1327,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0883be528cd603181ff8e3bbd53972c2" class="toggle"  />
+    <input type="checkbox" id="section-0883be528cd603181ff8e3bbd53972c2" class="toggle" checked />
     <label for="section-0883be528cd603181ff8e3bbd53972c2" class="flex justify-between">
       <a role="button" class="">Agent</a>
     </label>
@@ -1331,7 +1343,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-37e21fe133c6d26fe04bffd0cb7741e3" class="toggle"  />
+    <input type="checkbox" id="section-37e21fe133c6d26fe04bffd0cb7741e3" class="toggle" checked />
     <label for="section-37e21fe133c6d26fe04bffd0cb7741e3" class="flex justify-between">
       <a role="button" class="">Eval *</a>
     </label>
@@ -1347,7 +1359,111 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Agent/Eval/LLL-as-judge/LLM-as-Judge/" class="">Llm as Judge</a>
+    <a href="/www6vAIGC/docs/Agent/Eval/LLL-as-judge---hermes/LLM-as-Judge/" class="">Llm as Judge</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/article/" class="">Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig1-judge-flow/" class="">Fig1 Judge Flow</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig2-paradigms/" class="active">Fig2 Paradigms</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig3-bias-table/" class="">Fig3 Bias Table</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig4-cases-table/" class="">Fig4 Cases Table</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig5-ensemble-arch/" class="">Fig5 Ensemble Arch</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig6-human-calibration/" class="">Fig6 Human Calibration</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig8-specialized-judge/" class="">Fig8 Specialized Judge</a>
   
 
         </li>
@@ -1647,7 +1763,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="toggle" checked />
+    <input type="checkbox" id="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="toggle"  />
     <label for="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
@@ -1860,7 +1976,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f0d84b83965f02340d4fc81e88ba04ab" class="toggle" checked />
+    <input type="checkbox" id="section-f0d84b83965f02340d4fc81e88ba04ab" class="toggle"  />
     <label for="section-f0d84b83965f02340d4fc81e88ba04ab" class="flex justify-between">
       <a role="button" class="">Memory *</a>
     </label>
@@ -1920,7 +2036,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking/" class="active">Openviking</a>
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking-hermes1/" class="">Openviking Hermes1</a>
   
 
           
@@ -1938,7 +2054,33 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory-hermes/TencentDB-Agent-Memory-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Tencent Db Agent Memory 源码深度解析</a>
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openViking-openclaw/openviking-architecture-full/" class="">Openviking Architecture Full</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--hermes/TencentDB-Agent-Memory-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Tencent Db Agent Memory 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--openclaw/tencentdb-agent-memory-full/" class="">Tencentdb Agent Memory Full</a>
   
 
         </li>
@@ -5270,7 +5412,7 @@ https://github.com/alex-shpak/hugo-book
     <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
   </label>
 
-  <h3>Openviking</h3>
+  <h3>Fig2 Paradigms</h3>
 
   <label for="toc-control">
     
@@ -5286,23 +5428,7 @@ https://github.com/alex-shpak/hugo-book
   
 <nav id="TableOfContents">
   <ul>
-    <li><a href="#openviking-架构深度解析ai-agent-的上下文数据库">OpenViking 架构深度解析：AI Agent 的上下文数据库</a>
-      <ul>
-        <li><a href="#一引言从-rag-到-context-database-的范式跃迁">一、引言：从 RAG 到 Context Database 的范式跃迁</a></li>
-        <li><a href="#二核心理念文件系统范式filesystem-paradigm">二、核心理念：文件系统范式（Filesystem Paradigm）</a></li>
-        <li><a href="#三架构分层l0-l2-分级上下文加载">三、架构分层：L0-L2 分级上下文加载</a></li>
-        <li><a href="#四检索机制hierarchical-retriever">四、检索机制：Hierarchical Retriever</a></li>
-        <li><a href="#五记忆生命周期hotness-scoring">五、记忆生命周期：Hotness Scoring</a></li>
-        <li><a href="#六自我进化体验梯度优化experience-gradient-optimization">六、自我进化：体验梯度优化（Experience Gradient Optimization）</a></li>
-        <li><a href="#七核心组件概览">七、核心组件概览</a></li>
-        <li><a href="#八技术栈与依赖">八、技术栈与依赖</a></li>
-        <li><a href="#九总结与展望">九、总结与展望</a>
-          <ul>
-            <li><a href="#参考文献">参考文献</a></li>
-          </ul>
-        </li>
-      </ul>
-    </li>
+    <li><a href="#图2四种评估范式对比">图2：四种评估范式对比</a></li>
   </ul>
 </nav>
 
@@ -5315,212 +5441,63 @@ https://github.com/alex-shpak/hugo-book
 
       
       
-  <article class="markdown book-article"><h1 id="openviking-架构深度解析ai-agent-的上下文数据库">
-  OpenViking 架构深度解析：AI Agent 的上下文数据库
-  <a class="anchor" href="#openviking-%e6%9e%b6%e6%9e%84%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90ai-agent-%e7%9a%84%e4%b8%8a%e4%b8%8b%e6%96%87%e6%95%b0%e6%8d%ae%e5%ba%93">#</a>
+  <article class="markdown book-article"><h1 id="图2四种评估范式对比">
+  图2：四种评估范式对比
+  <a class="anchor" href="#%e5%9b%be2%e5%9b%9b%e7%a7%8d%e8%af%84%e4%bc%b0%e8%8c%83%e5%bc%8f%e5%af%b9%e6%af%94">#</a>
 </h1>
-<blockquote>
-<p>&ldquo;Data is abundant, but high-quality context is hard to come by. We aim to define a minimalist context interaction paradigm for Agents.&rdquo;</p>
-<p>—— OpenViking Official Vision</p>
-</blockquote>
-<hr>
-<h2 id="一引言从-rag-到-context-database-的范式跃迁">
-  一、引言：从 RAG 到 Context Database 的范式跃迁
-  <a class="anchor" href="#%e4%b8%80%e5%bc%95%e8%a8%80%e4%bb%8e-rag-%e5%88%b0-context-database-%e7%9a%84%e8%8c%83%e5%bc%8f%e8%b7%83%e8%bf%81">#</a>
-</h2>
-<p>在 AI Agent 开发中，上下文（Context）管理一直是一个碎片化且充满痛点的问题：记忆散落在代码里，RAG 资源躺在向量数据库中，Skills 又是单独的配置文件。<strong>OpenViking</strong>（volcengine/OpenViking, 26,431⭐）由字节跳动火山引擎开源，试图通过一个<strong>统一文件系统范式</strong>（Unified Filesystem Paradigm）来解决这一难题。</p>
-<p>它不仅仅是一个存储层，更是一个**&ldquo;自我进化&rdquo;（Self-evolving）的上下文数据库**。它引入了分层加载、记忆热度管理，甚至包含了一套基于&quot;体验梯度&quot;（Experience Gradient）的自动化策略优化框架。</p>
-<p>本文将深入源码层面，拆解 OpenViking 的核心架构与设计哲学。</p>
-<hr>
-<h2 id="二核心理念文件系统范式filesystem-paradigm">
-  二、核心理念：文件系统范式（Filesystem Paradigm）
-  <a class="anchor" href="#%e4%ba%8c%e6%a0%b8%e5%bf%83%e7%90%86%e5%bf%b5%e6%96%87%e4%bb%b6%e7%b3%bb%e7%bb%9f%e8%8c%83%e5%bc%8ffilesystem-paradigm">#</a>
-</h2>
-<p>OpenViking 最核心的创新在于它<strong>抛弃了传统向量数据库的扁平存储模型</strong>，转而采用类似操作系统的文件结构来组织 Agent 的上下文：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>viking://
-</span></span><span style="display:flex;"><span>├── memory/              # Agent 记忆
-</span></span><span style="display:flex;"><span>│   ├── profile.md       # 用户偏好
-</span></span><span style="display:flex;"><span>│   └── events.md        # 历史事件
-</span></span><span style="display:flex;"><span>├── knowledge/           # RAG 知识库
-</span></span><span style="display:flex;"><span>│   ├── docs/            # 文档
-</span></span><span style="display:flex;"><span>│   └── code/            # 代码片段
-</span></span><span style="display:flex;"><span>└── skills/              # Agent 技能
-</span></span><span style="display:flex;"><span>    ├── web_search/      # 搜索技能定义
-</span></span><span style="display:flex;"><span>    └── code_gen/        # 代码生成技能
-</span></span></code></pre></div><p>这种设计带来了三个直接好处：</p>
-<ol>
-<li><strong>统一视图</strong>：Agent 不再需要分别调用 Memory API、Vector DB API 和 Skill Registry，所有资源通过统一的 <code>viking://</code> URI 访问。</li>
-<li><strong>结构化组织</strong>：利用目录层级（Namespace）实现资源的逻辑隔离和权限控制（如 <code>personal/</code> vs <code>shared/</code>）。</li>
-<li><strong>可观测性</strong>：相比传统 RAG 的&quot;黑盒&quot;向量检索，文件系统的结构让开发者能直观看到 Agent 到底加载了什么上下文。</li>
-</ol>
-<hr>
-<h2 id="三架构分层l0-l2-分级上下文加载">
-  三、架构分层：L0-L2 分级上下文加载
-  <a class="anchor" href="#%e4%b8%89%e6%9e%b6%e6%9e%84%e5%88%86%e5%b1%82l0-l2-%e5%88%86%e7%ba%a7%e4%b8%8a%e4%b8%8b%e6%96%87%e5%8a%a0%e8%bd%bd">#</a>
-</h2>
-<p>为了应对 Agent 长任务带来的上下文爆炸（Context Explosion）问题，OpenViking 实现了<strong>分级上下文加载机制（Tiered Context Loading）</strong>，通过抽象（Abstract）来按需获取信息：</p>
-<table>
-  <thead>
-      <tr>
-          <th>层级</th>
-          <th>对应文件</th>
-          <th>内容</th>
-          <th>用途</th>
-          <th>Token 消耗</th>
-      </tr>
-  </thead>
-  <tbody>
-      <tr>
-          <td><strong>L0</strong></td>
-          <td><code>.abstract.md</code></td>
-          <td>极简摘要（一两句话）</td>
-          <td>全局上下文感知，判断是否需要深入</td>
-          <td>极低</td>
-      </tr>
-      <tr>
-          <td><strong>L1</strong></td>
-          <td><code>.overview.md</code></td>
-          <td>详细大纲/索引</td>
-          <td>快速定位具体细节所在的子目录</td>
-          <td>低</td>
-      </tr>
-      <tr>
-          <td><strong>L2</strong></td>
-          <td><code>*.md</code> (Content)</td>
-          <td>完整详细内容</td>
-          <td>实际执行任务时按需加载</td>
-          <td>高</td>
-      </tr>
-  </tbody>
-</table>
-<p><strong>工作原理</strong>：</p>
-<ul>
-<li>当 Agent 需要全局感知时，只加载 L0 文件。</li>
-<li>当 Agent 决定深入某个目录时，加载 L1 文件查看索引。</li>
-<li>只有当 Agent 真正需要某段知识的具体内容时，才加载 L2 文件。</li>
-</ul>
-<p>这种&quot;按需加载&quot;的策略极大地降低了长运行 Agent 的 Token 消耗，避免了上下文窗口被无用信息撑爆。</p>
-<hr>
-<h2 id="四检索机制hierarchical-retriever">
-  四、检索机制：Hierarchical Retriever
-  <a class="anchor" href="#%e5%9b%9b%e6%a3%80%e7%b4%a2%e6%9c%ba%e5%88%b6hierarchical-retriever">#</a>
-</h2>
-<p>OpenViking 的检索器（<code>HierarchicalRetriever</code>）不仅仅是简单的向量相似度搜索，它还结合了<strong>层次化搜索</strong>和**重排（Rerank）**机制：</p>
-<ol>
-<li><strong>向量化索引</strong>：使用 Embedding 模型将文件内容向量化，支持稠密（Dense）和稀疏（Sparse）向量。</li>
-<li><strong>目录感知检索</strong>：检索不仅仅是基于文本相似度，还考虑文件在文件系统中的层级关系。如果一个目录下的高匹配内容较多，该目录本身也会获得较高的得分。</li>
-<li><strong>混合检索与重排</strong>：支持结合关键词（BM25）和语义（Vector）的混合检索，并接入 Rerank 模型对结果进行精细排序。</li>
-</ol>
-<hr>
-<h2 id="五记忆生命周期hotness-scoring">
-  五、记忆生命周期：Hotness Scoring
-  <a class="anchor" href="#%e4%ba%94%e8%ae%b0%e5%bf%86%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9fhotness-scoring">#</a>
-</h2>
-<p>记忆不是静态的，它的价值会随着时间和使用频率变化。OpenViking 通过 <strong>Hotness Score（热度分数）</strong> 来动态管理记忆的冷热：</p>
-<p>$$ \text{Score} = \text{sigmoid}(\log(1 + \text{active_count})) \times e^{-\lambda \cdot \text{age}} $$</p>
-<ul>
-<li><strong>Frequency (频率)</strong>：被检索次数越多，分数越高（对数增长防止头部效应）。</li>
-<li><strong>Recency (时效性)</strong>：随时间指数衰减（默认半衰期为 7 天）。</li>
-</ul>
-<p>这个 0.0-1.0 的分数会与语义相似度结合，确保 Agent 优先召回那些&quot;既重要又新鲜&quot;的上下文。</p>
-<hr>
-<h2 id="六自我进化体验梯度优化experience-gradient-optimization">
-  六、自我进化：体验梯度优化（Experience Gradient Optimization）
-  <a class="anchor" href="#%e5%85%ad%e8%87%aa%e6%88%91%e8%bf%9b%e5%8c%96%e4%bd%93%e9%aa%8c%e6%a2%af%e5%ba%a6%e4%bc%98%e5%8c%96experience-gradient-optimization">#</a>
-</h2>
-<p>这是 OpenViking 最具野心的部分。在 <code>openviking/session/train/</code> 模块中，实现了一套类似于强化学习的自动化策略优化框架：</p>
-<ol>
-<li><strong>Trajectory Analyzer (轨迹分析)</strong>：记录 Agent 的完整执行轨迹（Rollout）。</li>
-<li><strong>Rubric Evaluation (标准评估)</strong>：根据预设的评估标准（Rubric）判断 Agent 的表现。</li>
-<li><strong>Experience Gradient (体验梯度)</strong>：基于评估结果，计算记忆/策略更新的&quot;梯度&quot;方向。</li>
-<li><strong>Policy Optimizer (策略优化器)</strong>：自动调整记忆文件的写入策略或 Skill 的定义，以优化未来的表现。</li>
-</ol>
-<p><strong>这意味着 OpenViking 不仅仅是被动存储记忆，它还能主动从 Agent 的交互历史中&quot;学习&quot;，通过不断的 Rollout 和反馈来微调自己的上下文管理策略。</strong></p>
-<hr>
-<h2 id="七核心组件概览">
-  七、核心组件概览
-  <a class="anchor" href="#%e4%b8%83%e6%a0%b8%e5%bf%83%e7%bb%84%e4%bb%b6%e6%a6%82%e8%a7%88">#</a>
-</h2>
-<table>
-  <thead>
-      <tr>
-          <th>模块</th>
-          <th>关键类/文件</th>
-          <th>职责</th>
-      </tr>
-  </thead>
-  <tbody>
-      <tr>
-          <td><strong>Storage</strong></td>
-          <td><code>VikingDBManager</code>, <code>VikingFS</code></td>
-          <td>底层存储抽象，支持向量同步和本地/云端文件操作</td>
-      </tr>
-      <tr>
-          <td><strong>Retrieve</strong></td>
-          <td><code>HierarchicalRetriever</code>, <code>IntentAnalyzer</code></td>
-          <td>分层检索与意图分析</td>
-      </tr>
-      <tr>
-          <td><strong>Session</strong></td>
-          <td><code>CompressorV3</code>, <code>StreamingMemoryUpdater</code></td>
-          <td>会话管理与记忆流式写入</td>
-      </tr>
-      <tr>
-          <td><strong>Train</strong></td>
-          <td><code>ExperienceGradientEstimator</code>, <code>PolicyTrainer</code></td>
-          <td>体验梯度估计与策略训练</td>
-      </tr>
-      <tr>
-          <td><strong>Ingest</strong></td>
-          <td><code>Orchestrator</code>, <code>Poller</code></td>
-          <td>外部数据源（Git, RSS, Local FS）的摄入管道</td>
-      </tr>
-      <tr>
-          <td><strong>Parse</strong></td>
-          <td><code>VLM</code>, <code>ParserRouter</code></td>
-          <td>多模态解析（使用 VLM 理解图片和代码）</td>
-      </tr>
-  </tbody>
-</table>
-<hr>
-<h2 id="八技术栈与依赖">
-  八、技术栈与依赖
-  <a class="anchor" href="#%e5%85%ab%e6%8a%80%e6%9c%af%e6%a0%88%e4%b8%8e%e4%be%9d%e8%b5%96">#</a>
-</h2>
-<ul>
-<li><strong>语言</strong>：Python 3.10+ (核心逻辑), Rust (CLI)</li>
-<li><strong>向量检索</strong>：VikingDB (火山引擎), 支持 FAISS/Milvus 等适配</li>
-<li><strong>大模型支持</strong>：兼容 OpenAI, Volcengine (Doubao), Kimi, GLM, Codex 等</li>
-<li><strong>基础设施</strong>：FastAPI, Uvicorn, APScheduler (定时任务), Tree-sitter (代码解析)</li>
-</ul>
-<hr>
-<h2 id="九总结与展望">
-  九、总结与展望
-  <a class="anchor" href="#%e4%b9%9d%e6%80%bb%e7%bb%93%e4%b8%8e%e5%b1%95%e6%9c%9b">#</a>
-</h2>
-<p><strong>OpenViking 的设计哲学可以总结为：</strong></p>
-<blockquote>
-<p><strong>&ldquo;将上下文管理从黑盒向量库，转变为可观测、分层级、可自我进化的文件系统。&rdquo;</strong></p>
-</blockquote>
-<p><strong>架构启示：</strong></p>
-<ol>
-<li><strong>对 Agent 开发者的意义</strong>：如果你正在构建需要长期记忆、复杂技能管理的 Agent，OpenViking 提供了一个开箱即用的&quot;大脑&quot;基础设施。</li>
-<li><strong>对传统 RAG 的挑战</strong>：通过引入 L0/L1 抽象层和结构化视图，它证明了纯向量检索在处理复杂上下文时的局限性。</li>
-<li><strong>自我进化的潜力</strong>：体验梯度框架虽然目前可能还在实验阶段，但它指明了 Agent Memory 的未来方向——从被动存储走向主动学习。</li>
-</ol>
-<hr>
-<h3 id="参考文献">
-  参考文献
-  <a class="anchor" href="#%e5%8f%82%e8%80%83%e6%96%87%e7%8c%ae">#</a>
-</h3>
-<p>[1] OpenViking GitHub Repository, <code>volcengine/OpenViking</code>, <a href="https://github.com/volcengine/OpenViking">https://github.com/volcengine/OpenViking</a>
-[2] OpenViking Official Website, <a href="https://www.openviking.ai/">https://www.openviking.ai/</a>
-[3] Hierarchical Retriever Source Code, <code>openviking/retrieve/hierarchical_retriever.py</code>
-[4] Memory Lifecycle &amp; Hotness Scoring, <code>openviking/retrieve/memory_lifecycle.py</code>
-[5] Session Compressor V3, <code>openviking/session/compressor_v3.py</code>
-[6] Experience Gradient Training Framework, <code>openviking/session/train/__init__.py</code></p>
-<hr>
-<p><em>本文基于 OpenViking 开源仓库（volcengine/OpenViking）的最新 main 分支源码分析撰写。</em></p>
+
+
+<script src="/www6vAIGC/mermaid.min.js"></script>
+
+  <script>mermaid.initialize({
+  "flowchart": {
+    "useMaxWidth":true
+  },
+  "theme": "default"
+}
+)</script>
+
+
+
+<pre class="mermaid">flowchart TD
+    subgraph 范式A[&#34;Pairwise 点对点比较&#34;]
+        direction LR
+        A1[&#34;模型A输出&#34;] --&gt; A0[&#34;LLM Judge 对比&#34;]
+        A2[&#34;模型B输出&#34;] --&gt; A0
+        A0 --&gt; A3[&#34;输出: A &gt; B&#34;]
+    end
+    
+    subgraph 范式B[&#34;Pointwise 绝对打分&#34;]
+        direction LR
+        B1[&#34;单个输出&#34;] --&gt; B0[&#34;LLM Judge 评分&#34;]
+        B0 --&gt; B2[&#34;输出: 4/5 分&#34;]
+        B0 --&gt; B3[&#34;维度: 流畅性, 事实性, 安全性&#34;]
+    end
+    
+    subgraph 范式C[&#34;Listwise 排序评估&#34;]
+        direction LR
+        C1[&#34;输出A&#34;] --&gt; C0[&#34;LLM Judge 排序&#34;]
+        C2[&#34;输出B&#34;] --&gt; C0
+        C3[&#34;输出C&#34;] --&gt; C0
+        C0 --&gt; C4[&#34;输出: A &gt; C &gt; B&#34;]
+    end
+    
+    subgraph 范式D[&#34;Reference-based 参考式&#34;]
+        direction LR
+        D1[&#34;模型输出&#34;] --&gt; D0[&#34;LLM Judge 对比&#34;]
+        D2[&#34;Golden Answer&#34;] --&gt; D0
+        D0 --&gt; D3[&#34;输出: 相似度 92%&#34;]
+    end
+    
+    范式A --&gt; T[&#34;✅ 适合排行榜\n❌ O(n²) 成本高&#34;]
+    范式B --&gt; T2[&#34;✅ 高效可批量\n❌ 绝对分数难校准&#34;]
+    范式C --&gt; T3[&#34;✅ 充分利用上下文\n❌ 位置偏差严重&#34;]
+    范式D --&gt; T4[&#34;✅ 有ground truth时最准\n❌ 开放域不可用&#34;]
+    
+    style 范式A fill:#e3f2fd
+    style 范式B fill:#e8f5e9
+    style 范式C fill:#fff3e0
+    style 范式D fill:#f3e5f5</pre>
 </article>
  
       
@@ -5562,23 +5539,7 @@ https://github.com/alex-shpak/hugo-book
   
 <nav id="TableOfContents">
   <ul>
-    <li><a href="#openviking-架构深度解析ai-agent-的上下文数据库">OpenViking 架构深度解析：AI Agent 的上下文数据库</a>
-      <ul>
-        <li><a href="#一引言从-rag-到-context-database-的范式跃迁">一、引言：从 RAG 到 Context Database 的范式跃迁</a></li>
-        <li><a href="#二核心理念文件系统范式filesystem-paradigm">二、核心理念：文件系统范式（Filesystem Paradigm）</a></li>
-        <li><a href="#三架构分层l0-l2-分级上下文加载">三、架构分层：L0-L2 分级上下文加载</a></li>
-        <li><a href="#四检索机制hierarchical-retriever">四、检索机制：Hierarchical Retriever</a></li>
-        <li><a href="#五记忆生命周期hotness-scoring">五、记忆生命周期：Hotness Scoring</a></li>
-        <li><a href="#六自我进化体验梯度优化experience-gradient-optimization">六、自我进化：体验梯度优化（Experience Gradient Optimization）</a></li>
-        <li><a href="#七核心组件概览">七、核心组件概览</a></li>
-        <li><a href="#八技术栈与依赖">八、技术栈与依赖</a></li>
-        <li><a href="#九总结与展望">九、总结与展望</a>
-          <ul>
-            <li><a href="#参考文献">参考文献</a></li>
-          </ul>
-        </li>
-      </ul>
-    </li>
+    <li><a href="#图2四种评估范式对比">图2：四种评估范式对比</a></li>
   </ul>
 </nav>
 

@@ -1,0 +1,5736 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  OpenViking 架构深度解析：AI Agent 的上下文数据库
+  #
+
+
+&ldquo;Data is abundant, but high-quality context is hard to come by. We aim to define a minimalist context interaction paradigm for Agents.&rdquo;
+—— OpenViking Official Vision
+
+
+
+  一、引言：从 RAG 到 Context Database 的范式跃迁
+  #
+
+在 AI Agent 开发中，上下文（Context）管理一直是一个碎片化且充满痛点的问题：记忆散落在代码里，RAG 资源躺在向量数据库中，Skills 又是单独的配置文件。OpenViking（volcengine/OpenViking, 26,431⭐）由字节跳动火山引擎开源，试图通过一个统一文件系统范式（Unified Filesystem Paradigm）来解决这一难题。
+它不仅仅是一个存储层，更是一个**&ldquo;自我进化&rdquo;（Self-evolving）的上下文数据库**。它引入了分层加载、记忆热度管理，甚至包含了一套基于&quot;体验梯度&quot;（Experience Gradient）的自动化策略优化框架。
+本文将深入源码层面，拆解 OpenViking 的核心架构与设计哲学。
+
+
+  二、核心理念：文件系统范式（Filesystem Paradigm）
+  #
+
+OpenViking 最核心的创新在于它抛弃了传统向量数据库的扁平存储模型，转而采用类似操作系统的文件结构来组织 Agent 的上下文：
+viking://
+├── memory/              # Agent 记忆
+│   ├── profile.md       # 用户偏好
+│   └── events.md        # 历史事件
+├── knowledge/           # RAG 知识库
+│   ├── docs/            # 文档
+│   └── code/            # 代码片段
+└── skills/              # Agent 技能
+    ├── web_search/      # 搜索技能定义
+    └── code_gen/        # 代码生成技能
+这种设计带来了三个直接好处：">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Agent-Memory/independent/openviking-hermes1/">
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="OpenViking 架构深度解析：AI Agent 的上下文数据库 # “Data is abundant, but high-quality context is hard to come by. We aim to define a minimalist context interaction paradigm for Agents.”
+—— OpenViking Official Vision
+一、引言：从 RAG 到 Context Database 的范式跃迁 # 在 AI Agent 开发中，上下文（Context）管理一直是一个碎片化且充满痛点的问题：记忆散落在代码里，RAG 资源躺在向量数据库中，Skills 又是单独的配置文件。OpenViking（volcengine/OpenViking, 26,431⭐）由字节跳动火山引擎开源，试图通过一个统一文件系统范式（Unified Filesystem Paradigm）来解决这一难题。
+它不仅仅是一个存储层，更是一个**“自我进化”（Self-evolving）的上下文数据库**。它引入了分层加载、记忆热度管理，甚至包含了一套基于&#34;体验梯度&#34;（Experience Gradient）的自动化策略优化框架。
+本文将深入源码层面，拆解 OpenViking 的核心架构与设计哲学。
+二、核心理念：文件系统范式（Filesystem Paradigm） # OpenViking 最核心的创新在于它抛弃了传统向量数据库的扁平存储模型，转而采用类似操作系统的文件结构来组织 Agent 的上下文：
+viking:// ├── memory/ # Agent 记忆 │ ├── profile.md # 用户偏好 │ └── events.md # 历史事件 ├── knowledge/ # RAG 知识库 │ ├── docs/ # 文档 │ └── code/ # 代码片段 └── skills/ # Agent 技能 ├── web_search/ # 搜索技能定义 └── code_gen/ # 代码生成技能 这种设计带来了三个直接好处：">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>Openviking Hermes1 | Modern Agent</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Agent-Memory/independent/openviking-hermes1/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.3257a7ce7c061eb5dfc72257c356229b1470dc77ce9b982ac220c02542f9f04f.css" integrity="sha256-MlenznwGHrXfxyJXw1YimxRw3HfOm5gqwiDAJUL58E8=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.991cf8c58dc2955fbe1ed5362c25ecbf741ca6a7f45973cae9bd186590d62e9d.js" integrity="sha256-mRz4xY3ClV&#43;&#43;HtU2LCXsv3Qcpqf0WXPK6b0YZZDWLp0=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Agent-Memory/independent/openviking-hermes1/index.xml" title="Modern Agent" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8eeae87632e610dbb7fc73d309f4a86d" class="toggle"  />
+    <label for="section-8eeae87632e610dbb7fc73d309f4a86d" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-098fde1b4be868f62390668d03d7d338" class="toggle"  />
+    <label for="section-098fde1b4be868f62390668d03d7d338" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7c089cd98011270279a8c4693580483e" class="toggle"  />
+    <label for="section-7c089cd98011270279a8c4693580483e" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall/" class="">Rag Recall</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/" class="">Rag Recall 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-00e0992ed3785617d99441f38424d443" class="toggle"  />
+    <label for="section-00e0992ed3785617d99441f38424d443" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e6438c77671b5eb480dd2c40a29deb4" class="toggle"  />
+    <label for="section-5e6438c77671b5eb480dd2c40a29deb4" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1205a3b6d7d0d892a149b0be18b55680" class="toggle"  />
+    <label for="section-1205a3b6d7d0d892a149b0be18b55680" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-2853751cf001bfb0dbbd0927de99f326" class="toggle"  />
+    <label for="section-2853751cf001bfb0dbbd0927de99f326" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4277410225f2a82b8e3d740cbc19c27a" class="toggle"  />
+    <label for="section-4277410225f2a82b8e3d740cbc19c27a" class="flex justify-between">
+      <a role="button" class="">Dify</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-21f3c925847a2d764db6eed92d3a72d8" class="toggle"  />
+    <label for="section-21f3c925847a2d764db6eed92d3a72d8" class="flex justify-between">
+      <a role="button" class="">产品</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/list/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="toggle"  />
+    <label for="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="flex justify-between">
+      <a role="button" class="">Sandbox</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/opensource/" class="">Opensource</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c1654de4801752aac71344ec5dc9df88" class="toggle"  />
+    <label for="section-c1654de4801752aac71344ec5dc9df88" class="flex justify-between">
+      <a role="button" class="">SDK</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk%E5%85%BC%E5%AE%B9%E6%80%A7/" class="">AI SDK 向后兼容性*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk%E5%85%BC%E5%AE%B9%E6%80%A71/" class="">Sdk兼容性1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-23d5e8f3acd48e6550bd9456a223d6a2" class="toggle"  />
+    <label for="section-23d5e8f3acd48e6550bd9456a223d6a2" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E4%BC%98%E5%8C%96/" class="">Claude Platform 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent2/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent3/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E8%A7%A3%E8%AF%BB/" class="">脑和手的解耦</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E5%8E%9F%E6%96%87/" class="">原文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0883be528cd603181ff8e3bbd53972c2" class="toggle"  />
+    <label for="section-0883be528cd603181ff8e3bbd53972c2" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-37e21fe133c6d26fe04bffd0cb7741e3" class="toggle"  />
+    <label for="section-37e21fe133c6d26fe04bffd0cb7741e3" class="flex justify-between">
+      <a role="button" class="">Eval *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/LLL-as-judge---hermes/LLM-as-Judge/" class="">Llm as Judge</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/article/" class="">Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig1-judge-flow/" class="">Fig1 Judge Flow</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig2-paradigms/" class="">Fig2 Paradigms</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig3-bias-table/" class="">Fig3 Bias Table</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig4-cases-table/" class="">Fig4 Cases Table</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig5-ensemble-arch/" class="">Fig5 Ensemble Arch</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig6-human-calibration/" class="">Fig6 Human Calibration</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig8-specialized-judge/" class="">Fig8 Specialized Judge</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60cbe7eba0e55272c2f7e88142209eee" class="toggle"  />
+    <label for="section-60cbe7eba0e55272c2f7e88142209eee" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-34b90f1a802a08434ef79ad7e69c7bec" class="toggle"  />
+    <label for="section-34b90f1a802a08434ef79ad7e69c7bec" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d23f53c64147d40d7800ad362d50d826" class="toggle"  />
+    <label for="section-d23f53c64147d40d7800ad362d50d826" class="flex justify-between">
+      <a role="button" class="">Reflection</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-071bdfde77f8dcb0258746094eb4b7ab" class="toggle"  />
+    <label for="section-071bdfde77f8dcb0258746094eb4b7ab" class="flex justify-between">
+      <a role="button" class="">Planning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning1/agent-planning-principles-to-implementation/" class="">Agent Planning Principles to Implementation</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="toggle" checked />
+    <label for="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="toggle"  />
+    <label for="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fb50c7bc07294aad8ab163e5c05043d7" class="toggle"  />
+    <label for="section-fb50c7bc07294aad8ab163e5c05043d7" class="flex justify-between">
+      <a role="button" class="">Hermes</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes1/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes2/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes/" class="">Hermes Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="toggle"  />
+    <label for="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="flex justify-between">
+      <a role="button" class="">managed agents</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming1/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f0d84b83965f02340d4fc81e88ba04ab" class="toggle" checked />
+    <label for="section-f0d84b83965f02340d4fc81e88ba04ab" class="flex justify-between">
+      <a role="button" class="">Memory *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/hindsight/" class="">Hindsight</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/mem0-hermes/Mem0-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Mem0 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking-hermes/OpenViking-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Open Viking 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking-hermes1/" class="active">Openviking Hermes1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openViking-openclaw/openviking-architecture-full/" class="">Openviking Architecture Full</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--hermes/TencentDB-Agent-Memory-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Tencent Db Agent Memory 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--openclaw/tencentdb-agent-memory-full/" class="">Tencentdb Agent Memory Full</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-66d86d5f38d04ef58ebb26728c026d4e" class="toggle"  />
+    <label for="section-66d86d5f38d04ef58ebb26728c026d4e" class="flex justify-between">
+      <a role="button" class="">Openclaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="toggle"  />
+    <label for="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f9cf8c4489e32d49710bcbde19d88feb" class="toggle"  />
+    <label for="section-f9cf8c4489e32d49710bcbde19d88feb" class="flex justify-between">
+      <a role="button" class="">Multi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7eb50204504aa47e2bb008fa842d839e" class="toggle"  />
+    <label for="section-7eb50204504aa47e2bb008fa842d839e" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Kanban/" class="">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f36497092f145d804086d65929bc2e21" class="toggle"  />
+    <label for="section-f36497092f145d804086d65929bc2e21" class="flex justify-between">
+      <a role="button" class="">Multi-agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-68da3356eb5814cf26b079259a3868f0" class="toggle"  />
+    <label for="section-68da3356eb5814cf26b079259a3868f0" class="flex justify-between">
+      <a role="button" class="">OpenClaw *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/multiagent2/" class="">OpenClaw 多 Agent*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/mulitagent1/" class="">Mulitagent1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="toggle"  />
+    <label for="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="flex justify-between">
+      <a role="button" class="">subagent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/Claude-code/" class="">Claude Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/subagent/" class="">Subagent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-88a7a1de323948713dc3ef284015e786" class="toggle"  />
+    <label for="section-88a7a1de323948713dc3ef284015e786" class="flex justify-between">
+      <a role="button" class="">Teams *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-Teams/" class="">Claude Code Teams</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-TeamsA1/" class="">Claude Code Teams[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-32002b3a68174992b401de86ca7466b5" class="toggle"  />
+    <label for="section-32002b3a68174992b401de86ca7466b5" class="flex justify-between">
+      <a role="button" class="">Tool &amp; Skill</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="toggle"  />
+    <label for="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="flex justify-between">
+      <a role="button" class="">Survey &amp; SFT</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80682025fb6883cc3c0dd48368b5f7e2" class="toggle"  />
+    <label for="section-80682025fb6883cc3c0dd48368b5f7e2" class="flex justify-between">
+      <a role="button" class="">Tool 演进</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/%E6%BC%94%E8%BF%9B/fc&#43;mcp&#43;cli/" class="">Functioncall-&gt;MCP-&gt;cli &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-906763a3f2cf8396c71a61e320169919" class="toggle"  />
+    <label for="section-906763a3f2cf8396c71a61e320169919" class="flex justify-between">
+      <a role="button" class="">tools</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/Tools/claude-searchTool/" class="">Claude toolsearch</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-92f9fae5d8ab88847e6e20bd4d125306" class="toggle"  />
+    <label for="section-92f9fae5d8ab88847e6e20bd4d125306" class="flex justify-between">
+      <a role="button" class="">MCP *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-10c047fd3087cf2b29cccd85fa867912" class="toggle"  />
+    <label for="section-10c047fd3087cf2b29cccd85fa867912" class="flex justify-between">
+      <a role="button" class="">skill *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/skill/" class="">编写高质量Skill的六大失效模式</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/openclaw/" class="">Openclaw</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/openclaw1/" class="">Openclaw1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/skill-route-hermes/Skill%E8%B7%AF%E7%94%B1%E4%B8%8E%E5%91%BD%E4%B8%AD%E7%8E%87%E4%BC%98%E5%8C%96%E6%8C%87%E5%8D%97/" class="">Skill路由与命中率优化指南</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="toggle"  />
+    <label for="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ddbbfd6bd03afee2b253d083ecf55c49" class="toggle"  />
+    <label for="section-ddbbfd6bd03afee2b253d083ecf55c49" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a0f0941605053d7b5666363df4970351" class="toggle"  />
+    <label for="section-a0f0941605053d7b5666363df4970351" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/core/" class="">OpenClaw 核心特性 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/" class="">State</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/" class="">Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/" class="">Security</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%811/" class="">OpenClaw 生态1 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%812/" class="">OpenClaw 生态2 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7185e230a37938c1265b025f647037ad" class="toggle"  />
+    <label for="section-7185e230a37938c1265b025f647037ad" class="flex justify-between">
+      <a role="button" class="">Hermes Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/apiwebhook/" class="">Api&amp;webhook</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitctureA1/" class="">Arcitcture[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/interrupt/" class="">Interrupt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/" class="">Skill Envolve</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9d52e8079db1067f4a0c448c7b68b11b" class="toggle"  />
+    <label for="section-9d52e8079db1067f4a0c448c7b68b11b" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1A1/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/permission/" class="">Permission[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/source-code/" class="">claude code 源码 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bb4ccb54455a606ed07ce1fdab4ac532" class="toggle"  />
+    <label for="section-bb4ccb54455a606ed07ce1fdab4ac532" class="flex justify-between">
+      <a role="button" class="">Pi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent/" class="">Pi Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent1/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent2/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Tau-Agent/" class="">Tau Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27894a1d29427c9d52d1df6110020b8e" class="toggle"  />
+    <label for="section-27894a1d29427c9d52d1df6110020b8e" class="flex justify-between">
+      <a role="button" class="">实战</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1f82435e89939f7232e02729b008213e" class="toggle"  />
+    <label for="section-1f82435e89939f7232e02729b008213e" class="flex justify-between">
+      <a role="button" class="">Loops engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bf010a926485186e47c6ea2d2776a45f" class="toggle"  />
+    <label for="section-bf010a926485186e47c6ea2d2776a45f" class="flex justify-between">
+      <a role="button" class="">goal</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/" class="">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-013b791baed028e00c3cd685450d1255" class="toggle"  />
+    <label for="section-013b791baed028e00c3cd685450d1255" class="flex justify-between">
+      <a role="button" class="">loop engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loops/" class="">loops engineering[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loop-engineering1/" class="">Loop Engineering1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b284ec03b7c672cfde434851c4ea7377" class="toggle"  />
+    <label for="section-b284ec03b7c672cfde434851c4ea7377" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/" class="">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/openclaw/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-920c2fa3546aca5261a01784a53ddff3" class="toggle"  />
+    <label for="section-920c2fa3546aca5261a01784a53ddff3" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering1/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering2/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">context engineering[Manus]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-830acc72489fa334dcca74ce46c492d4" class="toggle"  />
+    <label for="section-830acc72489fa334dcca74ce46c492d4" class="flex justify-between">
+      <a role="button" class="">Compress *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/claude-code/" class="">Claude /compact[A1] *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/codex/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/claude-code2/" class="">Claude Code2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/compress/claude-code3/" class="">Claude Code3</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0563b2fd6005bd3ffd431bec1f81b423" class="toggle"  />
+    <label for="section-0563b2fd6005bd3ffd431bec1f81b423" class="flex justify-between">
+      <a role="button" class="">Plan mode</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/plan-mode/claude/" class="">Claude</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/plan-mode/claue1/" class="">Claue1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ceda1f30ce03531a336a1f1ebb026a63" class="toggle"  />
+    <label for="section-ceda1f30ce03531a336a1f1ebb026a63" class="flex justify-between">
+      <a role="button" class="">Prompting caching *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/prompt-caching/Prompting-caching/" class="">Claude Prompt Cache [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-097abb2131971a92a13c1e53f850eb30" class="toggle"  />
+    <label for="section-097abb2131971a92a13c1e53f850eb30" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-951bebaba4a0e7ffcc11ac548251e389" class="toggle"  />
+    <label for="section-951bebaba4a0e7ffcc11ac548251e389" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-def011b742c3bb564ed84bad958a8bb9" class="toggle"  />
+    <label for="section-def011b742c3bb564ed84bad958a8bb9" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b1c6c40bb101131e4fe5a95225175846" class="toggle"  />
+    <label for="section-b1c6c40bb101131e4fe5a95225175846" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a5f257b0a67dc566e55c98245e32a9a3" class="toggle"  />
+    <label for="section-a5f257b0a67dc566e55c98245e32a9a3" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc06fe507152e253f2b8fedc786f69f9" class="toggle"  />
+    <label for="section-bc06fe507152e253f2b8fedc786f69f9" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="toggle"  />
+    <label for="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ec440fd30b4fccc02d2866bf269d3c1c" class="toggle"  />
+    <label for="section-ec440fd30b4fccc02d2866bf269d3c1c" class="flex justify-between">
+      <a role="button" class="">AI Native</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeminimax/" class="">AI原生组织实践(MiniMax)</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Claude-tag/" class="">Claude tag</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Ai-nativeali/" class="">AI native与人机协作[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeclaude/" class="">Bottleneck Shift in AI-native Engineering[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c4d50087126f44db07d7a7f0faa67711" class="toggle"  />
+    <label for="section-c4d50087126f44db07d7a7f0faa67711" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-461a4404ae59395291876d9268139c73" class="toggle"  />
+    <label for="section-461a4404ae59395291876d9268139c73" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-3ce504245d1c08bb826d2f16a7a9180c" class="toggle"  />
+    <label for="section-3ce504245d1c08bb826d2f16a7a9180c" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Openviking Hermes1</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openviking-架构深度解析ai-agent-的上下文数据库">OpenViking 架构深度解析：AI Agent 的上下文数据库</a>
+      <ul>
+        <li><a href="#一引言从-rag-到-context-database-的范式跃迁">一、引言：从 RAG 到 Context Database 的范式跃迁</a></li>
+        <li><a href="#二核心理念文件系统范式filesystem-paradigm">二、核心理念：文件系统范式（Filesystem Paradigm）</a></li>
+        <li><a href="#三架构分层l0-l2-分级上下文加载">三、架构分层：L0-L2 分级上下文加载</a></li>
+        <li><a href="#四检索机制hierarchical-retriever">四、检索机制：Hierarchical Retriever</a></li>
+        <li><a href="#五记忆生命周期hotness-scoring">五、记忆生命周期：Hotness Scoring</a></li>
+        <li><a href="#六自我进化体验梯度优化experience-gradient-optimization">六、自我进化：体验梯度优化（Experience Gradient Optimization）</a></li>
+        <li><a href="#七核心组件概览">七、核心组件概览</a></li>
+        <li><a href="#八技术栈与依赖">八、技术栈与依赖</a></li>
+        <li><a href="#九总结与展望">九、总结与展望</a>
+          <ul>
+            <li><a href="#参考文献">参考文献</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="openviking-架构深度解析ai-agent-的上下文数据库">
+  OpenViking 架构深度解析：AI Agent 的上下文数据库
+  <a class="anchor" href="#openviking-%e6%9e%b6%e6%9e%84%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90ai-agent-%e7%9a%84%e4%b8%8a%e4%b8%8b%e6%96%87%e6%95%b0%e6%8d%ae%e5%ba%93">#</a>
+</h1>
+<blockquote>
+<p>&ldquo;Data is abundant, but high-quality context is hard to come by. We aim to define a minimalist context interaction paradigm for Agents.&rdquo;</p>
+<p>—— OpenViking Official Vision</p>
+</blockquote>
+<hr>
+<h2 id="一引言从-rag-到-context-database-的范式跃迁">
+  一、引言：从 RAG 到 Context Database 的范式跃迁
+  <a class="anchor" href="#%e4%b8%80%e5%bc%95%e8%a8%80%e4%bb%8e-rag-%e5%88%b0-context-database-%e7%9a%84%e8%8c%83%e5%bc%8f%e8%b7%83%e8%bf%81">#</a>
+</h2>
+<p>在 AI Agent 开发中，上下文（Context）管理一直是一个碎片化且充满痛点的问题：记忆散落在代码里，RAG 资源躺在向量数据库中，Skills 又是单独的配置文件。<strong>OpenViking</strong>（volcengine/OpenViking, 26,431⭐）由字节跳动火山引擎开源，试图通过一个<strong>统一文件系统范式</strong>（Unified Filesystem Paradigm）来解决这一难题。</p>
+<p>它不仅仅是一个存储层，更是一个**&ldquo;自我进化&rdquo;（Self-evolving）的上下文数据库**。它引入了分层加载、记忆热度管理，甚至包含了一套基于&quot;体验梯度&quot;（Experience Gradient）的自动化策略优化框架。</p>
+<p>本文将深入源码层面，拆解 OpenViking 的核心架构与设计哲学。</p>
+<hr>
+<h2 id="二核心理念文件系统范式filesystem-paradigm">
+  二、核心理念：文件系统范式（Filesystem Paradigm）
+  <a class="anchor" href="#%e4%ba%8c%e6%a0%b8%e5%bf%83%e7%90%86%e5%bf%b5%e6%96%87%e4%bb%b6%e7%b3%bb%e7%bb%9f%e8%8c%83%e5%bc%8ffilesystem-paradigm">#</a>
+</h2>
+<p>OpenViking 最核心的创新在于它<strong>抛弃了传统向量数据库的扁平存储模型</strong>，转而采用类似操作系统的文件结构来组织 Agent 的上下文：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>viking://
+</span></span><span style="display:flex;"><span>├── memory/              # Agent 记忆
+</span></span><span style="display:flex;"><span>│   ├── profile.md       # 用户偏好
+</span></span><span style="display:flex;"><span>│   └── events.md        # 历史事件
+</span></span><span style="display:flex;"><span>├── knowledge/           # RAG 知识库
+</span></span><span style="display:flex;"><span>│   ├── docs/            # 文档
+</span></span><span style="display:flex;"><span>│   └── code/            # 代码片段
+</span></span><span style="display:flex;"><span>└── skills/              # Agent 技能
+</span></span><span style="display:flex;"><span>    ├── web_search/      # 搜索技能定义
+</span></span><span style="display:flex;"><span>    └── code_gen/        # 代码生成技能
+</span></span></code></pre></div><p>这种设计带来了三个直接好处：</p>
+<ol>
+<li><strong>统一视图</strong>：Agent 不再需要分别调用 Memory API、Vector DB API 和 Skill Registry，所有资源通过统一的 <code>viking://</code> URI 访问。</li>
+<li><strong>结构化组织</strong>：利用目录层级（Namespace）实现资源的逻辑隔离和权限控制（如 <code>personal/</code> vs <code>shared/</code>）。</li>
+<li><strong>可观测性</strong>：相比传统 RAG 的&quot;黑盒&quot;向量检索，文件系统的结构让开发者能直观看到 Agent 到底加载了什么上下文。</li>
+</ol>
+<hr>
+<h2 id="三架构分层l0-l2-分级上下文加载">
+  三、架构分层：L0-L2 分级上下文加载
+  <a class="anchor" href="#%e4%b8%89%e6%9e%b6%e6%9e%84%e5%88%86%e5%b1%82l0-l2-%e5%88%86%e7%ba%a7%e4%b8%8a%e4%b8%8b%e6%96%87%e5%8a%a0%e8%bd%bd">#</a>
+</h2>
+<p>为了应对 Agent 长任务带来的上下文爆炸（Context Explosion）问题，OpenViking 实现了<strong>分级上下文加载机制（Tiered Context Loading）</strong>，通过抽象（Abstract）来按需获取信息：</p>
+<table>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>对应文件</th>
+          <th>内容</th>
+          <th>用途</th>
+          <th>Token 消耗</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>L0</strong></td>
+          <td><code>.abstract.md</code></td>
+          <td>极简摘要（一两句话）</td>
+          <td>全局上下文感知，判断是否需要深入</td>
+          <td>极低</td>
+      </tr>
+      <tr>
+          <td><strong>L1</strong></td>
+          <td><code>.overview.md</code></td>
+          <td>详细大纲/索引</td>
+          <td>快速定位具体细节所在的子目录</td>
+          <td>低</td>
+      </tr>
+      <tr>
+          <td><strong>L2</strong></td>
+          <td><code>*.md</code> (Content)</td>
+          <td>完整详细内容</td>
+          <td>实际执行任务时按需加载</td>
+          <td>高</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>工作原理</strong>：</p>
+<ul>
+<li>当 Agent 需要全局感知时，只加载 L0 文件。</li>
+<li>当 Agent 决定深入某个目录时，加载 L1 文件查看索引。</li>
+<li>只有当 Agent 真正需要某段知识的具体内容时，才加载 L2 文件。</li>
+</ul>
+<p>这种&quot;按需加载&quot;的策略极大地降低了长运行 Agent 的 Token 消耗，避免了上下文窗口被无用信息撑爆。</p>
+<hr>
+<h2 id="四检索机制hierarchical-retriever">
+  四、检索机制：Hierarchical Retriever
+  <a class="anchor" href="#%e5%9b%9b%e6%a3%80%e7%b4%a2%e6%9c%ba%e5%88%b6hierarchical-retriever">#</a>
+</h2>
+<p>OpenViking 的检索器（<code>HierarchicalRetriever</code>）不仅仅是简单的向量相似度搜索，它还结合了<strong>层次化搜索</strong>和**重排（Rerank）**机制：</p>
+<ol>
+<li><strong>向量化索引</strong>：使用 Embedding 模型将文件内容向量化，支持稠密（Dense）和稀疏（Sparse）向量。</li>
+<li><strong>目录感知检索</strong>：检索不仅仅是基于文本相似度，还考虑文件在文件系统中的层级关系。如果一个目录下的高匹配内容较多，该目录本身也会获得较高的得分。</li>
+<li><strong>混合检索与重排</strong>：支持结合关键词（BM25）和语义（Vector）的混合检索，并接入 Rerank 模型对结果进行精细排序。</li>
+</ol>
+<hr>
+<h2 id="五记忆生命周期hotness-scoring">
+  五、记忆生命周期：Hotness Scoring
+  <a class="anchor" href="#%e4%ba%94%e8%ae%b0%e5%bf%86%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9fhotness-scoring">#</a>
+</h2>
+<p>记忆不是静态的，它的价值会随着时间和使用频率变化。OpenViking 通过 <strong>Hotness Score（热度分数）</strong> 来动态管理记忆的冷热：</p>
+<p>$$ \text{Score} = \text{sigmoid}(\log(1 + \text{active_count})) \times e^{-\lambda \cdot \text{age}} $$</p>
+<ul>
+<li><strong>Frequency (频率)</strong>：被检索次数越多，分数越高（对数增长防止头部效应）。</li>
+<li><strong>Recency (时效性)</strong>：随时间指数衰减（默认半衰期为 7 天）。</li>
+</ul>
+<p>这个 0.0-1.0 的分数会与语义相似度结合，确保 Agent 优先召回那些&quot;既重要又新鲜&quot;的上下文。</p>
+<hr>
+<h2 id="六自我进化体验梯度优化experience-gradient-optimization">
+  六、自我进化：体验梯度优化（Experience Gradient Optimization）
+  <a class="anchor" href="#%e5%85%ad%e8%87%aa%e6%88%91%e8%bf%9b%e5%8c%96%e4%bd%93%e9%aa%8c%e6%a2%af%e5%ba%a6%e4%bc%98%e5%8c%96experience-gradient-optimization">#</a>
+</h2>
+<p>这是 OpenViking 最具野心的部分。在 <code>openviking/session/train/</code> 模块中，实现了一套类似于强化学习的自动化策略优化框架：</p>
+<ol>
+<li><strong>Trajectory Analyzer (轨迹分析)</strong>：记录 Agent 的完整执行轨迹（Rollout）。</li>
+<li><strong>Rubric Evaluation (标准评估)</strong>：根据预设的评估标准（Rubric）判断 Agent 的表现。</li>
+<li><strong>Experience Gradient (体验梯度)</strong>：基于评估结果，计算记忆/策略更新的&quot;梯度&quot;方向。</li>
+<li><strong>Policy Optimizer (策略优化器)</strong>：自动调整记忆文件的写入策略或 Skill 的定义，以优化未来的表现。</li>
+</ol>
+<p><strong>这意味着 OpenViking 不仅仅是被动存储记忆，它还能主动从 Agent 的交互历史中&quot;学习&quot;，通过不断的 Rollout 和反馈来微调自己的上下文管理策略。</strong></p>
+<hr>
+<h2 id="七核心组件概览">
+  七、核心组件概览
+  <a class="anchor" href="#%e4%b8%83%e6%a0%b8%e5%bf%83%e7%bb%84%e4%bb%b6%e6%a6%82%e8%a7%88">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>模块</th>
+          <th>关键类/文件</th>
+          <th>职责</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Storage</strong></td>
+          <td><code>VikingDBManager</code>, <code>VikingFS</code></td>
+          <td>底层存储抽象，支持向量同步和本地/云端文件操作</td>
+      </tr>
+      <tr>
+          <td><strong>Retrieve</strong></td>
+          <td><code>HierarchicalRetriever</code>, <code>IntentAnalyzer</code></td>
+          <td>分层检索与意图分析</td>
+      </tr>
+      <tr>
+          <td><strong>Session</strong></td>
+          <td><code>CompressorV3</code>, <code>StreamingMemoryUpdater</code></td>
+          <td>会话管理与记忆流式写入</td>
+      </tr>
+      <tr>
+          <td><strong>Train</strong></td>
+          <td><code>ExperienceGradientEstimator</code>, <code>PolicyTrainer</code></td>
+          <td>体验梯度估计与策略训练</td>
+      </tr>
+      <tr>
+          <td><strong>Ingest</strong></td>
+          <td><code>Orchestrator</code>, <code>Poller</code></td>
+          <td>外部数据源（Git, RSS, Local FS）的摄入管道</td>
+      </tr>
+      <tr>
+          <td><strong>Parse</strong></td>
+          <td><code>VLM</code>, <code>ParserRouter</code></td>
+          <td>多模态解析（使用 VLM 理解图片和代码）</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="八技术栈与依赖">
+  八、技术栈与依赖
+  <a class="anchor" href="#%e5%85%ab%e6%8a%80%e6%9c%af%e6%a0%88%e4%b8%8e%e4%be%9d%e8%b5%96">#</a>
+</h2>
+<ul>
+<li><strong>语言</strong>：Python 3.10+ (核心逻辑), Rust (CLI)</li>
+<li><strong>向量检索</strong>：VikingDB (火山引擎), 支持 FAISS/Milvus 等适配</li>
+<li><strong>大模型支持</strong>：兼容 OpenAI, Volcengine (Doubao), Kimi, GLM, Codex 等</li>
+<li><strong>基础设施</strong>：FastAPI, Uvicorn, APScheduler (定时任务), Tree-sitter (代码解析)</li>
+</ul>
+<hr>
+<h2 id="九总结与展望">
+  九、总结与展望
+  <a class="anchor" href="#%e4%b9%9d%e6%80%bb%e7%bb%93%e4%b8%8e%e5%b1%95%e6%9c%9b">#</a>
+</h2>
+<p><strong>OpenViking 的设计哲学可以总结为：</strong></p>
+<blockquote>
+<p><strong>&ldquo;将上下文管理从黑盒向量库，转变为可观测、分层级、可自我进化的文件系统。&rdquo;</strong></p>
+</blockquote>
+<p><strong>架构启示：</strong></p>
+<ol>
+<li><strong>对 Agent 开发者的意义</strong>：如果你正在构建需要长期记忆、复杂技能管理的 Agent，OpenViking 提供了一个开箱即用的&quot;大脑&quot;基础设施。</li>
+<li><strong>对传统 RAG 的挑战</strong>：通过引入 L0/L1 抽象层和结构化视图，它证明了纯向量检索在处理复杂上下文时的局限性。</li>
+<li><strong>自我进化的潜力</strong>：体验梯度框架虽然目前可能还在实验阶段，但它指明了 Agent Memory 的未来方向——从被动存储走向主动学习。</li>
+</ol>
+<hr>
+<h3 id="参考文献">
+  参考文献
+  <a class="anchor" href="#%e5%8f%82%e8%80%83%e6%96%87%e7%8c%ae">#</a>
+</h3>
+<p>[1] OpenViking GitHub Repository, <code>volcengine/OpenViking</code>, <a href="https://github.com/volcengine/OpenViking">https://github.com/volcengine/OpenViking</a>
+[2] OpenViking Official Website, <a href="https://www.openviking.ai/">https://www.openviking.ai/</a>
+[3] Hierarchical Retriever Source Code, <code>openviking/retrieve/hierarchical_retriever.py</code>
+[4] Memory Lifecycle &amp; Hotness Scoring, <code>openviking/retrieve/memory_lifecycle.py</code>
+[5] Session Compressor V3, <code>openviking/session/compressor_v3.py</code>
+[6] Experience Gradient Training Framework, <code>openviking/session/train/__init__.py</code></p>
+<hr>
+<p><em>本文基于 OpenViking 开源仓库（volcengine/OpenViking）的最新 main 分支源码分析撰写。</em></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openviking-架构深度解析ai-agent-的上下文数据库">OpenViking 架构深度解析：AI Agent 的上下文数据库</a>
+      <ul>
+        <li><a href="#一引言从-rag-到-context-database-的范式跃迁">一、引言：从 RAG 到 Context Database 的范式跃迁</a></li>
+        <li><a href="#二核心理念文件系统范式filesystem-paradigm">二、核心理念：文件系统范式（Filesystem Paradigm）</a></li>
+        <li><a href="#三架构分层l0-l2-分级上下文加载">三、架构分层：L0-L2 分级上下文加载</a></li>
+        <li><a href="#四检索机制hierarchical-retriever">四、检索机制：Hierarchical Retriever</a></li>
+        <li><a href="#五记忆生命周期hotness-scoring">五、记忆生命周期：Hotness Scoring</a></li>
+        <li><a href="#六自我进化体验梯度优化experience-gradient-optimization">六、自我进化：体验梯度优化（Experience Gradient Optimization）</a></li>
+        <li><a href="#七核心组件概览">七、核心组件概览</a></li>
+        <li><a href="#八技术栈与依赖">八、技术栈与依赖</a></li>
+        <li><a href="#九总结与展望">九、总结与展望</a>
+          <ul>
+            <li><a href="#参考文献">参考文献</a></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+

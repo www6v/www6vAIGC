@@ -3,22 +3,63 @@
 <head>
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="">
+<meta name="description" content="
+  TencentDB Agent Memory 源码深度解析：让 Agent 团队共享经验、不共享隐私
+  #
+
+
+&ldquo;别重构旧鉴权模块，移动端还在用。&rdquo; —— 这种代价很高的上下文，不应该靠人每次提醒。
+Agent 的经验、文档、代码，都应该沉淀成可复用的资产，让下一位 Agent 直接读档。
+
+
+
+  一、引言：Agent 团队的&quot;记忆鸿沟&quot;
+  #
+
+
+&ldquo;Any sufficiently advanced agent is indistinguishable from a forgetful intern.&rdquo;
+每个新加入团队的 Agent，都像是一个失忆的新员工——没有记忆、没有经验、从零开始。
+
+
+  1.1 真实场景：每次都是&quot;重新认识&quot;
+  #
+
+想象这样一个场景：你的团队有三个 Coding Agent——一个负责核心模块开发，一个做代码审查，一个修 Bug。
+周一：Agent-A 跑通了鉴权模块的迁移方案，花了 3 小时摸索。
+周二：Agent-B 审查代码时，完全不知道 Agent-A 踩过的坑，又问了一遍同样的问题。
+周三：Agent-C 修 Bug 时，不小心把 Agent-A 迁移过的模块又改回了旧方案。
+这不是假设，而是 几乎所有 Agent 开发团队的日常。根本问题只有一个：
+
+Agent 换 Session 就失忆。
+
+
+  1.2 为什么 RAG 不够？
+  #
+
+很多团队的第一反应是：&ldquo;上 RAG 不就行了？把文档、代码、聊天记录都向量化，让 Agent 检索。&rdquo;">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
-<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/tags/prompt/">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--hermes/TencentDB-Agent-Memory-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/">
   <meta property="og:site_name" content="Modern Agent">
-  <meta property="og:title" content="Prompt">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="TencentDB Agent Memory 源码深度解析：让 Agent 团队共享经验、不共享隐私 # “别重构旧鉴权模块，移动端还在用。” —— 这种代价很高的上下文，不应该靠人每次提醒。
+Agent 的经验、文档、代码，都应该沉淀成可复用的资产，让下一位 Agent 直接读档。
+一、引言：Agent 团队的&#34;记忆鸿沟&#34; # “Any sufficiently advanced agent is indistinguishable from a forgetful intern.”
+每个新加入团队的 Agent，都像是一个失忆的新员工——没有记忆、没有经验、从零开始。
+1.1 真实场景：每次都是&#34;重新认识&#34; # 想象这样一个场景：你的团队有三个 Coding Agent——一个负责核心模块开发，一个做代码审查，一个修 Bug。
+周一：Agent-A 跑通了鉴权模块的迁移方案，花了 3 小时摸索。 周二：Agent-B 审查代码时，完全不知道 Agent-A 踩过的坑，又问了一遍同样的问题。 周三：Agent-C 修 Bug 时，不小心把 Agent-A 迁移过的模块又改回了旧方案。 这不是假设，而是 几乎所有 Agent 开发团队的日常。根本问题只有一个：
+Agent 换 Session 就失忆。
+1.2 为什么 RAG 不够？ # 很多团队的第一反应是：“上 RAG 不就行了？把文档、代码、聊天记录都向量化，让 Agent 检索。”">
   <meta property="og:locale" content="en">
-  <meta property="og:type" content="website">
-<title>Prompt | Modern Agent</title>
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="docs">
+<title>Tencent Db Agent Memory 源码深度解析 | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
-<link rel="canonical" href="https://www6v.github.io/www6vAIGC/tags/prompt/">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--hermes/TencentDB-Agent-Memory-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/">
 <link rel="stylesheet" href="/www6vAIGC/book.min.3257a7ce7c061eb5dfc72257c356229b1470dc77ce9b982ac220c02542f9f04f.css" integrity="sha256-MlenznwGHrXfxyJXw1YimxRw3HfOm5gqwiDAJUL58E8=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.e39ff8857409c5c1e72139f3211004d75508369348d9bf85ffa5e2f0c7cbca8e.js" integrity="sha256-45/4hXQJxcHnITnzIRAE11UINpNI2b&#43;F/6Xi8MfLyo4=" crossorigin="anonymous"></script>
-<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/tags/prompt/index.xml" title="Modern Agent" />
+  <script defer src="/www6vAIGC/en.search.min.991cf8c58dc2955fbe1ed5362c25ecbf741ca6a7f45973cae9bd186590d62e9d.js" integrity="sha256-mRz4xY3ClV&#43;&#43;HtU2LCXsv3Qcpqf0WXPK6b0YZZDWLp0=" crossorigin="anonymous"></script>
 <!--
 Made with Book Theme
 https://github.com/alex-shpak/hugo-book
@@ -1308,7 +1349,111 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Agent/Eval/LLL-as-judge/LLM-as-Judge/" class="">Llm as Judge</a>
+    <a href="/www6vAIGC/docs/Agent/Eval/LLL-as-judge---hermes/LLM-as-Judge/" class="">Llm as Judge</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/article/" class="">Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig1-judge-flow/" class="">Fig1 Judge Flow</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig2-paradigms/" class="">Fig2 Paradigms</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig3-bias-table/" class="">Fig3 Bias Table</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig4-cases-table/" class="">Fig4 Cases Table</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig5-ensemble-arch/" class="">Fig5 Ensemble Arch</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig6-human-calibration/" class="">Fig6 Human Calibration</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Eval/llm-as-judge---openclaw/figures/fig8-specialized-judge/" class="">Fig8 Specialized Judge</a>
   
 
         </li>
@@ -1608,7 +1753,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="toggle"  />
+    <input type="checkbox" id="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="toggle" checked />
     <label for="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
@@ -1821,7 +1966,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f0d84b83965f02340d4fc81e88ba04ab" class="toggle"  />
+    <input type="checkbox" id="section-f0d84b83965f02340d4fc81e88ba04ab" class="toggle" checked />
     <label for="section-f0d84b83965f02340d4fc81e88ba04ab" class="flex justify-between">
       <a role="button" class="">Memory *</a>
     </label>
@@ -1881,7 +2026,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking/" class="">Openviking</a>
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking-hermes1/" class="">Openviking Hermes1</a>
   
 
           
@@ -1899,7 +2044,33 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory-hermes/TencentDB-Agent-Memory-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Tencent Db Agent Memory 源码深度解析</a>
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openViking-openclaw/openviking-architecture-full/" class="">Openviking Architecture Full</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--hermes/TencentDB-Agent-Memory-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="active">Tencent Db Agent Memory 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--openclaw/tencentdb-agent-memory-full/" class="">Tencentdb Agent Memory Full</a>
   
 
         </li>
@@ -5231,7 +5402,7 @@ https://github.com/alex-shpak/hugo-book
     <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
   </label>
 
-  <h3>Prompt</h3>
+  <h3>Tencent Db Agent Memory 源码深度解析</h3>
 
   <label for="toc-control">
     
@@ -5245,7 +5416,84 @@ https://github.com/alex-shpak/hugo-book
   <aside class="hidden clearfix">
     
   
-<nav id="TableOfContents"></nav>
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#tencentdb-agent-memory-源码深度解析让-agent-团队共享经验不共享隐私">TencentDB Agent Memory 源码深度解析：让 Agent 团队共享经验、不共享隐私</a>
+      <ul>
+        <li><a href="#一引言agent-团队的记忆鸿沟">一、引言：Agent 团队的&quot;记忆鸿沟&quot;</a>
+          <ul>
+            <li><a href="#11-真实场景每次都是重新认识">1.1 真实场景：每次都是&quot;重新认识&quot;</a></li>
+            <li><a href="#12-为什么-rag-不够">1.2 为什么 RAG 不够？</a></li>
+            <li><a href="#13-项目概况">1.3 项目概况</a></li>
+            <li><a href="#14-源码研读路径">1.4 源码研读路径</a></li>
+          </ul>
+        </li>
+        <li><a href="#二总体架构四层记忆资产--三组件部署">二、总体架构：四层记忆资产 + 三组件部署</a>
+          <ul>
+            <li><a href="#21-架构总览">2.1 架构总览</a></li>
+            <li><a href="#22-四种记忆资产对比">2.2 四种记忆资产对比</a></li>
+            <li><a href="#23-三层解耦设计">2.3 三层解耦设计</a></li>
+          </ul>
+        </li>
+        <li><a href="#三memorycore-深度解析记忆不是平铺记录而是逐层生长">三、MemoryCore 深度解析：记忆不是平铺记录，而是逐层生长</a>
+          <ul>
+            <li><a href="#31-tdaicore宿主中立的核心-facade">3.1 TdaiCore：宿主中立的核心 Facade</a></li>
+            <li><a href="#32-l0l1l2l3-分层记忆管道">3.2 L0→L1→L2→L3 分层记忆管道</a></li>
+            <li><a href="#33-记忆存储抽象imemorystore-接口">3.3 记忆存储抽象：IMemoryStore 接口</a></li>
+            <li><a href="#34-skill-模块从练过一次到全队可用">3.4 Skill 模块：从&quot;练过一次&quot;到&quot;全队可用&quot;</a></li>
+          </ul>
+        </li>
+        <li><a href="#四memoryproxy-深度解析给-agent-挂上记忆的通道">四、MemoryProxy 深度解析：给 Agent 挂上记忆的通道</a>
+          <ul>
+            <li><a href="#41-请求处理总流程">4.1 请求处理总流程</a></li>
+            <li><a href="#42-双协议支持">4.2 双协议支持</a></li>
+            <li><a href="#43-上下文注入管道injection-pipeline">4.3 上下文注入管道（Injection Pipeline）</a></li>
+            <li><a href="#44-记忆桥接memory-bridge--skill-bridge">4.4 记忆桥接（Memory Bridge + Skill Bridge）</a></li>
+            <li><a href="#45-可观测性与成本控制">4.5 可观测性与成本控制</a></li>
+          </ul>
+        </li>
+        <li><a href="#五memoryknowledge-深度解析知识不整库注入而是按需调用">五、MemoryKnowledge 深度解析：知识不整库注入，而是按需调用</a>
+          <ul>
+            <li><a href="#51-wiki-引擎karpathy-的-llm-知识库思想的工程实现">5.1 Wiki 引擎：Karpathy 的 LLM 知识库思想的工程实现</a></li>
+            <li><a href="#52-codegraph-引擎不只是代码在这而是改了影响哪">5.2 CodeGraph 引擎：不只是&quot;代码在这&quot;，而是&quot;改了影响哪&quot;</a></li>
+          </ul>
+        </li>
+        <li><a href="#六memorypanel-管控面板面向团队的操作台">六、MemoryPanel 管控面板：面向团队的操作台</a>
+          <ul>
+            <li><a href="#61-资产管理体系">6.1 资产管理体系</a></li>
+            <li><a href="#62-冷启动先读档再开工">6.2 冷启动：先读档，再开工</a></li>
+          </ul>
+        </li>
+        <li><a href="#七配置与部署实战">七、配置与部署实战</a>
+          <ul>
+            <li><a href="#71-一键部署三件套-docker-compose">7.1 一键部署：三件套 Docker Compose</a></li>
+            <li><a href="#72-memoryproxy-配置深度解析">7.2 MemoryProxy 配置深度解析</a></li>
+            <li><a href="#73-零配置启动-vs-生产调优">7.3 零配置启动 vs 生产调优</a></li>
+          </ul>
+        </li>
+        <li><a href="#八与其他方案的对比分析">八、与其他方案的对比分析</a></li>
+        <li><a href="#九源码中的关键设计模式总结">九、源码中的关键设计模式总结</a>
+          <ul>
+            <li><a href="#1-host-adapter-模式">1. Host Adapter 模式</a></li>
+            <li><a href="#2-分层记忆管道">2. 分层记忆管道</a></li>
+            <li><a href="#3-能力降级">3. 能力降级</a></li>
+            <li><a href="#4-隔离维度">4. 隔离维度</a></li>
+            <li><a href="#5-桥接模式">5. 桥接模式</a></li>
+            <li><a href="#6-请求分类">6. 请求分类</a></li>
+          </ul>
+        </li>
+        <li><a href="#总结">总结</a>
+          <ul>
+            <li><a href="#架构亮点回顾">架构亮点回顾</a></li>
+            <li><a href="#最佳实践清单">最佳实践清单</a></li>
+            <li><a href="#未来展望">未来展望</a></li>
+          </ul>
+        </li>
+        <li><a href="#参考文章">参考文章</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
 
 
 
@@ -5256,7 +5504,1096 @@ https://github.com/alex-shpak/hugo-book
 
       
       
-  <article class="markdown book-article"></article>
+  <article class="markdown book-article"><h1 id="tencentdb-agent-memory-源码深度解析让-agent-团队共享经验不共享隐私">
+  TencentDB Agent Memory 源码深度解析：让 Agent 团队共享经验、不共享隐私
+  <a class="anchor" href="#tencentdb-agent-memory-%e6%ba%90%e7%a0%81%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90%e8%ae%a9-agent-%e5%9b%a2%e9%98%9f%e5%85%b1%e4%ba%ab%e7%bb%8f%e9%aa%8c%e4%b8%8d%e5%85%b1%e4%ba%ab%e9%9a%90%e7%a7%81">#</a>
+</h1>
+<blockquote>
+<p>&ldquo;别重构旧鉴权模块，移动端还在用。&rdquo; —— 这种代价很高的上下文，不应该靠人每次提醒。</p>
+<p>Agent 的经验、文档、代码，都应该沉淀成可复用的资产，让下一位 Agent 直接读档。</p>
+</blockquote>
+<hr>
+<h2 id="一引言agent-团队的记忆鸿沟">
+  一、引言：Agent 团队的&quot;记忆鸿沟&quot;
+  <a class="anchor" href="#%e4%b8%80%e5%bc%95%e8%a8%80agent-%e5%9b%a2%e9%98%9f%e7%9a%84%e8%ae%b0%e5%bf%86%e9%b8%bf%e6%b2%9f">#</a>
+</h2>
+<blockquote>
+<p><em>&ldquo;Any sufficiently advanced agent is indistinguishable from a forgetful intern.&rdquo;</em></p>
+<p>每个新加入团队的 Agent，都像是一个失忆的新员工——没有记忆、没有经验、从零开始。</p>
+</blockquote>
+<h3 id="11-真实场景每次都是重新认识">
+  1.1 真实场景：每次都是&quot;重新认识&quot;
+  <a class="anchor" href="#11-%e7%9c%9f%e5%ae%9e%e5%9c%ba%e6%99%af%e6%af%8f%e6%ac%a1%e9%83%bd%e6%98%af%e9%87%8d%e6%96%b0%e8%ae%a4%e8%af%86">#</a>
+</h3>
+<p>想象这样一个场景：你的团队有三个 Coding Agent——一个负责核心模块开发，一个做代码审查，一个修 Bug。</p>
+<pre tabindex="0"><code>周一：Agent-A 跑通了鉴权模块的迁移方案，花了 3 小时摸索。
+周二：Agent-B 审查代码时，完全不知道 Agent-A 踩过的坑，又问了一遍同样的问题。
+周三：Agent-C 修 Bug 时，不小心把 Agent-A 迁移过的模块又改回了旧方案。
+</code></pre><p>这不是假设，而是 <strong>几乎所有 Agent 开发团队的日常</strong>。根本问题只有一个：</p>
+<blockquote>
+<p><strong>Agent 换 Session 就失忆。</strong></p>
+</blockquote>
+<h3 id="12-为什么-rag-不够">
+  1.2 为什么 RAG 不够？
+  <a class="anchor" href="#12-%e4%b8%ba%e4%bb%80%e4%b9%88-rag-%e4%b8%8d%e5%a4%9f">#</a>
+</h3>
+<p>很多团队的第一反应是：&ldquo;上 RAG 不就行了？把文档、代码、聊天记录都向量化，让 Agent 检索。&rdquo;</p>
+<p>但 RAG 解决的是 <strong>&ldquo;能查到什么&rdquo;</strong>，而不是：</p>
+<ul>
+<li>❌ &ldquo;谁可以用这份知识？&rdquo;</li>
+<li>❌ &ldquo;哪个版本是当前正确的？&rdquo;</li>
+<li>❌ &ldquo;这份经验应该给哪个 Agent？&rdquo;</li>
+<li>❌ &ldquo;这段对话里哪些是事实、哪些是闲聊？&rdquo;</li>
+</ul>
+<p>RAG 是&quot;图书馆&quot;——书在那里，但你需要自己找、自己判断、自己组装。</p>
+<p><strong>TencentDB Agent Memory 做的是&quot;操作系统&quot;</strong>——它管理记忆的生命周期、权限、版本、注入时机，让 Agent <strong>不用查就知道该知道的事</strong>。</p>
+<h3 id="13-项目概况">
+  1.3 项目概况
+  <a class="anchor" href="#13-%e9%a1%b9%e7%9b%ae%e6%a6%82%e5%86%b5">#</a>
+</h3>
+<p><a href="https://github.com/TencentCloud/TencentDB-Agent-Memory">TencentDB Agent Memory</a> 是一个开源的 Agent 记忆管理系统：</p>
+<table>
+  <thead>
+      <tr>
+          <th>指标</th>
+          <th>值</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Stars</strong></td>
+          <td>19,000+</td>
+      </tr>
+      <tr>
+          <td><strong>协议</strong></td>
+          <td>MIT</td>
+      </tr>
+      <tr>
+          <td><strong>语言</strong></td>
+          <td>TypeScript</td>
+      </tr>
+      <tr>
+          <td><strong>核心资产</strong></td>
+          <td>Chat Memory / Skill / Wiki / CodeGraph</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="14-源码研读路径">
+  1.4 源码研读路径
+  <a class="anchor" href="#14-%e6%ba%90%e7%a0%81%e7%a0%94%e8%af%bb%e8%b7%af%e5%be%84">#</a>
+</h3>
+<p>本文将从四个组件深入源码：</p>
+<pre tabindex="0"><code>┌──────────────┐    ┌──────────────┐    ┌──────────────────────┐
+│ MemoryCore   │◄──►│ MemoryProxy  │◄──►│ MemoryKnowledge      │
+│ 记忆引擎      │    │ Agent 通道   │    │ Wiki + CodeGraph     │
+└──────────────┘    └──────────────┘    └──────────────────────┘
+                           ▲
+                           │
+                    ┌──────────────┐
+                    │ MemoryPanel  │
+                    │ 管控面板      │
+                    └──────────────┘
+</code></pre><hr>
+<h2 id="二总体架构四层记忆资产--三组件部署">
+  二、总体架构：四层记忆资产 + 三组件部署
+  <a class="anchor" href="#%e4%ba%8c%e6%80%bb%e4%bd%93%e6%9e%b6%e6%9e%84%e5%9b%9b%e5%b1%82%e8%ae%b0%e5%bf%86%e8%b5%84%e4%ba%a7--%e4%b8%89%e7%bb%84%e4%bb%b6%e9%83%a8%e7%bd%b2">#</a>
+</h2>
+<h3 id="21-架构总览">
+  2.1 架构总览
+  <a class="anchor" href="#21-%e6%9e%b6%e6%9e%84%e6%80%bb%e8%a7%88">#</a>
+</h3>
+<p>TencentDB Agent Memory 的架构可以用一张图来概括：</p>
+
+
+<script src="/www6vAIGC/mermaid.min.js"></script>
+
+  <script>mermaid.initialize({
+  "flowchart": {
+    "useMaxWidth":true
+  },
+  "theme": "default"
+}
+)</script>
+
+
+
+<pre class="mermaid">flowchart TB
+    subgraph AgentLayer[&#34;Coding Agent 层&#34;]
+        A1[Claude Code]
+        A2[CodeBuddy]
+        A3[Cursor / Codex]
+    end
+
+    subgraph ProxyLayer[&#34;MemoryProxy 代理层&#34;]
+        P1[鉴权 &amp; 路由]
+        P2[上下文注入管道]
+        P3[记忆桥接反代]
+    end
+
+    subgraph CoreLayer[&#34;MemoryCore 引擎层&#34;]
+        C1[L0→L1→L2→L3 管道]
+        C2[Skill 提取 &amp; 检索]
+        C3[IMemoryStore 存储]
+    end
+
+    subgraph KnowledgeLayer[&#34;Knowledge 知识层&#34;]
+        K1[Wiki 引擎]
+        K2[CodeGraph 引擎]
+    end
+
+    subgraph PanelLayer[&#34;Panel 管控层&#34;]
+        Panel[Web 操作台]
+    end
+
+    A1 &amp; A2 &amp; A3 --&gt; P1
+    P1 --&gt; P2
+    P2 --&gt; P3
+    P2 &lt;--&gt; C1
+    P2 &lt;--&gt; K1
+    P2 &lt;--&gt; K2
+    C1 &lt;--&gt; C2
+    C2 &lt;--&gt; C3
+    Panel &lt;--&gt; C3
+    Panel &lt;--&gt; K1
+    Panel &lt;--&gt; K2
+
+    style ProxyLayer fill:#e1f5fe
+    style CoreLayer fill:#f3e5f5
+    style KnowledgeLayer fill:#e8f5e9
+    style PanelLayer fill:#fff3e0</pre>
+<p><strong>数据流向</strong>：</p>
+<pre tabindex="0"><code>Agent 请求 → Proxy 鉴权 &amp; 拦截 → 注入记忆上下文 → 转发 LLM
+                                          ↓
+LLM 响应 → Proxy 捕获对话 → Core 沉淀资产（L0→L1→L2→L3）
+</code></pre><h3 id="22-四种记忆资产对比">
+  2.2 四种记忆资产对比
+  <a class="anchor" href="#22-%e5%9b%9b%e7%a7%8d%e8%ae%b0%e5%bf%86%e8%b5%84%e4%ba%a7%e5%af%b9%e6%af%94">#</a>
+</h3>
+<p>整个系统的核心是 <strong>四类记忆资产</strong>，它们各自解决不同的问题：</p>
+<table>
+  <thead>
+      <tr>
+          <th>资产类型</th>
+          <th>来源</th>
+          <th>粒度</th>
+          <th>解决什么问题</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Chat Memory</strong></td>
+          <td>对话逐层提取</td>
+          <td>L0 原始 → L1 事实 → L2 场景 → L3 画像</td>
+          <td>跨会话保留偏好、决策、交互历史</td>
+      </tr>
+      <tr>
+          <td><strong>Skill</strong></td>
+          <td>从跑通的任务中提炼</td>
+          <td>版本化 SOP + 资源文件 + 验证规则</td>
+          <td>可复用的操作方法（排障、Review、上线检查）</td>
+      </tr>
+      <tr>
+          <td><strong>Wiki</strong></td>
+          <td>文档结构化</td>
+          <td>页面 + <code>[[wikilink]]</code> 链接图谱</td>
+          <td>让 Agent 按需阅读，不整库注入</td>
+      </tr>
+      <tr>
+          <td><strong>CodeGraph</strong></td>
+          <td>代码符号索引</td>
+          <td>文件 → 符号 → 调用关系 → 影响路径</td>
+          <td>改代码前先做 impact analysis</td>
+      </tr>
+  </tbody>
+</table>
+<p>这四类资产形成了一个 <strong>完整的记忆生态</strong>：</p>
+
+<pre class="mermaid">mindmap
+  root((Agent Memory))
+    Chat Memory
+      L0 原始对话
+      L1 原子事实
+      L2 场景知识
+      L3 Persona 画像
+    Skill
+      版本化 SOP
+      资源文件
+      验证规则
+    Wiki
+      文档页面
+      Wikilink 图谱
+      多跳搜索
+    CodeGraph
+      符号索引
+      调用图
+      影响分析</pre>
+<h3 id="23-三层解耦设计">
+  2.3 三层解耦设计
+  <a class="anchor" href="#23-%e4%b8%89%e5%b1%82%e8%a7%a3%e8%80%a6%e8%ae%be%e8%ae%a1">#</a>
+</h3>
+<p>整个系统采用了 <strong>三层解耦</strong> 的架构哲学：</p>
+<table>
+  <thead>
+      <tr>
+          <th>层</th>
+          <th>组件</th>
+          <th>解耦目标</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>记忆引擎层</strong></td>
+          <td>MemoryCore</td>
+          <td>与宿主解耦（HostAdapter 模式）</td>
+      </tr>
+      <tr>
+          <td><strong>上下文代理层</strong></td>
+          <td>MemoryProxy</td>
+          <td>与 LLM 协议解耦（Anthropic + OpenAI 双协议）</td>
+      </tr>
+      <tr>
+          <td><strong>知识服务层</strong></td>
+          <td>MemoryPanel + MemoryKnowledge</td>
+          <td>独立的管控和知识处理</td>
+      </tr>
+  </tbody>
+</table>
+<p>这种设计让 MemoryCore 可以被任何 Agent 框架接入——无论是 OpenClaw、Hermes、Gateway 还是 CLI，只需要实现 <code>HostAdapter</code> 接口即可。</p>
+<hr>
+<h2 id="三memorycore-深度解析记忆不是平铺记录而是逐层生长">
+  三、MemoryCore 深度解析：记忆不是平铺记录，而是逐层生长
+  <a class="anchor" href="#%e4%b8%89memorycore-%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90%e8%ae%b0%e5%bf%86%e4%b8%8d%e6%98%af%e5%b9%b3%e9%93%ba%e8%ae%b0%e5%bd%95%e8%80%8c%e6%98%af%e9%80%90%e5%b1%82%e7%94%9f%e9%95%bf">#</a>
+</h2>
+<h3 id="31-tdaicore宿主中立的核心-facade">
+  3.1 TdaiCore：宿主中立的核心 Facade
+  <a class="anchor" href="#31-tdaicore%e5%ae%bf%e4%b8%bb%e4%b8%ad%e7%ab%8b%e7%9a%84%e6%a0%b8%e5%bf%83-facade">#</a>
+</h3>
+<p><code>TdaiCore</code> 是整个记忆系统的核心 Facade（门面类），位于 <code>tdai-core.ts</code> 中。它的设计哲学可以用一句话概括：</p>
+<blockquote>
+<p><strong>Core 只依赖接口，不依赖任何具体宿主。</strong></p>
+</blockquote>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// tdai-core.ts 核心构造函数签名
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">TdaiCore</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">constructor</span>(
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">hostAdapter</span>: <span style="color:#66d9ef">HostAdapter</span>,       <span style="color:#75715e">// 宿主适配器
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">llmRunnerFactory</span>: <span style="color:#66d9ef">LLMRunnerFactory</span>  <span style="color:#75715e">// LLM 运行器工厂
+</span></span></span><span style="display:flex;"><span>  ) { ... }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><code>TdaiCore</code> 暴露了三个核心方法链：</p>
+<table>
+  <thead>
+      <tr>
+          <th>方法</th>
+          <th>时机</th>
+          <th>作用</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>handleBeforeRecall()</code></td>
+          <td>每次 Agent 请求前</td>
+          <td>召回记忆并注入上下文</td>
+      </tr>
+      <tr>
+          <td><code>handleTurnCommitted()</code></td>
+          <td>每轮对话完成后</td>
+          <td>捕获对话，写入 L0 原始记录</td>
+      </tr>
+      <tr>
+          <td><code>handleShutdown()</code></td>
+          <td>Agent 关闭时</td>
+          <td>Pipeline 冲刷，确保异步提取完成</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>设计洞察</strong>：这种 Facade + Adapter 模式让 Core 完全不知道自己在为谁服务。它可以对接 OpenClaw、Hermes、甚至是一个简单的 CLI 脚本——只要宿主实现了 <code>HostAdapter</code> 接口。</p>
+<h3 id="32-l0l1l2l3-分层记忆管道">
+  3.2 L0→L1→L2→L3 分层记忆管道
+  <a class="anchor" href="#32-l0l1l2l3-%e5%88%86%e5%b1%82%e8%ae%b0%e5%bf%86%e7%ae%a1%e9%81%93">#</a>
+</h3>
+<p>这是 TencentDB Agent Memory 最具创新性的设计。记忆不是平铺的一堆聊天记录，而是 <strong>逐层抽象、逐层生长</strong> 的管道：</p>
+
+<pre class="mermaid">flowchart LR
+    L0[&#34;L0 Conversation\n原始对话记录&#34;] --&gt;|&#34;PipelineManager 调度&#34;| L1[&#34;L1 Atom\n事实/偏好/约束提取&#34;]
+    L1 --&gt;|&#34;场景归纳&#34;| L2[&#34;L2 Scene\n场景知识块&#34;]
+    L2 --&gt;|&#34;模式抽象&#34;| L3[&#34;L3 Persona\n长期画像&#34;]
+    L0 -.-&gt;|&#34;RRF 混合检索&#34;| Recall[&#34;召回注入&#34;]
+    L1 -.-&gt;|&#34;BM25 / 向量 / Hybrid&#34;| Recall
+    L2 -.-&gt;|&#34;Scene Navigation&#34;| Recall
+    L3 -.-&gt;|&#34;System Prompt 注入&#34;| Recall
+
+    style L0 fill:#ffebee
+    style L1 fill:#fff3e0
+    style L2 fill:#e8f5e9
+    style L3 fill:#e3f2fd
+    style Recall fill:#f3e5f5</pre>
+<p>各层的职责和数据来源：</p>
+<table>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>名称</th>
+          <th>数据来源</th>
+          <th>核心文件</th>
+          <th>检索方式</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>L0</strong></td>
+          <td>Conversation（原始对话）</td>
+          <td><code>auto-capture.ts</code> 逐消息捕获</td>
+          <td><code>store/types.ts</code> → <code>L0Record</code></td>
+          <td>向量索引（可选延迟嵌入）</td>
+      </tr>
+      <tr>
+          <td><strong>L1</strong></td>
+          <td>Atom（原子事实）</td>
+          <td>LLM 从对话中提取事实、偏好、约束</td>
+          <td><code>store/types.ts</code> → <code>MemoryRecord</code></td>
+          <td>BM25 + 向量 + RRF 混合检索</td>
+      </tr>
+      <tr>
+          <td><strong>L2</strong></td>
+          <td>Scene（场景知识）</td>
+          <td>按项目/场景归纳 L1 事实</td>
+          <td><code>store/types.ts</code> → <code>MemoryRecord</code></td>
+          <td>Scene Navigation 机制</td>
+      </tr>
+      <tr>
+          <td><strong>L3</strong></td>
+          <td>Persona（长期画像）</td>
+          <td>跨场景的模式抽象</td>
+          <td><code>store/types.ts</code> → <code>ProfileRecord</code></td>
+          <td>System Prompt 直接注入</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>L0 捕获</strong>（<code>auto-capture.ts</code>）：</p>
+<ul>
+<li>每轮对话的每一条消息都被记录</li>
+<li>支持可选的延迟嵌入（lazy embedding），避免写入时的向量计算延迟</li>
+</ul>
+<p><strong>L1 提取</strong>：</p>
+<ul>
+<li>异步 Worker 从 L0 中提取结构化事实</li>
+<li>例如：&ldquo;移动端还在用旧鉴权模块&rdquo;、&ldquo;用户偏好 Rust 而非 Go&rdquo;</li>
+</ul>
+<p><strong>召回策略</strong>（<code>auto-recall.ts</code>）采用双通道注入：</p>
+<ul>
+<li><code>prependContext</code>：在对话开头注入相关记忆（用于上下文补充）</li>
+<li><code>appendSystemContext</code>：在 system prompt 末尾追加画像信息（用于行为指导）</li>
+</ul>
+<h3 id="33-记忆存储抽象imemorystore-接口">
+  3.3 记忆存储抽象：IMemoryStore 接口
+  <a class="anchor" href="#33-%e8%ae%b0%e5%bf%86%e5%ad%98%e5%82%a8%e6%8a%bd%e8%b1%a1imemorystore-%e6%8e%a5%e5%8f%a3">#</a>
+</h3>
+<p>MemoryCore 不关心数据存在哪里——它只依赖 <code>IMemoryStore</code> 接口：</p>
+<pre tabindex="0"><code>IMemoryStore 统一接口
+├── L0/L1 读写
+├── 全文搜索
+├── Profile 同步
+└── 审计日志
+</code></pre><p><strong>双后端实现</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>后端</th>
+          <th>场景</th>
+          <th>技术栈</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>SQLite（本地）</strong></td>
+          <td>开发/单机部署</td>
+          <td>sqlite-vec（向量） + FTS5（全文检索）</td>
+      </tr>
+      <tr>
+          <td><strong>Tencent Cloud VectorDB（云端）</strong></td>
+          <td>生产/多机部署</td>
+          <td>腾讯云向量数据库</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>三维度隔离</strong>是隐私边界的核心保障：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sql" data-lang="sql"><span style="display:flex;"><span><span style="color:#75715e">-- buildIsolationWhere 生成的 WHERE 子句示例
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">WHERE</span> teamId <span style="color:#f92672">=</span> <span style="color:#f92672">?</span> <span style="color:#66d9ef">AND</span> (userId <span style="color:#f92672">=</span> <span style="color:#f92672">?</span> <span style="color:#66d9ef">OR</span> userId <span style="color:#66d9ef">IS</span> <span style="color:#66d9ef">NULL</span>) <span style="color:#66d9ef">AND</span> agentId <span style="color:#f92672">=</span> <span style="color:#f92672">?</span>
+</span></span></code></pre></div><table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>含义</th>
+          <th>示例</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>teamId</code></td>
+          <td>团队边界</td>
+          <td><code>team-frontend</code></td>
+      </tr>
+      <tr>
+          <td><code>userId</code></td>
+          <td>用户边界</td>
+          <td><code>user-alice</code>（可为空，表示团队共享）</td>
+      </tr>
+      <tr>
+          <td><code>agentId</code></td>
+          <td>Agent 边界</td>
+          <td><code>agent-reviewer</code></td>
+      </tr>
+  </tbody>
+</table>
+<p>这意味着 Agent-A 的记忆不会泄露给 Agent-B，除非它们在同一个 team 下且权限匹配。这是 <strong>SQL 层面的硬约束</strong>，不是应用层的软限制。</p>
+<h3 id="34-skill-模块从练过一次到全队可用">
+  3.4 Skill 模块：从&quot;练过一次&quot;到&quot;全队可用&quot;
+  <a class="anchor" href="#34-skill-%e6%a8%a1%e5%9d%97%e4%bb%8e%e7%bb%83%e8%bf%87%e4%b8%80%e6%ac%a1%e5%88%b0%e5%85%a8%e9%98%9f%e5%8f%af%e7%94%a8">#</a>
+</h3>
+<p>Skill 是这个系统最有价值的资产类型——它把 <strong>一次跑通的操作</strong> 提炼成 <strong>全队可复用的 SOP</strong>。</p>
+<p><strong>Skill 数据结构</strong>（<code>skill/types.ts</code>）：</p>
+<pre tabindex="0"><code>Skill
+├── manifest          # 元数据：名称、描述、触发关键词
+├── versionedSnapshot # 版本化快照（Markdown 指令）
+├── resources         # 关联资源文件（脚本、模板）
+└── validationRules   # 验证规则（确保 Skill 执行正确）
+</code></pre><p><strong>抽取链路</strong>：</p>
+
+<pre class="mermaid">flowchart LR
+    A[&#34;Agent 跑通任务&#34;] --&gt; B[&#34;Proxy: conversation/add&#34;]
+    B --&gt; C[&#34;Core: buffer 缓存&#34;]
+    C --&gt; D[&#34;Worker: 异步提取&#34;]
+    D --&gt; E[&#34;生成 Skill &#43; manifest&#34;]
+    E --&gt; F[&#34;入库 &#43; 索引&#34;]
+
+    style A fill:#e8f5e9
+    style D fill:#fff3e0
+    style F fill:#e3f2fd</pre>
+<p><strong>路由策略</strong>（三种检索模式）：</p>
+<table>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>适用场景</th>
+          <th>算法</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>BM25</strong></td>
+          <td>关键词明确的 Skill</td>
+          <td>全文检索</td>
+      </tr>
+      <tr>
+          <td><strong>Embedding</strong></td>
+          <td>语义相关的 Skill</td>
+          <td>向量相似度</td>
+      </tr>
+      <tr>
+          <td><strong>Hybrid（RRF 融合）</strong></td>
+          <td>综合场景</td>
+          <td>BM25 + Embedding 的倒数排名融合</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>版本管理</strong>采用 head 版本 + 历史版本的 Git-like 设计，支持 TTL 过期机制——长时间未被访问的 Skill 会被自动归档。</p>
+<p><strong>审计钩子</strong>：</p>
+<ul>
+<li><code>onSkillCreated</code>：Skill 创建时触发</li>
+<li><code>onSkillAccessed</code>：Skill 被检索时触发</li>
+<li><code>onSkillArchived</code>：Skill 过期归档时触发</li>
+</ul>
+<hr>
+<h2 id="四memoryproxy-深度解析给-agent-挂上记忆的通道">
+  四、MemoryProxy 深度解析：给 Agent 挂上记忆的通道
+  <a class="anchor" href="#%e5%9b%9bmemoryproxy-%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90%e7%bb%99-agent-%e6%8c%82%e4%b8%8a%e8%ae%b0%e5%bf%86%e7%9a%84%e9%80%9a%e9%81%93">#</a>
+</h2>
+<p>如果说 MemoryCore 是大脑，MemoryProxy 就是 <strong>神经系统</strong>——它负责把记忆注入到 Agent 的每次请求中。</p>
+<h3 id="41-请求处理总流程">
+  4.1 请求处理总流程
+  <a class="anchor" href="#41-%e8%af%b7%e6%b1%82%e5%a4%84%e7%90%86%e6%80%bb%e6%b5%81%e7%a8%8b">#</a>
+</h3>
+<p>每次 Agent 向 LLM 发起请求，MemoryProxy 都会拦截并处理：</p>
+
+<pre class="mermaid">sequenceDiagram
+    participant Agent as Coding Agent
+    participant Proxy as MemoryProxy
+    participant Core as MemoryCore
+    participant KS as Knowledge Service
+    participant LLM as 上游 LLM
+
+    Agent-&gt;&gt;Proxy: POST /v1/chat/completions
+    Proxy-&gt;&gt;Proxy: auth.verifyUserKey → user_id
+    Proxy-&gt;&gt;Proxy: sessionInit (选 team/agent/task)
+    Proxy-&gt;&gt;Core: 注入 L2/L3 记忆
+    Proxy-&gt;&gt;KS: 拉取 team 知识资源列表
+    Proxy-&gt;&gt;Proxy: injection: skill &#43; knowledge &#43; tdai-memory
+    Proxy-&gt;&gt;LLM: 转发（含注入的 system prompt）
+    LLM--&gt;&gt;Proxy: 响应
+    Proxy-&gt;&gt;Core: writeL0 &#43; triggerSkillExtract
+    Proxy--&gt;&gt;Agent: 返回响应</pre>
+<p><strong>五步处理链</strong>（<code>server.ts</code> + <code>handler.ts</code>）：</p>
+<ol>
+<li><strong>鉴权</strong>：<code>verifyUserKey</code> → 解析出 <code>user_id</code></li>
+<li><strong>Session Init</strong>：引导选择 team/agent/task</li>
+<li><strong>Injection</strong>：skill + knowledge + tdai-memory 注入 system prompt</li>
+<li><strong>转发</strong>：将含注入上下文的请求转发给上游 LLM</li>
+<li><strong>捕获</strong>：writeL0 记录对话 + triggerSkillExtract 触发 Skill 提取</li>
+</ol>
+<h3 id="42-双协议支持">
+  4.2 双协议支持
+  <a class="anchor" href="#42-%e5%8f%8c%e5%8d%8f%e8%ae%ae%e6%94%af%e6%8c%81">#</a>
+</h3>
+<p>MemoryProxy 同时支持两大 LLM 协议，这使得它可以作为 <strong>任意 Agent 的统一网关</strong>：</p>
+<table>
+  <thead>
+      <tr>
+          <th>协议</th>
+          <th>文件</th>
+          <th>端点</th>
+          <th>适配 Agent</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>OpenAI Completions</strong></td>
+          <td><code>handler.ts</code></td>
+          <td><code>/v1/chat/completions</code></td>
+          <td>Claude Code、Cursor、Codex</td>
+      </tr>
+      <tr>
+          <td><strong>Anthropic Messages</strong></td>
+          <td><code>anthropicHandler.ts</code></td>
+          <td><code>/v1/messages</code></td>
+          <td>Claude API 直连</td>
+      </tr>
+  </tbody>
+</table>
+<p>消息格式通过 <code>flattenMessagesForOpik</code> 统一化，确保无论上游用什么协议，下游的记忆系统都能一致处理。</p>
+<p><strong>请求路由</strong>支持多 Agent 分流：</p>
+<pre tabindex="0"><code>Claude Code 请求 → ccRequestRouting → main / fork / sidequery
+CodeBuddy 请求   → 独立路由
+Codex 请求       → 独立路由
+</code></pre><h3 id="43-上下文注入管道injection-pipeline">
+  4.3 上下文注入管道（Injection Pipeline）
+  <a class="anchor" href="#43-%e4%b8%8a%e4%b8%8b%e6%96%87%e6%b3%a8%e5%85%a5%e7%ae%a1%e9%81%93injection-pipeline">#</a>
+</h3>
+<p>这是 Proxy 最核心的功能——<strong>在恰当的时机，把恰当的记忆，注入到恰当的位置</strong>。</p>
+<p>三种 Injector 各司其职：</p>
+<table>
+  <thead>
+      <tr>
+          <th>Injector</th>
+          <th>作用</th>
+          <th>注入内容</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>skill</code></td>
+          <td>RAG 检索注入</td>
+          <td>根据当前任务检索并注入相关 Skill</td>
+      </tr>
+      <tr>
+          <td><code>knowledge</code></td>
+          <td>知识工具列表</td>
+          <td>拉取 team 的 Wiki/CodeGraph 资源列表</td>
+      </tr>
+      <tr>
+          <td><code>tdai-memory</code></td>
+          <td>L2/L3 注入</td>
+          <td>场景知识和 Persona 画像</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>注入时机</strong>分两个阶段：</p>
+<ol>
+<li><strong>Session Init 预热</strong>：在对话开始时注入 L2/L3 记忆，让 Agent 一上来就有上下文</li>
+<li><strong>每轮请求追加</strong>：根据当前对话内容，动态检索并注入相关 Skill 和 L1 事实</li>
+</ol>
+<p><strong>记忆工具注入</strong>（<code>&lt;memory-tools-guide&gt;</code>）是一个巧妙设计——它告诉 LLM <strong>如何主动搜索记忆</strong>，而不是被动等待注入。这让 Agent 可以在需要时主动调用记忆检索接口。</p>
+<h3 id="44-记忆桥接memory-bridge--skill-bridge">
+  4.4 记忆桥接（Memory Bridge + Skill Bridge）
+  <a class="anchor" href="#44-%e8%ae%b0%e5%bf%86%e6%a1%a5%e6%8e%a5memory-bridge--skill-bridge">#</a>
+</h3>
+<p>当注入的记忆不够用时，LLM 需要 <strong>主动检索</strong>。但 Agent 不应该持有记忆系统的访问凭证——这会带来安全风险。</p>
+<p><strong>解决方案</strong>：Memory Bridge 和 Skill Bridge 作为反代层：</p>
+<pre tabindex="0"><code>LLM (通过 Bash/curl) → Memory Bridge (反代 + 注入鉴权) → MemoryCore
+</code></pre><ul>
+<li>LLM 通过 <code>curl http://localhost:port/memory/search?q=...</code> 发起检索</li>
+<li>Bridge 自动注入鉴权 token 和用户身份</li>
+<li>LLM <strong>无需感知</strong>任何凭证</li>
+</ul>
+<p>这让记忆检索对 Agent 来说就像调用本地服务一样简单。</p>
+<h3 id="45-可观测性与成本控制">
+  4.5 可观测性与成本控制
+  <a class="anchor" href="#45-%e5%8f%af%e8%a7%82%e6%b5%8b%e6%80%a7%e4%b8%8e%e6%88%90%e6%9c%ac%e6%8e%a7%e5%88%b6">#</a>
+</h3>
+<p>生产环境中，记忆系统本身也需要被监控和优化：</p>
+<table>
+  <thead>
+      <tr>
+          <th>系统</th>
+          <th>用途</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Opik</strong></td>
+          <td>trace/span 自动上报，追踪每次记忆注入和检索</td>
+      </tr>
+      <tr>
+          <td><strong>Langfuse</strong></td>
+          <td>generation 报告，分析记忆对 LLM 输出的影响</td>
+      </tr>
+      <tr>
+          <td><strong>ClickHouse</strong></td>
+          <td>用量记录（token / cost / cache hit），成本分析</td>
+      </tr>
+      <tr>
+          <td><strong>Cost Guard</strong></td>
+          <td>为不同 Agent 配置不同模型（如 Agent-Review 用 Haiku，Agent-Dev 用 Sonnet）</td>
+      </tr>
+      <tr>
+          <td><strong>Rate Limit</strong></td>
+          <td>TPM / QPM 限流，多 Pod 通过 Redis 原子计数实现分布式限流</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="五memoryknowledge-深度解析知识不整库注入而是按需调用">
+  五、MemoryKnowledge 深度解析：知识不整库注入，而是按需调用
+  <a class="anchor" href="#%e4%ba%94memoryknowledge-%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90%e7%9f%a5%e8%af%86%e4%b8%8d%e6%95%b4%e5%ba%93%e6%b3%a8%e5%85%a5%e8%80%8c%e6%98%af%e6%8c%89%e9%9c%80%e8%b0%83%e7%94%a8">#</a>
+</h2>
+<h3 id="51-wiki-引擎karpathy-的-llm-知识库思想的工程实现">
+  5.1 Wiki 引擎：Karpathy 的 LLM 知识库思想的工程实现
+  <a class="anchor" href="#51-wiki-%e5%bc%95%e6%93%8ekarpathy-%e7%9a%84-llm-%e7%9f%a5%e8%af%86%e5%ba%93%e6%80%9d%e6%83%b3%e7%9a%84%e5%b7%a5%e7%a8%8b%e5%ae%9e%e7%8e%b0">#</a>
+</h3>
+<p>Andrej Karpathy 曾提出一个观点：<strong>LLM 不需要读完整文档，只需要读相关片段</strong>。TencentDB Agent Memory 的 Wiki 引擎正是这一思想的工程实现。</p>
+<p><strong>文档摄取流程</strong>（<code>ingest-v2/</code>）：</p>
+
+<pre class="mermaid">flowchart LR
+    A[&#34;扫描文档目录&#34;] --&gt; B[&#34;提取 frontmatter&#34;]
+    B --&gt; C[&#34;解析 [[wikilink]] 链接&#34;]
+    C --&gt; D[&#34;构建结构化索引&#34;]
+    D --&gt; E[&#34;写入 SQLite index.db&#34;]
+
+    style A fill:#ffebee
+    style C fill:#fff3e0
+    style E fill:#e8f5e9</pre>
+<p><strong>索引存储</strong>：</p>
+<ul>
+<li>使用 SQLite <code>index.db</code>，包含 BM25 FTS（全文检索）+ page_meta（页面元数据）+ graph_edge（链接图谱）</li>
+<li><strong>内存占用与 Wiki 总数解耦</strong>——不管有多少文档，内存占用只和当前查询相关</li>
+</ul>
+<p><strong>图搜索</strong>（<code>graphMultiHopSearch</code>）：</p>
+<ol>
+<li>BM25 种子搜索：先用关键词找到初始页面</li>
+<li>多跳 BFS 扩展：从种子页面出发，沿着 <code>[[wikilink]]</code> 链接扩展</li>
+<li>返回语义相关 + 结构关联的页面集合</li>
+</ol>
+<p><strong>源码分析</strong>（<code>manager.ts</code>）：</p>
+<ul>
+<li>文档扫描支持 Markdown、MDX 等格式</li>
+<li>索引构建是增量式的，只更新变更的文档</li>
+<li>查询流程支持单跳和多跳搜索</li>
+</ul>
+<h3 id="52-codegraph-引擎不只是代码在这而是改了影响哪">
+  5.2 CodeGraph 引擎：不只是&quot;代码在这&quot;，而是&quot;改了影响哪&quot;
+  <a class="anchor" href="#52-codegraph-%e5%bc%95%e6%93%8e%e4%b8%8d%e5%8f%aa%e6%98%af%e4%bb%a3%e7%a0%81%e5%9c%a8%e8%bf%99%e8%80%8c%e6%98%af%e6%94%b9%e4%ba%86%e5%bd%b1%e5%93%8d%e5%93%aa">#</a>
+</h3>
+<p>CodeGraph 复用了 <code>@colbymchenry/codegraph</code> 项目，通过 <code>bridge.ts</code> 封装。</p>
+<p>它解决了传统代码搜索的痛点：</p>
+<table>
+  <thead>
+      <tr>
+          <th>传统搜索</th>
+          <th>CodeGraph</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>&ldquo;关键词在哪行&rdquo;</td>
+          <td>&ldquo;谁调用了这个函数&rdquo;</td>
+      </tr>
+      <tr>
+          <td>文本匹配</td>
+          <td>符号级索引</td>
+      </tr>
+      <tr>
+          <td>孤立的结果</td>
+          <td>调用图 + 影响路径</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>Agent 使用路径</strong>：</p>
+<pre tabindex="0"><code>1. /v3/tools/list    → 发现可用的 CodeGraph 工具
+2. /v3/tools/call    → 查询 callers（谁调用了我）
+                      → 查询 callees（我调用了谁）
+                      → 查询影响路径（改这里会影响哪些模块）
+</code></pre><p><strong>定期自动同步</strong>代码库变更，确保索引与代码一致。</p>
+<hr>
+<h2 id="六memorypanel-管控面板面向团队的操作台">
+  六、MemoryPanel 管控面板：面向团队的操作台
+  <a class="anchor" href="#%e5%85%admemorypanel-%e7%ae%a1%e6%8e%a7%e9%9d%a2%e6%9d%bf%e9%9d%a2%e5%90%91%e5%9b%a2%e9%98%9f%e7%9a%84%e6%93%8d%e4%bd%9c%e5%8f%b0">#</a>
+</h2>
+<p>MemoryPanel 是面向人类用户的 Web 操作台，让团队管理员可以可视化管理记忆资产。</p>
+<h3 id="61-资产管理体系">
+  6.1 资产管理体系
+  <a class="anchor" href="#61-%e8%b5%84%e4%ba%a7%e7%ae%a1%e7%90%86%e4%bd%93%e7%b3%bb">#</a>
+</h3>
+<p><strong>四层可见性</strong>控制：</p>
+<table>
+  <thead>
+      <tr>
+          <th>可见性</th>
+          <th>范围</th>
+          <th>示例</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>private</code></td>
+          <td>仅创建者</td>
+          <td>个人偏好、个人笔记</td>
+      </tr>
+      <tr>
+          <td><code>team</code></td>
+          <td>团队所有成员</td>
+          <td>团队规范、公共 Skill</td>
+      </tr>
+      <tr>
+          <td><code>restricted</code></td>
+          <td>ACL 指定成员</td>
+          <td>敏感配置、受限文档</td>
+      </tr>
+      <tr>
+          <td><code>agent</code></td>
+          <td>定向装配给特定 Agent</td>
+          <td>Agent 专属指令</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>实体模型</strong>：<code>Team → User → Agent → Task</code> 四层关系，每个记忆资产都挂载在这棵树的某个节点上。</p>
+<p><strong>资产背包</strong>功能：</p>
+<ul>
+<li>搜索：按关键词、标签、类型搜索资产</li>
+<li>审核：新 Skill 需要审核后才上线</li>
+<li>版本管理：查看历史版本、回滚</li>
+<li>Agent 绑定：将 Skill 装配到特定 Agent</li>
+</ul>
+<h3 id="62-冷启动先读档再开工">
+  6.2 冷启动：先读档，再开工
+  <a class="anchor" href="#62-%e5%86%b7%e5%90%af%e5%8a%a8%e5%85%88%e8%af%bb%e6%a1%a3%e5%86%8d%e5%bc%80%e5%b7%a5">#</a>
+</h3>
+<p>新团队接入时，MemoryPanel 提供 <strong>一键导入</strong> 能力：</p>
+<pre tabindex="0"><code>代码库导入  → CodeGraph 自动索引
+文档导入    → Wiki 自动构建
+对话导入    → Skill 与 Chat Memory 自动提取
+</code></pre><p>这让团队可以从已有的代码库、文档和对话历史中 <strong>冷启动</strong>，而不需要从零开始积累记忆。</p>
+<hr>
+<h2 id="七配置与部署实战">
+  七、配置与部署实战
+  <a class="anchor" href="#%e4%b8%83%e9%85%8d%e7%bd%ae%e4%b8%8e%e9%83%a8%e7%bd%b2%e5%ae%9e%e6%88%98">#</a>
+</h2>
+<h3 id="71-一键部署三件套-docker-compose">
+  7.1 一键部署：三件套 Docker Compose
+  <a class="anchor" href="#71-%e4%b8%80%e9%94%ae%e9%83%a8%e7%bd%b2%e4%b8%89%e4%bb%b6%e5%a5%97-docker-compose">#</a>
+</h3>
+<p><code>start-all.sh</code> 脚本启动三个组件：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># MemoryCore + MemoryProxy + MemoryPanel/Knowledge</span>
+</span></span><span style="display:flex;"><span>./start-all.sh
+</span></span></code></pre></div><p><code>.env</code> 配置中最重要的两组参数：</p>
+<table>
+  <thead>
+      <tr>
+          <th>配置组</th>
+          <th>作用</th>
+          <th>示例</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>memory</code> 组 LLM 参数</td>
+          <td>控制记忆提取、摘要生成的模型</td>
+          <td><code>memory.llm.model=claude-haiku</code></td>
+      </tr>
+      <tr>
+          <td><code>proxy</code> 组 LLM 参数</td>
+          <td>控制注入上下文时使用的模型</td>
+          <td><code>proxy.llm.model=claude-sonnet</code></td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="72-memoryproxy-配置深度解析">
+  7.2 MemoryProxy 配置深度解析
+  <a class="anchor" href="#72-memoryproxy-%e9%85%8d%e7%bd%ae%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90">#</a>
+</h3>
+<p><code>config.example.yaml</code> 中的关键配置段：</p>
+<table>
+  <thead>
+      <tr>
+          <th>配置段</th>
+          <th>作用</th>
+          <th>关键参数</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>upstream.agents</code></td>
+          <td>Per-Agent 路由与凭据隔离</td>
+          <td>每个 Agent 独立的 API key、模型选择</td>
+      </tr>
+      <tr>
+          <td><code>tdai.memory</code></td>
+          <td>四级记忆注入/写入控制</td>
+          <td>L0/L1/L2/L3 的开关</td>
+      </tr>
+      <tr>
+          <td><code>injection</code></td>
+          <td>上下文注入管道</td>
+          <td>skill/knowledge/tdai-memory 的注入策略</td>
+      </tr>
+      <tr>
+          <td><code>storage</code></td>
+          <td>存储迁移链</td>
+          <td>Redis → COS/SQLite/FS/Memory</td>
+      </tr>
+      <tr>
+          <td><code>ccRequestRouting</code></td>
+          <td>Claude Code 请求分流</td>
+          <td>main / fork / sidequery 的识别与路由</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="73-零配置启动-vs-生产调优">
+  7.3 零配置启动 vs 生产调优
+  <a class="anchor" href="#73-%e9%9b%b6%e9%85%8d%e7%bd%ae%e5%90%af%e5%8a%a8-vs-%e7%94%9f%e4%ba%a7%e8%b0%83%e4%bc%98">#</a>
+</h3>
+<p><strong>最小配置</strong>（开箱即用）：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">memory-tencentdb</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">enabled</span>: <span style="color:#66d9ef">true</span>
+</span></span></code></pre></div><p><strong>生产推荐配置</strong>（全链路参数）：</p>
+<ul>
+<li><code>capture</code>：控制 L0 捕获的粒度和延迟</li>
+<li><code>extraction</code>：控制 L1 事实提取的 prompt 和模型</li>
+<li><code>pipeline</code>：控制 L0→L1→L2→L3 的调度频率</li>
+<li><code>recall</code>：控制召回的 top-k、检索模式（BM25/Embedding/Hybrid）</li>
+<li><code>persona</code>：控制 L3 Persona 的更新策略</li>
+<li><code>embedding</code>：控制向量模型的选用和缓存策略</li>
+</ul>
+<hr>
+<h2 id="八与其他方案的对比分析">
+  八、与其他方案的对比分析
+  <a class="anchor" href="#%e5%85%ab%e4%b8%8e%e5%85%b6%e4%bb%96%e6%96%b9%e6%a1%88%e7%9a%84%e5%af%b9%e6%af%94%e5%88%86%e6%9e%90">#</a>
+</h2>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>普通 RAG</th>
+          <th>聊天历史</th>
+          <th>TencentDB Agent Memory</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>跨会话理解</td>
+          <td>△ 只能检索</td>
+          <td>△ 只能回溯</td>
+          <td>✅ Chat Memory（L0→L3 逐层理解）</td>
+      </tr>
+      <tr>
+          <td>可执行经验沉淀</td>
+          <td>— 无法沉淀</td>
+          <td>— 无法沉淀</td>
+          <td>✅ Skill（版本化 SOP）</td>
+      </tr>
+      <tr>
+          <td>文档结构关系</td>
+          <td>△ 切片丢失关系</td>
+          <td>— 无关</td>
+          <td>✅ Wiki + Link Graph</td>
+      </tr>
+      <tr>
+          <td>代码影响范围</td>
+          <td>△ 文本命中</td>
+          <td>— 无关</td>
+          <td>✅ CodeGraph（调用图 + 影响路径）</td>
+      </tr>
+      <tr>
+          <td>权限/版本/状态</td>
+          <td>— 无</td>
+          <td>— 无</td>
+          <td>✅ 四层可见性 + 版本管理</td>
+      </tr>
+      <tr>
+          <td>团队分享与装配</td>
+          <td>— 无</td>
+          <td>— 无</td>
+          <td>✅ Asset Backpack + Agent 绑定</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="九源码中的关键设计模式总结">
+  九、源码中的关键设计模式总结
+  <a class="anchor" href="#%e4%b9%9d%e6%ba%90%e7%a0%81%e4%b8%ad%e7%9a%84%e5%85%b3%e9%94%ae%e8%ae%be%e8%ae%a1%e6%a8%a1%e5%bc%8f%e6%80%bb%e7%bb%93">#</a>
+</h2>
+<p>TencentDB Agent Memory 的源码中有六个值得学习的设计模式：</p>
+<h3 id="1-host-adapter-模式">
+  1. Host Adapter 模式
+  <a class="anchor" href="#1-host-adapter-%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<p>Core 与宿主完全解耦，只依赖 <code>HostAdapter</code> 接口。这使得它可以接入任何 Agent 框架。</p>
+<h3 id="2-分层记忆管道">
+  2. 分层记忆管道
+  <a class="anchor" href="#2-%e5%88%86%e5%b1%82%e8%ae%b0%e5%bf%86%e7%ae%a1%e9%81%93">#</a>
+</h3>
+<p>L0→L1→L2→L3 逐层抽象，从原始对话到长期画像。每一层都是上一层的 <strong>压缩与提炼</strong>，而非简单的存储。</p>
+<h3 id="3-能力降级">
+  3. 能力降级
+  <a class="anchor" href="#3-%e8%83%bd%e5%8a%9b%e9%99%8d%e7%ba%a7">#</a>
+</h3>
+<ul>
+<li>Embedding 服务不可用时 → 自动降级 BM25</li>
+<li>VectorDB 不可用时 → 自动降级 SQLite</li>
+<li>这不是 bug，而是设计——系统在任何降级场景下都能工作</li>
+</ul>
+<h3 id="4-隔离维度">
+  4. 隔离维度
+  <a class="anchor" href="#4-%e9%9a%94%e7%a6%bb%e7%bb%b4%e5%ba%a6">#</a>
+</h3>
+<p><code>teamId + userId + agentId</code> 三维隔离，在 SQL WHERE 子句层面硬约束。隐私边界不是应用层的软限制，而是数据库层的硬约束。</p>
+<h3 id="5-桥接模式">
+  5. 桥接模式
+  <a class="anchor" href="#5-%e6%a1%a5%e6%8e%a5%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<p>Memory Bridge / Skill Bridge 让 LLM 通过 <code>curl</code> 访问记忆，同时自动注入鉴权。LLM 无需持有 token，安全且简洁。</p>
+<h3 id="6-请求分类">
+  6. 请求分类
+  <a class="anchor" href="#6-%e8%af%b7%e6%b1%82%e5%88%86%e7%b1%bb">#</a>
+</h3>
+<p><code>ccRequestRouting</code> 识别 main（主线任务）/ fork（分支任务）/ sidequery（旁路查询），差异化处理。主线任务的记忆会被持久化，旁路查询的记忆则会被丢弃。</p>
+<hr>
+<h2 id="总结">
+  总结
+  <a class="anchor" href="#%e6%80%bb%e7%bb%93">#</a>
+</h2>
+<blockquote>
+<p><em>&ldquo;Memory is not a warehouse of chat logs. It&rsquo;s an operating system for team experience.&rdquo;</em></p>
+</blockquote>
+<p>TencentDB Agent Memory 的核心理念是：<strong>记忆不是聊天记录仓库，而是团队经验的操作系统</strong>。</p>
+<h3 id="架构亮点回顾">
+  架构亮点回顾
+  <a class="anchor" href="#%e6%9e%b6%e6%9e%84%e4%ba%ae%e7%82%b9%e5%9b%9e%e9%a1%be">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>亮点</th>
+          <th>价值</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>四层记忆资产</strong></td>
+          <td>Chat Memory / Skill / Wiki / CodeGraph 覆盖 Agent 工作的全维度</td>
+      </tr>
+      <tr>
+          <td><strong>三组件解耦</strong></td>
+          <td>Core / Proxy / Panel 各司其职，独立演进</td>
+      </tr>
+      <tr>
+          <td><strong>双协议支持</strong></td>
+          <td>Anthropic + OpenAI，适配所有主流 Agent</td>
+      </tr>
+      <tr>
+          <td><strong>按需注入</strong></td>
+          <td>不整库塞给 LLM，而是在恰当的时机注入恰当的记忆</td>
+      </tr>
+      <tr>
+          <td><strong>逐层生长</strong></td>
+          <td>L0→L1→L2→L3，从原始对话到长期画像</td>
+      </tr>
+      <tr>
+          <td><strong>能力降级</strong></td>
+          <td>任何依赖不可用时，系统仍能工作</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="最佳实践清单">
+  最佳实践清单
+  <a class="anchor" href="#%e6%9c%80%e4%bd%b3%e5%ae%9e%e8%b7%b5%e6%b8%85%e5%8d%95">#</a>
+</h3>
+<ol>
+<li><strong>先跑通再优化</strong>：用零配置启动，确认记忆系统工作正常后再调优</li>
+<li><strong>Skill 重于 Memory</strong>：Skill 是可执行的 SOP，对团队的直接价值最大</li>
+<li><strong>合理分配 LLM 预算</strong>：记忆提取用便宜模型（Haiku），Agent 推理用好模型（Sonnet）</li>
+<li><strong>定期审计 Skill</strong>：过期或低质量的 Skill 会干扰 Agent，需要定期清理</li>
+<li><strong>权限先行</strong>：从一开始就设置好 team/user/agent 隔离，避免后期数据混乱</li>
+</ol>
+<h3 id="未来展望">
+  未来展望
+  <a class="anchor" href="#%e6%9c%aa%e6%9d%a5%e5%b1%95%e6%9c%9b">#</a>
+</h3>
+<ul>
+<li><strong>自动记忆路由</strong>：根据 Agent 的任务类型，自动决定注入哪些记忆</li>
+<li><strong>私有仓库 SSH 接入</strong>：CodeGraph 支持通过 SSH 访问私有代码库</li>
+<li><strong>更多 Agent 框架适配</strong>：目前支持 OpenClaw/Hermes/Gateway/CLI，未来可扩展到 LangChain、AutoGen、CrewAI 等</li>
+<li><strong>多模态记忆</strong>：支持图片、音频等非文本记忆资产</li>
+</ul>
+<hr>
+<h2 id="参考文章">
+  参考文章
+  <a class="anchor" href="#%e5%8f%82%e8%80%83%e6%96%87%e7%ab%a0">#</a>
+</h2>
+<ol>
+<li>
+<p><strong>TencentDB Agent Memory 官方仓库</strong><br>
+<a href="https://github.com/TencentCloud/TencentDB-Agent-Memory">https://github.com/TencentCloud/TencentDB-Agent-Memory</a></p>
+</li>
+<li>
+<p><strong>记忆分层设计（L0→L3）</strong><br>
+源码路径：<code>MemoryCore/src/store/types.ts</code>, <code>MemoryCore/src/pipeline/auto-capture.ts</code></p>
+</li>
+<li>
+<p><strong>上下文注入管道</strong><br>
+源码路径：<code>MemoryProxy/src/handler.ts</code>, <code>MemoryProxy/src/anthropicHandler.ts</code></p>
+</li>
+<li>
+<p><strong>Wiki 引擎：Karpathy 的 LLM 知识库思想</strong><br>
+源码路径：<code>MemoryKnowledge/src/ingest-v2/manager.ts</code></p>
+</li>
+<li>
+<p><strong>CodeGraph 代码影响分析</strong><br>
+源码路径：<code>MemoryKnowledge/src/codegraph/bridge.ts</code><br>
+依赖项目：https://github.com/colbymchenry/codegraph</p>
+</li>
+<li>
+<p><strong>记忆桥接与反代</strong><br>
+源码路径：<code>MemoryProxy/src/memory-bridge.ts</code>, <code>MemoryProxy/src/skill-bridge.ts</code></p>
+</li>
+<li>
+<p><strong>可观测性集成（Opik / Langfuse / ClickHouse）</strong><br>
+源码路径：<code>MemoryProxy/src/observability/</code></p>
+</li>
+<li>
+<p><strong>Skill 模块设计与版本管理</strong><br>
+源码路径：<code>MemoryCore/src/skill/types.ts</code>, <code>MemoryCore/src/skill/</code></p>
+</li>
+<li>
+<p><strong>IMemoryStore 存储抽象与三维度隔离</strong><br>
+源码路径：<code>MemoryCore/src/store/store.ts</code>, <code>MemoryCore/src/store/buildIsolationWhere.ts</code></p>
+</li>
+<li>
+<p><strong>一键部署与配置</strong><br>
+源码路径：<code>scripts/start-all.sh</code>, <code>config/config.example.yaml</code></p>
+</li>
+</ol>
+<hr>
+<p><em>本文由小伟整理，源码基于 TencentDB Agent Memory 公开仓库分析，截至 2026 年 8 月。</em></p>
+</article>
  
       
 
@@ -5281,6 +6618,10 @@ https://github.com/alex-shpak/hugo-book
 
       
   
+  <div class="book-comments">
+
+</div>
+  
  
 
       <label for="menu-control" class="hidden book-menu-overlay"></label>
@@ -5291,7 +6632,84 @@ https://github.com/alex-shpak/hugo-book
       <div class="book-toc-content">
         
   
-<nav id="TableOfContents"></nav>
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#tencentdb-agent-memory-源码深度解析让-agent-团队共享经验不共享隐私">TencentDB Agent Memory 源码深度解析：让 Agent 团队共享经验、不共享隐私</a>
+      <ul>
+        <li><a href="#一引言agent-团队的记忆鸿沟">一、引言：Agent 团队的&quot;记忆鸿沟&quot;</a>
+          <ul>
+            <li><a href="#11-真实场景每次都是重新认识">1.1 真实场景：每次都是&quot;重新认识&quot;</a></li>
+            <li><a href="#12-为什么-rag-不够">1.2 为什么 RAG 不够？</a></li>
+            <li><a href="#13-项目概况">1.3 项目概况</a></li>
+            <li><a href="#14-源码研读路径">1.4 源码研读路径</a></li>
+          </ul>
+        </li>
+        <li><a href="#二总体架构四层记忆资产--三组件部署">二、总体架构：四层记忆资产 + 三组件部署</a>
+          <ul>
+            <li><a href="#21-架构总览">2.1 架构总览</a></li>
+            <li><a href="#22-四种记忆资产对比">2.2 四种记忆资产对比</a></li>
+            <li><a href="#23-三层解耦设计">2.3 三层解耦设计</a></li>
+          </ul>
+        </li>
+        <li><a href="#三memorycore-深度解析记忆不是平铺记录而是逐层生长">三、MemoryCore 深度解析：记忆不是平铺记录，而是逐层生长</a>
+          <ul>
+            <li><a href="#31-tdaicore宿主中立的核心-facade">3.1 TdaiCore：宿主中立的核心 Facade</a></li>
+            <li><a href="#32-l0l1l2l3-分层记忆管道">3.2 L0→L1→L2→L3 分层记忆管道</a></li>
+            <li><a href="#33-记忆存储抽象imemorystore-接口">3.3 记忆存储抽象：IMemoryStore 接口</a></li>
+            <li><a href="#34-skill-模块从练过一次到全队可用">3.4 Skill 模块：从&quot;练过一次&quot;到&quot;全队可用&quot;</a></li>
+          </ul>
+        </li>
+        <li><a href="#四memoryproxy-深度解析给-agent-挂上记忆的通道">四、MemoryProxy 深度解析：给 Agent 挂上记忆的通道</a>
+          <ul>
+            <li><a href="#41-请求处理总流程">4.1 请求处理总流程</a></li>
+            <li><a href="#42-双协议支持">4.2 双协议支持</a></li>
+            <li><a href="#43-上下文注入管道injection-pipeline">4.3 上下文注入管道（Injection Pipeline）</a></li>
+            <li><a href="#44-记忆桥接memory-bridge--skill-bridge">4.4 记忆桥接（Memory Bridge + Skill Bridge）</a></li>
+            <li><a href="#45-可观测性与成本控制">4.5 可观测性与成本控制</a></li>
+          </ul>
+        </li>
+        <li><a href="#五memoryknowledge-深度解析知识不整库注入而是按需调用">五、MemoryKnowledge 深度解析：知识不整库注入，而是按需调用</a>
+          <ul>
+            <li><a href="#51-wiki-引擎karpathy-的-llm-知识库思想的工程实现">5.1 Wiki 引擎：Karpathy 的 LLM 知识库思想的工程实现</a></li>
+            <li><a href="#52-codegraph-引擎不只是代码在这而是改了影响哪">5.2 CodeGraph 引擎：不只是&quot;代码在这&quot;，而是&quot;改了影响哪&quot;</a></li>
+          </ul>
+        </li>
+        <li><a href="#六memorypanel-管控面板面向团队的操作台">六、MemoryPanel 管控面板：面向团队的操作台</a>
+          <ul>
+            <li><a href="#61-资产管理体系">6.1 资产管理体系</a></li>
+            <li><a href="#62-冷启动先读档再开工">6.2 冷启动：先读档，再开工</a></li>
+          </ul>
+        </li>
+        <li><a href="#七配置与部署实战">七、配置与部署实战</a>
+          <ul>
+            <li><a href="#71-一键部署三件套-docker-compose">7.1 一键部署：三件套 Docker Compose</a></li>
+            <li><a href="#72-memoryproxy-配置深度解析">7.2 MemoryProxy 配置深度解析</a></li>
+            <li><a href="#73-零配置启动-vs-生产调优">7.3 零配置启动 vs 生产调优</a></li>
+          </ul>
+        </li>
+        <li><a href="#八与其他方案的对比分析">八、与其他方案的对比分析</a></li>
+        <li><a href="#九源码中的关键设计模式总结">九、源码中的关键设计模式总结</a>
+          <ul>
+            <li><a href="#1-host-adapter-模式">1. Host Adapter 模式</a></li>
+            <li><a href="#2-分层记忆管道">2. 分层记忆管道</a></li>
+            <li><a href="#3-能力降级">3. 能力降级</a></li>
+            <li><a href="#4-隔离维度">4. 隔离维度</a></li>
+            <li><a href="#5-桥接模式">5. 桥接模式</a></li>
+            <li><a href="#6-请求分类">6. 请求分类</a></li>
+          </ul>
+        </li>
+        <li><a href="#总结">总结</a>
+          <ul>
+            <li><a href="#架构亮点回顾">架构亮点回顾</a></li>
+            <li><a href="#最佳实践清单">最佳实践清单</a></li>
+            <li><a href="#未来展望">未来展望</a></li>
+          </ul>
+        </li>
+        <li><a href="#参考文章">参考文章</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
 
 
  
