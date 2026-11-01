@@ -1,0 +1,7498 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  LLM as Judge — 原理、架构与工业实践
+  #
+
+
+&ldquo;A large language model can judge which response is better — not because it was trained to be a judge, but because the act of generating good responses implicitly teaches the model to recognize them.&rdquo;
+— 核心洞察
+
+
+
+  目录
+  #
+
+
+一、引言：为什么需要 LLM 做裁判？
+二、LLM as Judge 的核心原理
+三、LLM as Judge 的系统性挑战
+四、工业案例深度解析
+五、进阶：LLM as Judge 的变体与前沿
+六、总结与实践建议
+参考资料
+
+
+
+  一、引言：为什么需要 LLM 做裁判？
+  #
+
+
+&ldquo;In order to improve a system, you must first be able to measure it. But if the measurement is wrong, the improvement is an illusion.&rdquo;">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Agent-Eval/LLL-as-judge/LLL-as-judge---hermes/">
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="LLM as Judge — 原理、架构与工业实践 # “A large language model can judge which response is better — not because it was trained to be a judge, but because the act of generating good responses implicitly teaches the model to recognize them.” — 核心洞察
+目录 # 一、引言：为什么需要 LLM 做裁判？ 二、LLM as Judge 的核心原理 三、LLM as Judge 的系统性挑战 四、工业案例深度解析 五、进阶：LLM as Judge 的变体与前沿 六、总结与实践建议 参考资料 一、引言：为什么需要 LLM 做裁判？ # “In order to improve a system, you must first be able to measure it. But if the measurement is wrong, the improvement is an illusion.”">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
+<title>Lll as Judge Hermes | Modern Agent</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Agent-Eval/LLL-as-judge/LLL-as-judge---hermes/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.3257a7ce7c061eb5dfc72257c356229b1470dc77ce9b982ac220c02542f9f04f.css" integrity="sha256-MlenznwGHrXfxyJXw1YimxRw3HfOm5gqwiDAJUL58E8=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.c066c63fb453a93772d5c493088e9fd73a8e3ceccb50861dced9ce8bc6ef1140.js" integrity="sha256-wGbGP7RTqTdy1cSTCI6f1zqOPOzLUIYdztnOi8bvEUA=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Agent-Eval/LLL-as-judge/LLL-as-judge---hermes/index.xml" title="Modern Agent" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8eeae87632e610dbb7fc73d309f4a86d" class="toggle"  />
+    <label for="section-8eeae87632e610dbb7fc73d309f4a86d" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-098fde1b4be868f62390668d03d7d338" class="toggle"  />
+    <label for="section-098fde1b4be868f62390668d03d7d338" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7c089cd98011270279a8c4693580483e" class="toggle"  />
+    <label for="section-7c089cd98011270279a8c4693580483e" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall/" class="">Rag Recall</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/" class="">Rag Recall 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-00e0992ed3785617d99441f38424d443" class="toggle"  />
+    <label for="section-00e0992ed3785617d99441f38424d443" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e6438c77671b5eb480dd2c40a29deb4" class="toggle"  />
+    <label for="section-5e6438c77671b5eb480dd2c40a29deb4" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1205a3b6d7d0d892a149b0be18b55680" class="toggle"  />
+    <label for="section-1205a3b6d7d0d892a149b0be18b55680" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8f63915fcb39ad7378f7bc5015f45f65" class="toggle" checked />
+    <label for="section-8f63915fcb39ad7378f7bc5015f45f65" class="flex justify-between">
+      <a role="button" class="">Eval *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/ali/" class="">Agent可观测与评估[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="toggle"  />
+    <label for="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="flex justify-between">
+      <a role="button" class="">Demystifying Evals for AI Agents</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/anthropic/Demystifying-Evals-for-AI-Agents/" class="">Demystifying Evals for Ai Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/anthropic/Demystifying-Evals-for-AI-Agents-%E6%80%BB%E7%BB%93/demystifying-evals-for-ai-agents/" class="">Demystifying Evals for Ai Agents</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="toggle" checked />
+    <label for="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="flex justify-between">
+      <a role="button" class="">llm-as-judge</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/LLL-as-judge---hermes/" class="active">Lll as Judge Hermes</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/" class="">Llm as Judge Openclaw</a>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig1-judge-flow/" class="">Fig1 Judge Flow</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig2-paradigms/" class="">Fig2 Paradigms</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig3-bias-table/" class="">Fig3 Bias Table</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig4-cases-table/" class="">Fig4 Cases Table</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig5-ensemble-arch/" class="">Fig5 Ensemble Arch</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig6-human-calibration/" class="">Fig6 Human Calibration</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig8-specialized-judge/" class="">Fig8 Specialized Judge</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-2853751cf001bfb0dbbd0927de99f326" class="toggle"  />
+    <label for="section-2853751cf001bfb0dbbd0927de99f326" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4277410225f2a82b8e3d740cbc19c27a" class="toggle"  />
+    <label for="section-4277410225f2a82b8e3d740cbc19c27a" class="flex justify-between">
+      <a role="button" class="">Dify</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-21f3c925847a2d764db6eed92d3a72d8" class="toggle"  />
+    <label for="section-21f3c925847a2d764db6eed92d3a72d8" class="flex justify-between">
+      <a role="button" class="">产品</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/list/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="toggle"  />
+    <label for="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="flex justify-between">
+      <a role="button" class="">Sandbox</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/opensource/" class="">Opensource</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c1654de4801752aac71344ec5dc9df88" class="toggle"  />
+    <label for="section-c1654de4801752aac71344ec5dc9df88" class="flex justify-between">
+      <a role="button" class="">SDK</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk%E5%85%BC%E5%AE%B9%E6%80%A7/" class="">AI SDK 向后兼容性*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk%E5%85%BC%E5%AE%B9%E6%80%A71/" class="">Sdk兼容性1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-23d5e8f3acd48e6550bd9456a223d6a2" class="toggle"  />
+    <label for="section-23d5e8f3acd48e6550bd9456a223d6a2" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E4%BC%98%E5%8C%96/" class="">Claude Platform 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent2/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/managed-agent3/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E8%A7%A3%E8%AF%BB/" class="">脑和手的解耦</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E5%8E%9F%E6%96%87/" class="">原文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0883be528cd603181ff8e3bbd53972c2" class="toggle"  />
+    <label for="section-0883be528cd603181ff8e3bbd53972c2" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-60cbe7eba0e55272c2f7e88142209eee" class="toggle"  />
+    <label for="section-60cbe7eba0e55272c2f7e88142209eee" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-34b90f1a802a08434ef79ad7e69c7bec" class="toggle"  />
+    <label for="section-34b90f1a802a08434ef79ad7e69c7bec" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d23f53c64147d40d7800ad362d50d826" class="toggle"  />
+    <label for="section-d23f53c64147d40d7800ad362d50d826" class="flex justify-between">
+      <a role="button" class="">Reflection</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-071bdfde77f8dcb0258746094eb4b7ab" class="toggle"  />
+    <label for="section-071bdfde77f8dcb0258746094eb4b7ab" class="flex justify-between">
+      <a role="button" class="">Planning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning1/agent-planning-principles-to-implementation/" class="">Agent Planning Principles to Implementation</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="toggle"  />
+    <label for="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="toggle"  />
+    <label for="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fb50c7bc07294aad8ab163e5c05043d7" class="toggle"  />
+    <label for="section-fb50c7bc07294aad8ab163e5c05043d7" class="flex justify-between">
+      <a role="button" class="">Hermes</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes1/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes2/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes/" class="">Hermes Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="toggle"  />
+    <label for="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="flex justify-between">
+      <a role="button" class="">managed agents</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming1/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f0d84b83965f02340d4fc81e88ba04ab" class="toggle"  />
+    <label for="section-f0d84b83965f02340d4fc81e88ba04ab" class="flex justify-between">
+      <a role="button" class="">Memory *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/hindsight/" class="">Hindsight</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/mem0-hermes/Mem0-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Mem0 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking-hermes/OpenViking-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Open Viking 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking-hermes1/" class="">Openviking Hermes1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openViking-openclaw/openviking-architecture-full/" class="">Openviking Architecture Full</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--hermes/TencentDB-Agent-Memory-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Tencent Db Agent Memory 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--openclaw/tencentdb-agent-memory-full/" class="">Tencentdb Agent Memory Full</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-66d86d5f38d04ef58ebb26728c026d4e" class="toggle"  />
+    <label for="section-66d86d5f38d04ef58ebb26728c026d4e" class="flex justify-between">
+      <a role="button" class="">Openclaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="toggle"  />
+    <label for="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f9cf8c4489e32d49710bcbde19d88feb" class="toggle"  />
+    <label for="section-f9cf8c4489e32d49710bcbde19d88feb" class="flex justify-between">
+      <a role="button" class="">Multi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7eb50204504aa47e2bb008fa842d839e" class="toggle"  />
+    <label for="section-7eb50204504aa47e2bb008fa842d839e" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Kanban/" class="">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f36497092f145d804086d65929bc2e21" class="toggle"  />
+    <label for="section-f36497092f145d804086d65929bc2e21" class="flex justify-between">
+      <a role="button" class="">Multi-agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-68da3356eb5814cf26b079259a3868f0" class="toggle"  />
+    <label for="section-68da3356eb5814cf26b079259a3868f0" class="flex justify-between">
+      <a role="button" class="">OpenClaw *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/multiagent2/" class="">OpenClaw 多 Agent*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/mulitagent1/" class="">Mulitagent1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="toggle"  />
+    <label for="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="flex justify-between">
+      <a role="button" class="">subagent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/Claude-code/" class="">Claude Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/subagent/" class="">Subagent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-88a7a1de323948713dc3ef284015e786" class="toggle"  />
+    <label for="section-88a7a1de323948713dc3ef284015e786" class="flex justify-between">
+      <a role="button" class="">Teams *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-Teams/" class="">Claude Code Teams</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-TeamsA1/" class="">Claude Code Teams[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-32002b3a68174992b401de86ca7466b5" class="toggle"  />
+    <label for="section-32002b3a68174992b401de86ca7466b5" class="flex justify-between">
+      <a role="button" class="">Tool &amp; Skill</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="toggle"  />
+    <label for="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="flex justify-between">
+      <a role="button" class="">Survey &amp; SFT</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-80682025fb6883cc3c0dd48368b5f7e2" class="toggle"  />
+    <label for="section-80682025fb6883cc3c0dd48368b5f7e2" class="flex justify-between">
+      <a role="button" class="">Tool 演进</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/%E6%BC%94%E8%BF%9B/fc&#43;mcp&#43;cli/" class="">Functioncall-&gt;MCP-&gt;cli &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-906763a3f2cf8396c71a61e320169919" class="toggle"  />
+    <label for="section-906763a3f2cf8396c71a61e320169919" class="flex justify-between">
+      <a role="button" class="">tools</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/Tools/claude-searchTool/" class="">Claude toolsearch</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-92f9fae5d8ab88847e6e20bd4d125306" class="toggle"  />
+    <label for="section-92f9fae5d8ab88847e6e20bd4d125306" class="flex justify-between">
+      <a role="button" class="">MCP *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-10c047fd3087cf2b29cccd85fa867912" class="toggle"  />
+    <label for="section-10c047fd3087cf2b29cccd85fa867912" class="flex justify-between">
+      <a role="button" class="">skill *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/skill/" class="">编写高质量Skill的六大失效模式</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/openclaw/" class="">Openclaw</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/openclaw1/" class="">Openclaw1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/skill-route---hermes/Skill%E8%B7%AF%E7%94%B1%E4%B8%8E%E5%91%BD%E4%B8%AD%E7%8E%87%E4%BC%98%E5%8C%96%E6%8C%87%E5%8D%97/" class="">Skill路由与命中率优化指南</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/skill-route---openclaw/agent-skill-routing/" class="">Agent Skill Routing</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="toggle"  />
+    <label for="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ddbbfd6bd03afee2b253d083ecf55c49" class="toggle"  />
+    <label for="section-ddbbfd6bd03afee2b253d083ecf55c49" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a0f0941605053d7b5666363df4970351" class="toggle"  />
+    <label for="section-a0f0941605053d7b5666363df4970351" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/core/" class="">OpenClaw 核心特性 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/" class="">State</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/" class="">Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/" class="">Security</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%811/" class="">OpenClaw 生态1 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%812/" class="">OpenClaw 生态2 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7185e230a37938c1265b025f647037ad" class="toggle"  />
+    <label for="section-7185e230a37938c1265b025f647037ad" class="flex justify-between">
+      <a role="button" class="">Hermes Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/apiwebhook/" class="">Api&amp;webhook</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitctureA1/" class="">Arcitcture[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/interrupt/" class="">Interrupt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/moa/" class="">Moa</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/" class="">Skill Envolve</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e0f25500ccfc29cd1839992481cd6d36" class="toggle"  />
+    <label for="section-e0f25500ccfc29cd1839992481cd6d36" class="flex justify-between">
+      <a role="button" class="">JEV</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/JEV/JEV/" class="">JEV 场景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9d52e8079db1067f4a0c448c7b68b11b" class="toggle"  />
+    <label for="section-9d52e8079db1067f4a0c448c7b68b11b" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1A1/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/permission/" class="">Permission[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/source-code/" class="">claude code 源码 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5933f07018b1aeb110ea0f8da66709bc" class="toggle"  />
+    <label for="section-5933f07018b1aeb110ea0f8da66709bc" class="flex justify-between">
+      <a role="button" class="">Compress *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code/" class="">Claude /compact[A1] *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-compress/" class="">Claude Code - Compact summary</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/codex/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code2/" class="">Claude Code2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code3/" class="">Claude Code3</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bb4ccb54455a606ed07ce1fdab4ac532" class="toggle"  />
+    <label for="section-bb4ccb54455a606ed07ce1fdab4ac532" class="flex justify-between">
+      <a role="button" class="">Pi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent/" class="">Pi Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent1/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent2/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Tau-Agent/" class="">Tau Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-16c947d2056db1d3e9aea2ad84d9c16c" class="toggle"  />
+    <label for="section-16c947d2056db1d3e9aea2ad84d9c16c" class="flex justify-between">
+      <a role="button" class="">可靠性 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/reliable/codex/" class="">Codex 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/reliable/dsh/" class="">Deepseek harness 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/reliable/pi-durable/" class="">Pi Durable</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27894a1d29427c9d52d1df6110020b8e" class="toggle"  />
+    <label for="section-27894a1d29427c9d52d1df6110020b8e" class="flex justify-between">
+      <a role="button" class="">实战</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1f82435e89939f7232e02729b008213e" class="toggle"  />
+    <label for="section-1f82435e89939f7232e02729b008213e" class="flex justify-between">
+      <a role="button" class="">Loops engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bf010a926485186e47c6ea2d2776a45f" class="toggle"  />
+    <label for="section-bf010a926485186e47c6ea2d2776a45f" class="flex justify-between">
+      <a role="button" class="">goal</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/" class="">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-013b791baed028e00c3cd685450d1255" class="toggle"  />
+    <label for="section-013b791baed028e00c3cd685450d1255" class="flex justify-between">
+      <a role="button" class="">loop engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loops/" class="">loops engineering[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loop-engineering1/" class="">Loop Engineering1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b284ec03b7c672cfde434851c4ea7377" class="toggle"  />
+    <label for="section-b284ec03b7c672cfde434851c4ea7377" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/" class="">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/openclaw/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-920c2fa3546aca5261a01784a53ddff3" class="toggle"  />
+    <label for="section-920c2fa3546aca5261a01784a53ddff3" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering1/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering2/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">context engineering[Manus]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0563b2fd6005bd3ffd431bec1f81b423" class="toggle"  />
+    <label for="section-0563b2fd6005bd3ffd431bec1f81b423" class="flex justify-between">
+      <a role="button" class="">Plan mode</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/plan-mode/claude/" class="">Claude</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/plan-mode/claue1/" class="">Claue1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ceda1f30ce03531a336a1f1ebb026a63" class="toggle"  />
+    <label for="section-ceda1f30ce03531a336a1f1ebb026a63" class="flex justify-between">
+      <a role="button" class="">Prompting caching *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/prompt-caching/Prompting-caching/" class="">Claude Prompt Cache [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-097abb2131971a92a13c1e53f850eb30" class="toggle"  />
+    <label for="section-097abb2131971a92a13c1e53f850eb30" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-951bebaba4a0e7ffcc11ac548251e389" class="toggle"  />
+    <label for="section-951bebaba4a0e7ffcc11ac548251e389" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-def011b742c3bb564ed84bad958a8bb9" class="toggle"  />
+    <label for="section-def011b742c3bb564ed84bad958a8bb9" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b1c6c40bb101131e4fe5a95225175846" class="toggle"  />
+    <label for="section-b1c6c40bb101131e4fe5a95225175846" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a5f257b0a67dc566e55c98245e32a9a3" class="toggle"  />
+    <label for="section-a5f257b0a67dc566e55c98245e32a9a3" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-bc06fe507152e253f2b8fedc786f69f9" class="toggle"  />
+    <label for="section-bc06fe507152e253f2b8fedc786f69f9" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="toggle"  />
+    <label for="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ec440fd30b4fccc02d2866bf269d3c1c" class="toggle"  />
+    <label for="section-ec440fd30b4fccc02d2866bf269d3c1c" class="flex justify-between">
+      <a role="button" class="">AI Native</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeminimax/" class="">AI原生组织实践(MiniMax)</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Claude-tag/" class="">Claude tag</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Ai-nativeali/" class="">AI native与人机协作[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeclaude/" class="">Bottleneck Shift in AI-native Engineering[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c4d50087126f44db07d7a7f0faa67711" class="toggle"  />
+    <label for="section-c4d50087126f44db07d7a7f0faa67711" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-461a4404ae59395291876d9268139c73" class="toggle"  />
+    <label for="section-461a4404ae59395291876d9268139c73" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-3ce504245d1c08bb826d2f16a7a9180c" class="toggle"  />
+    <label for="section-3ce504245d1c08bb826d2f16a7a9180c" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Lll as Judge Hermes</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#llm-as-judge--原理架构与工业实践">LLM as Judge — 原理、架构与工业实践</a>
+      <ul>
+        <li><a href="#目录">目录</a></li>
+        <li><a href="#一引言为什么需要-llm-做裁判">一、引言：为什么需要 LLM 做裁判？</a>
+          <ul>
+            <li><a href="#11-传统评测指标的三重困境">1.1 传统评测指标的三重困境</a></li>
+            <li><a href="#12-llm-as-judge-的核心洞察">1.2 LLM as Judge 的核心洞察</a></li>
+            <li><a href="#13-本文结构">1.3 本文结构</a></li>
+          </ul>
+        </li>
+        <li><a href="#二llm-as-judge-的核心原理">二、LLM as Judge 的核心原理</a>
+          <ul>
+            <li><a href="#21-三种评判范式">2.1 三种评判范式</a></li>
+            <li><a href="#22-三种范式的对比与选型">2.2 三种范式的对比与选型</a></li>
+            <li><a href="#23-prompt-设计方法论">2.3 Prompt 设计方法论</a></li>
+            <li><a href="#24-为何有效理论分析">2.4 为何有效？理论分析</a></li>
+            <li><a href="#25-llm-as-judge-vs-传统指标多维对比">2.5 LLM-as-Judge vs 传统指标：多维对比</a></li>
+          </ul>
+        </li>
+        <li><a href="#三llm-as-judge-的系统性挑战">三、LLM as Judge 的系统性挑战</a>
+          <ul>
+            <li><a href="#31-position-bias位置偏见">3.1 Position Bias（位置偏见）</a></li>
+            <li><a href="#32-verbosity-bias冗长偏见">3.2 Verbosity Bias（冗长偏见）</a></li>
+            <li><a href="#33-self-enhancement-bias自我增强偏见">3.3 Self-Enhancement Bias（自我增强偏见）</a></li>
+            <li><a href="#34-校准问题calibration">3.4 校准问题（Calibration）</a></li>
+            <li><a href="#35-成本与延迟">3.5 成本与延迟</a></li>
+          </ul>
+        </li>
+        <li><a href="#四工业案例深度解析">四、工业案例深度解析</a>
+          <ul>
+            <li><a href="#41-lmsys-chatbot-arena众包与-llm-judge-融合的典范">4.1 LMSYS Chatbot Arena：众包与 LLM-Judge 融合的典范</a></li>
+            <li><a href="#42-anthropicconstitutional-ai-与-rlaif">4.2 Anthropic：Constitutional AI 与 RLAIF</a></li>
+            <li><a href="#43-国内实践大模型自动化评测管线">4.3 国内实践：大模型自动化评测管线</a></li>
+          </ul>
+        </li>
+        <li><a href="#五进阶llm-as-judge-的变体与前沿">五、进阶：LLM as Judge 的变体与前沿</a>
+          <ul>
+            <li><a href="#51-rlaif从-ai-feedback-到自训练循环">5.1 RLAIF：从 AI Feedback 到自训练循环</a></li>
+            <li><a href="#52-multi-agent-debate-judge">5.2 Multi-Agent Debate Judge</a></li>
+            <li><a href="#53-fine-tuned-judge-模型">5.3 Fine-tuned Judge 模型</a></li>
+            <li><a href="#54-llm-as-judge-的局限性边界">5.4 LLM-as-Judge 的局限性边界</a></li>
+          </ul>
+        </li>
+        <li><a href="#六总结与实践建议">六、总结与实践建议</a>
+          <ul>
+            <li><a href="#61-核心要点回顾">6.1 核心要点回顾</a></li>
+            <li><a href="#62-什么时候该用什么时候不该用">6.2 什么时候该用？什么时候不该用？</a></li>
+            <li><a href="#63-一页纸-checklist搭建-llm-评测管线">6.3 一页纸 Checklist：搭建 LLM 评测管线</a></li>
+            <li><a href="#64-未来展望">6.4 未来展望</a></li>
+          </ul>
+        </li>
+        <li><a href="#参考资料">参考资料</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="llm-as-judge--原理架构与工业实践">
+  LLM as Judge — 原理、架构与工业实践
+  <a class="anchor" href="#llm-as-judge--%e5%8e%9f%e7%90%86%e6%9e%b6%e6%9e%84%e4%b8%8e%e5%b7%a5%e4%b8%9a%e5%ae%9e%e8%b7%b5">#</a>
+</h1>
+<blockquote>
+<p>&ldquo;A large language model can judge which response is better — not because it was trained to be a judge, but because the act of generating good responses implicitly teaches the model to recognize them.&rdquo;
+— 核心洞察</p>
+</blockquote>
+<hr>
+<h2 id="目录">
+  目录
+  <a class="anchor" href="#%e7%9b%ae%e5%bd%95">#</a>
+</h2>
+<ul>
+<li><a href="#%e4%b8%80%e5%bc%95%e8%a8%80%e4%b8%ba%e4%bb%80%e4%b9%88%e9%9c%80%e8%a6%81-llm-%e5%81%9a%e8%a3%81%e5%88%a4">一、引言：为什么需要 LLM 做裁判？</a></li>
+<li><a href="#%e4%ba%8cllm-as-judge-%e7%9a%84%e6%a0%b8%e5%bf%83%e5%8e%9f%e7%90%86">二、LLM as Judge 的核心原理</a></li>
+<li><a href="#%e4%b8%89llm-as-judge-%e7%9a%84%e7%b3%bb%e7%bb%9f%e6%80%a7%e6%8c%91%e6%88%98">三、LLM as Judge 的系统性挑战</a></li>
+<li><a href="#%e5%9b%9b%e5%b7%a5%e4%b8%9a%e6%a1%88%e4%be%8b%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90">四、工业案例深度解析</a></li>
+<li><a href="#%e4%ba%94%e8%bf%9b%e9%98%b6llm-as-judge-%e7%9a%84%e5%8f%98%e4%bd%93%e4%b8%8e%e5%89%8d%e6%b2%bf">五、进阶：LLM as Judge 的变体与前沿</a></li>
+<li><a href="#%e5%85%ad%e6%80%bb%e7%bb%93%e4%b8%8e%e5%ae%9e%e8%b7%b5%e5%bb%ba%e8%ae%ae">六、总结与实践建议</a></li>
+<li><a href="#%e5%8f%82%e8%80%83%e8%b5%84%e6%96%99">参考资料</a></li>
+</ul>
+<hr>
+<h2 id="一引言为什么需要-llm-做裁判">
+  一、引言：为什么需要 LLM 做裁判？
+  <a class="anchor" href="#%e4%b8%80%e5%bc%95%e8%a8%80%e4%b8%ba%e4%bb%80%e4%b9%88%e9%9c%80%e8%a6%81-llm-%e5%81%9a%e8%a3%81%e5%88%a4">#</a>
+</h2>
+<blockquote>
+<p>&ldquo;In order to improve a system, you must first be able to measure it. But if the measurement is wrong, the improvement is an illusion.&rdquo;</p>
+</blockquote>
+<p>2023 年初，当 GPT-4 以压倒性优势横扫各大基准测试时，一个尴尬的现实浮出水面：<strong>我们不知道该相信哪个评测结果</strong>。</p>
+<p>同一个模型，在 MMLU 上可能得 86.4 分，在 GSM8K 上可能得 92.0 分，但当你真正和它对话时，却发现它答非所问、编造事实、或者给出冗长却空洞的回答。传统评测指标与人类真实体验之间的鸿沟，比预想中更大。</p>
+<h3 id="11-传统评测指标的三重困境">
+  1.1 传统评测指标的三重困境
+  <a class="anchor" href="#11-%e4%bc%a0%e7%bb%9f%e8%af%84%e6%b5%8b%e6%8c%87%e6%a0%87%e7%9a%84%e4%b8%89%e9%87%8d%e5%9b%b0%e5%a2%83">#</a>
+</h3>
+<p><strong>第一重：n-gram 重叠指标的语义盲区。</strong></p>
+<p>BLEU [1] 和 ROUGE [2] 诞生于机器翻译和摘要时代，它们的底层逻辑很简单：计算候选文本与参考答案之间的词元重叠率。但这个逻辑有一个致命缺陷 —— <strong>它不理解语义</strong>。</p>
+<p>考虑一个简单的例子：</p>
+<table>
+  <thead>
+      <tr>
+          <th>问题</th>
+          <th>参考答案</th>
+          <th>候选 A</th>
+          <th>候选 B</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>北京是什么城市？</td>
+          <td>中国的首都</td>
+          <td>中华人民共和国的首都</td>
+          <td>首都被中国</td>
+      </tr>
+  </tbody>
+</table>
+<p>BLEU 会给候选 B 更高的分数（因为它包含了&quot;首都&quot;和&quot;中国&quot;这两个参考答案中的词），但人类读者一眼就能看出候选 A 才是语义正确、语法通顺的回答。</p>
+<p><strong>第二重：人类标注的成本与一致性困境。</strong></p>
+<p>如果自动指标不够好，那就让人来评。但人工标注面临三个难题：</p>
+<ol>
+<li><strong>成本高昂</strong>：标注 1000 条对话数据需要数百人时，按市场价格计算动辄数万元。</li>
+<li><strong>主观不一致</strong>：同一个标注员在不同时间对同一回答的评分可能不同（intra-annotator inconsistency），不同标注员之间的评分标准也差异巨大（inter-annotator disagreement）。LMSYS 的研究显示，即使是受过训练的标注员，pairwise 一致性也只有 ~70-80% [3]。</li>
+<li><strong>速度跟不上模型迭代</strong>：大模型团队每周甚至每天都在迭代，但人工标注的 pipeline 需要数天才能产出结果，评测成了迭代的瓶颈。</li>
+</ol>
+<p><strong>第三重：生成式任务的不可判定性。</strong></p>
+<p>对于有标准答案的任务（如数学题、代码题），我们可以用执行结果或精确匹配来评测。但对于开放域对话、创意写作、观点阐述这类<strong>没有唯一正确答案</strong>的任务，传统的确定性指标彻底失效。</p>
+<h3 id="12-llm-as-judge-的核心洞察">
+  1.2 LLM as Judge 的核心洞察
+  <a class="anchor" href="#12-llm-as-judge-%e7%9a%84%e6%a0%b8%e5%bf%83%e6%b4%9e%e5%af%9f">#</a>
+</h3>
+<p>2023 年，一个简单却深刻的洞察改变了这一切：</p>
+<blockquote>
+<p><strong>一个能够生成高质量回答的模型，大概率也能识别什么是高质量回答。</strong></p>
+</blockquote>
+<p>这个洞察的逻辑链条是：</p>
+<ol>
+<li>LLM 在训练过程中学习了海量的人类偏好数据（RLHF、DPO）</li>
+<li>这些数据本质上就是在教模型&quot;什么是好的回答&quot;</li>
+<li>因此，把 LLM 从&quot;生成者&quot;切换为&quot;评判者&quot;，它天然具备评判能力</li>
+<li>而且，LLM 的评判可以通过 prompt 灵活地适配不同的评判标准</li>
+</ol>
+<p>2023 年 6 月，Zheng 等人发表了 <strong>《Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena》</strong> [3]，首次系统性地验证了这个假设。他们的核心发现是：</p>
+<ul>
+<li>GPT-4 作为 judge，与人类标注的一致性达到了 <strong>~80%</strong>（与标注员之间的一致性相当）</li>
+<li>在 MT-Bench 基准上，LLM-as-Judge 的排名与 Chatbot Arena 的 Elo 排名高度相关（Spearman ρ &gt; 0.93）</li>
+<li>这一致性已经超过了大多数传统自动指标与人类判断的相关性</li>
+</ul>
+<h3 id="13-本文结构">
+  1.3 本文结构
+  <a class="anchor" href="#13-%e6%9c%ac%e6%96%87%e7%bb%93%e6%9e%84">#</a>
+</h3>
+<p>本文将从三个维度深入剖析 LLM as Judge：</p>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>核心问题</th>
+          <th>章节</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>原理</strong></td>
+          <td>为什么有效？怎么用？</td>
+          <td>第二章</td>
+      </tr>
+      <tr>
+          <td><strong>挑战</strong></td>
+          <td>有哪些系统性偏差？如何缓解？</td>
+          <td>第三章</td>
+      </tr>
+      <tr>
+          <td><strong>实践</strong></td>
+          <td>工业界怎么落地？效果如何？</td>
+          <td>第四、五章</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="二llm-as-judge-的核心原理">
+  二、LLM as Judge 的核心原理
+  <a class="anchor" href="#%e4%ba%8cllm-as-judge-%e7%9a%84%e6%a0%b8%e5%bf%83%e5%8e%9f%e7%90%86">#</a>
+</h2>
+<h3 id="21-三种评判范式">
+  2.1 三种评判范式
+  <a class="anchor" href="#21-%e4%b8%89%e7%a7%8d%e8%af%84%e5%88%a4%e8%8c%83%e5%bc%8f">#</a>
+</h3>
+<p>LLM as Judge 不是单一方法，而是一族方法。根据评判的输入和输出形式，可以分为三种范式：</p>
+
+
+<script src="/www6vAIGC/mermaid.min.js"></script>
+
+  <script>mermaid.initialize({
+  "flowchart": {
+    "useMaxWidth":true
+  },
+  "theme": "default"
+}
+)</script>
+
+
+
+<pre class="mermaid">graph TB
+    subgraph &#34;Pointwise（单样本评判）&#34;
+        A1[问题 &#43; 回答] --&gt; A2[LLM Judge]
+        A2 --&gt; A3[分数 1-5 或 1-10]
+    end
+    
+    subgraph &#34;Pairwise（两两比较）&#34;
+        B1[问题 &#43; 回答A &#43; 回答B] --&gt; B2[LLM Judge]
+        B2 --&gt; B3[A更好 / B更好 / 平局]
+    end
+    
+    subgraph &#34;Listwise（列表排序）&#34;
+        C1[问题 &#43; 回答A/B/C/D] --&gt; C2[LLM Judge]
+        C2 --&gt; C3[排序 &#43; 各分数]
+    end
+    
+    style A1 fill:#e1f5fe
+    style B1 fill:#e8f5e9
+    style C1 fill:#fff3e0</pre>
+<p><strong>图 1：LLM as Judge 的三种评判范式</strong></p>
+<h4 id="pointwise独立打分">
+  Pointwise：独立打分
+  <a class="anchor" href="#pointwise%e7%8b%ac%e7%ab%8b%e6%89%93%e5%88%86">#</a>
+</h4>
+<p>给定一个问题 Q 和一个回答 A，让 LLM Judge 给出一个分数（如 1-5 分）：</p>
+<pre tabindex="0"><code>你是一个专业的 AI 回答质量评估员。请根据以下标准对回答进行打分（1-5分）：
+
+- 5分：回答准确、全面、有深度
+- 4分：回答准确但不够全面
+- 3分：回答基本正确但存在小瑕疵
+- 2分：回答存在明显错误或遗漏
+- 1分：回答完全错误或无关
+
+问题：什么是 Transformer 中的注意力机制？
+回答：注意力机制是一种...
+
+请直接输出分数数字，不要解释。
+</code></pre><p><strong>适用场景</strong>：大规模数据集的快速筛选、生成质量的粗粒度监控。</p>
+<p><strong>优势</strong>：简单、可并行、每个样本独立评判。</p>
+<p><strong>劣势</strong>：LLM 的绝对评分能力较弱（calibration 问题），不同样本之间缺乏可比性。</p>
+<h4 id="pairwise两两比较">
+  Pairwise：两两比较
+  <a class="anchor" href="#pairwise%e4%b8%a4%e4%b8%a4%e6%af%94%e8%be%83">#</a>
+</h4>
+<p>给定一个问题 Q 和两个回答 A、B，让 LLM Judge 选择更好的一个：</p>
+<pre tabindex="0"><code>请比较以下两个回答的质量，选择更好的一个。
+
+问题：什么是 Transformer 中的注意力机制？
+
+[回答A]
+注意力机制是一种...
+
+[回答B]
+注意力是一种让模型...
+
+请只输出 A、B 或 Tie。
+</code></pre><p><strong>适用场景</strong>：模型 A/B 测试、RLHF 偏好数据生成、排行榜评测。</p>
+<p><strong>优势</strong>：比较比绝对评分更稳定（心理学中的 Weber-Fechner 定律：人类对差异的感知是相对的）；与 Chatbot Arena 的众包标注范式一致。</p>
+<p><strong>劣势</strong>：需要 O(n²) 次比较才能完成 n 个模型的全量对比；存在 Position Bias。</p>
+<h4 id="listwise列表排序">
+  Listwise：列表排序
+  <a class="anchor" href="#listwise%e5%88%97%e8%a1%a8%e6%8e%92%e5%ba%8f">#</a>
+</h4>
+<p>给定一个问题 Q 和多个回答，让 LLM Judge 进行排序并打分：</p>
+<pre tabindex="0"><code>请对以下 4 个回答按质量从高到低排序，并给出理由。
+
+问题：...
+[A] ...
+[B] ...
+[C] ...
+[D] ...
+
+输出格式：排序 &gt; 理由
+</code></pre><p><strong>适用场景</strong>：多候选生成系统（如 Search-then-Rank pipeline）、RAG 检索结果重排。</p>
+<p><strong>优势</strong>：一次调用获得全局排序，效率高；可以捕捉全局分布信息。</p>
+<p><strong>劣势</strong>：随着候选数量增加，LLM 的排序准确率下降（cognitive overload）；prompt 变长，token 成本增加。</p>
+<h3 id="22-三种范式的对比与选型">
+  2.2 三种范式的对比与选型
+  <a class="anchor" href="#22-%e4%b8%89%e7%a7%8d%e8%8c%83%e5%bc%8f%e7%9a%84%e5%af%b9%e6%af%94%e4%b8%8e%e9%80%89%e5%9e%8b">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>Pointwise</th>
+          <th>Pairwise</th>
+          <th>Listwise</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>输入</strong></td>
+          <td>Q + A</td>
+          <td>Q + A + B</td>
+          <td>Q + A + B + C + &hellip;</td>
+      </tr>
+      <tr>
+          <td><strong>输出</strong></td>
+          <td>分数 (1-5)</td>
+          <td>胜者 (A/B/Tie)</td>
+          <td>排序 + 分数</td>
+      </tr>
+      <tr>
+          <td><strong>Token 成本</strong></td>
+          <td>低</td>
+          <td>中</td>
+          <td>高</td>
+      </tr>
+      <tr>
+          <td><strong>评判稳定性</strong></td>
+          <td>低（校准差）</td>
+          <td>高</td>
+          <td>中</td>
+      </tr>
+      <tr>
+          <td><strong>Position Bias</strong></td>
+          <td>无</td>
+          <td>严重</td>
+          <td>中等</td>
+      </tr>
+      <tr>
+          <td><strong>适用规模</strong></td>
+          <td>大量样本</td>
+          <td>中等样本</td>
+          <td>少量样本</td>
+      </tr>
+      <tr>
+          <td><strong>典型用途</strong></td>
+          <td>质量监控</td>
+          <td>A/B 测试</td>
+          <td>多候选重排</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>选型决策树：</strong></p>
+
+<pre class="mermaid">flowchart TD
+    Q1{评测目标？}
+    Q1 --&gt;|模型排名| Q2{候选模型数量？}
+    Q1 --&gt;|质量监控| A1[Pointwise]
+    Q1 --&gt;|偏好数据生成| A2[Pairwise]
+    Q1 --&gt;|检索重排| A3[Listwise]
+    
+    Q2 --&gt;|2-5个| A4[Pairwise &#43; Elo]
+    Q2 --&gt;|5-20个| A5[Pairwise &#43; Bradley-Terry]
+    Q2 --&gt;|20&#43;个| A6[抽样 Pairwise]
+    
+    style A1 fill:#e1f5fe
+    style A2 fill:#e8f5e9
+    style A3 fill:#fff3e0
+    style A4 fill:#e1f5fe
+    style A5 fill:#e8f5e9
+    style A6 fill:#fff3e0</pre>
+<p><strong>图 2：LLM-as-Judge 范式选型决策树</strong></p>
+<h3 id="23-prompt-设计方法论">
+  2.3 Prompt 设计方法论
+  <a class="anchor" href="#23-prompt-%e8%ae%be%e8%ae%a1%e6%96%b9%e6%b3%95%e8%ae%ba">#</a>
+</h3>
+<p>一个有效的 LLM-as-Judge prompt 需要四个核心组件：</p>
+
+<pre class="mermaid">graph LR
+    subgraph &#34;Judge Prompt 四要素&#34;
+        A[角色设定&lt;br/&gt;Role] --&gt; B[评判标准&lt;br/&gt;Criteria]
+        B --&gt; C[评分尺度&lt;br/&gt;Scale]
+        C --&gt; D[输出格式&lt;br/&gt;Format]
+    end
+    
+    A -.-&gt;|&#34;你是一个专业&lt;br/&gt;的质量评估员&#34;| B
+    B -.-&gt;|&#34;从以下维度评估：&lt;br/&gt;准确性、有用性、安全性&#34;| C
+    C -.-&gt;|&#34;1-5分：&lt;br/&gt;1=完全错误, 5=完美&#34;| D
+    D -.-&gt;|&#34;输出 JSON：&lt;br/&gt;{score, reason}&#34;| A
+    
+    style A fill:#e3f2fd
+    style B fill:#e8f5e9
+    style C fill:#fff3e0
+    style D fill:#fce4ec</pre>
+<p><strong>图 3：Judge Prompt 的四要素闭环</strong></p>
+<h4 id="要素一角色设定role">
+  要素一：角色设定（Role）
+  <a class="anchor" href="#%e8%a6%81%e7%b4%a0%e4%b8%80%e8%a7%92%e8%89%b2%e8%ae%be%e5%ae%9arole">#</a>
+</h4>
+<p>角色设定不是可有可无的&quot;装饰&quot;。实验表明，明确指定评判角色可以显著提升 LLM 评判的一致性 [4]：</p>
+<pre tabindex="0"><code>你是一位资深的 AI 研究专家，具有丰富的自然语言处理和大语言模型评估经验。
+你将从专业角度对 AI 助手的回答进行客观、公正的评判。
+</code></pre><h4 id="要素二评判标准criteria">
+  要素二：评判标准（Criteria）
+  <a class="anchor" href="#%e8%a6%81%e7%b4%a0%e4%ba%8c%e8%af%84%e5%88%a4%e6%a0%87%e5%87%86criteria">#</a>
+</h4>
+<p>评判标准必须<strong>具体、可操作、可区分</strong>。模糊的标准如&quot;回答好不好&quot;会导致 LLM 输出方差极大。好的标准应该：</p>
+<ol>
+<li><strong>多维度拆解</strong>：将&quot;质量&quot;拆分为准确性、有用性、安全性、流畅度等子维度</li>
+<li><strong>可验证</strong>：每个标准应该有明确的判断依据</li>
+<li><strong>有优先级</strong>：当多个维度冲突时（如&quot;准确但冗长&quot;），明确哪个维度更重要</li>
+</ol>
+<pre tabindex="0"><code>评判标准（按重要性排序）：
+1. 事实准确性：回答中的事实是否正确？有无编造？
+2. 有用性：回答是否直接解决了用户的问题？
+3. 完整性：回答是否覆盖了问题的关键方面？
+4. 表达清晰度：回答是否易于理解？
+</code></pre><h4 id="要素三评分尺度scale">
+  要素三：评分尺度（Scale）
+  <a class="anchor" href="#%e8%a6%81%e7%b4%a0%e4%b8%89%e8%af%84%e5%88%86%e5%b0%ba%e5%ba%a6scale">#</a>
+</h4>
+<p>评分尺度的设计影响评判的分辨率和稳定性：</p>
+<table>
+  <thead>
+      <tr>
+          <th>尺度类型</th>
+          <th>示例</th>
+          <th>特点</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>二元</strong></td>
+          <td>好/差</td>
+          <td>最简单，分辨率最低</td>
+          <td>快速筛选</td>
+      </tr>
+      <tr>
+          <td><strong>三级</strong></td>
+          <td>好/中/差</td>
+          <td>增加&quot;不确定&quot;缓冲</td>
+          <td>初步过滤</td>
+      </tr>
+      <tr>
+          <td><strong>五级</strong></td>
+          <td>1-5 Likert</td>
+          <td>心理学标准尺度，分辨率适中</td>
+          <td>最常用</td>
+      </tr>
+      <tr>
+          <td><strong>十级</strong></td>
+          <td>1-10</td>
+          <td>高分辨率但校准困难</td>
+          <td>细粒度排名</td>
+      </tr>
+      <tr>
+          <td><strong>描述性</strong></td>
+          <td>优秀/良好/合格/需改进</td>
+          <td>语义锚定更清晰</td>
+          <td>面向非技术用户</td>
+      </tr>
+  </tbody>
+</table>
+<p>Zheng 等人的实验表明，<strong>五级尺度</strong>在分辨率和稳定性之间取得了最佳平衡 [3]。</p>
+<h4 id="要素四输出格式format">
+  要素四：输出格式（Format）
+  <a class="anchor" href="#%e8%a6%81%e7%b4%a0%e5%9b%9b%e8%be%93%e5%87%ba%e6%a0%bc%e5%bc%8fformat">#</a>
+</h4>
+<p>要求结构化输出（如 JSON）便于后续的自动化处理：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;score&#34;</span>: <span style="color:#ae81ff">4</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;dimensions&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;accuracy&#34;</span>: <span style="color:#ae81ff">5</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;helpfulness&#34;</span>: <span style="color:#ae81ff">4</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;completeness&#34;</span>: <span style="color:#ae81ff">3</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;clarity&#34;</span>: <span style="color:#ae81ff">4</span>
+</span></span><span style="display:flex;"><span>  },
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;reason&#34;</span>: <span style="color:#e6db74">&#34;回答在事实上完全准确，表达清晰，但在深度上略有不足，未讨论 attention 的计算复杂度。&#34;</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="24-为何有效理论分析">
+  2.4 为何有效？理论分析
+  <a class="anchor" href="#24-%e4%b8%ba%e4%bd%95%e6%9c%89%e6%95%88%e7%90%86%e8%ae%ba%e5%88%86%e6%9e%90">#</a>
+</h3>
+<p>LLM as Judge 之所以有效，可以从三个层面来理解：</p>
+<h4 id="层一生成能力蕴含判别能力">
+  层一：生成能力蕴含判别能力
+  <a class="anchor" href="#%e5%b1%82%e4%b8%80%e7%94%9f%e6%88%90%e8%83%bd%e5%8a%9b%e8%95%b4%e5%90%ab%e5%88%a4%e5%88%ab%e8%83%bd%e5%8a%9b">#</a>
+</h4>
+<p>从信息论的角度，一个能够<strong>生成</strong>高质量文本的模型，其内部必然已经学习到了&quot;什么是高质量文本&quot;的表征。这在理论上被称为 <strong>generation-discrimination duality</strong> [5]：</p>
+<ul>
+<li>生成任务要求模型学习 $P(y|x)$ 的分布</li>
+<li>判别任务要求模型学习 $P(\text{good}|y, x)$ 的条件概率</li>
+<li>两者共享同一个语义表征空间，因此生成能力可以迁移到判别能力</li>
+</ul>
+<h4 id="层二rlhf-训练的隐性偏好知识">
+  层二：RLHF 训练的隐性偏好知识
+  <a class="anchor" href="#%e5%b1%82%e4%ba%8crlhf-%e8%ae%ad%e7%bb%83%e7%9a%84%e9%9a%90%e6%80%a7%e5%81%8f%e5%a5%bd%e7%9f%a5%e8%af%86">#</a>
+</h4>
+<p>现代 LLM 几乎都经过 RLHF（Reinforcement Learning from Human Feedback）或 DPO（Direct Preference Optimization）训练。这些训练过程的本质是：</p>
+<pre tabindex="0"><code>人类标注员提供偏好对 (y_win, y_lose) 
+    → 训练 Reward Model R(x, y) 
+    → 用 Reward Model 优化 LLM 的输出策略
+</code></pre><p>这意味着，经过 RLHF 训练的 LLM <strong>内部已经编码了一个隐式的 Reward Model</strong>。当我们用 prompt 要求它做评判时，实际上是在<strong>显式地提取这个内部 Reward Model 的判断</strong> [6]。</p>
+<h4 id="层三in-context-learning-的零样本迁移">
+  层三：In-Context Learning 的零样本迁移
+  <a class="anchor" href="#%e5%b1%82%e4%b8%89in-context-learning-%e7%9a%84%e9%9b%b6%e6%a0%b7%e6%9c%ac%e8%bf%81%e7%a7%bb">#</a>
+</h4>
+<p>LLM 的 In-Context Learning 能力使其能够在没有微调的情况下，仅通过 prompt 就适配新的评判任务。这使得 LLM-as-Judge 具有<strong>零样本泛化能力</strong>——不需要为每个新的评判任务收集标注数据并重新训练。</p>
+<h3 id="25-llm-as-judge-vs-传统指标多维对比">
+  2.5 LLM-as-Judge vs 传统指标：多维对比
+  <a class="anchor" href="#25-llm-as-judge-vs-%e4%bc%a0%e7%bb%9f%e6%8c%87%e6%a0%87%e5%a4%9a%e7%bb%b4%e5%af%b9%e6%af%94">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>BLEU / ROUGE</th>
+          <th>BERTScore</th>
+          <th>LLM-as-Judge</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>评估原理</strong></td>
+          <td>n-gram 重叠</td>
+          <td>语义嵌入相似度</td>
+          <td>语义理解 + 推理</td>
+      </tr>
+      <tr>
+          <td><strong>语义理解</strong></td>
+          <td>❌ 无</td>
+          <td>✅ 浅层</td>
+          <td>✅✅ 深层</td>
+      </tr>
+      <tr>
+          <td><strong>事实性判断</strong></td>
+          <td>❌ 无法判断</td>
+          <td>❌ 无法判断</td>
+          <td>✅ 可以</td>
+      </tr>
+      <tr>
+          <td><strong>逻辑推理评估</strong></td>
+          <td>❌ 无法判断</td>
+          <td>❌ 无法判断</td>
+          <td>✅ 可以</td>
+      </tr>
+      <tr>
+          <td><strong>开放性任务</strong></td>
+          <td>❌ 不适用</td>
+          <td>⚠️ 有限</td>
+          <td>✅ 适用</td>
+      </tr>
+      <tr>
+          <td><strong>与人类一致性</strong></td>
+          <td>~0.3-0.5</td>
+          <td>~0.5-0.7</td>
+          <td>~0.7-0.85</td>
+      </tr>
+      <tr>
+          <td><strong>成本（每样本）</strong></td>
+          <td>~$0.0001</td>
+          <td>~$0.001</td>
+          <td>~$0.01-0.10</td>
+      </tr>
+      <tr>
+          <td><strong>速度</strong></td>
+          <td>极快（CPU）</td>
+          <td>快（GPU）</td>
+          <td>慢（API 延迟）</td>
+      </tr>
+      <tr>
+          <td><strong>可解释性</strong></td>
+          <td>❌ 仅数字</td>
+          <td>❌ 仅数字</td>
+          <td>✅ 自然语言解释</td>
+      </tr>
+      <tr>
+          <td><strong>多语言支持</strong></td>
+          <td>⚠️ 分词敏感</td>
+          <td>✅ 多语言嵌入</td>
+          <td>✅ 多语言</td>
+      </tr>
+      <tr>
+          <td><strong>可定制标准</strong></td>
+          <td>❌ 固定公式</td>
+          <td>❌ 固定模型</td>
+          <td>✅ prompt 定义</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="三llm-as-judge-的系统性挑战">
+  三、LLM as Judge 的系统性挑战
+  <a class="anchor" href="#%e4%b8%89llm-as-judge-%e7%9a%84%e7%b3%bb%e7%bb%9f%e6%80%a7%e6%8c%91%e6%88%98">#</a>
+</h2>
+<blockquote>
+<p>&ldquo;Every judge has biases. The question is not whether LLM-as-a-Judge is biased, but which biases it has and how severe they are.&rdquo;</p>
+</blockquote>
+<p>LLM as Judge 虽然强大，但并非完美。2023 年下半年以来，多篇研究揭示了 LLM-as-Judge 的系统性偏差。理解这些偏差，是正确使用方法的前提。</p>
+<h3 id="31-position-bias位置偏见">
+  3.1 Position Bias（位置偏见）
+  <a class="anchor" href="#31-position-bias%e4%bd%8d%e7%bd%ae%e5%81%8f%e8%a7%81">#</a>
+</h3>
+<h4 id="现象">
+  现象
+  <a class="anchor" href="#%e7%8e%b0%e8%b1%a1">#</a>
+</h4>
+<p>这是 LLM-as-Judge 最早被发现、也最严重的偏差之一。当在 pairwise 比较中<strong>调换两个回答的顺序</strong>时，LLM 的评判结果会发生翻转：</p>
+<pre tabindex="0"><code>第一次评判：
+问题：什么是机器学习？
+回答A（GPT-4 生成）：...
+回答B（Claude 生成）：...
+LLM Judge → 选择 A ✓
+
+调换顺序后：
+问题：什么是机器学习？
+回答A（Claude 生成）：...
+回答B（GPT-4 生成）：...
+LLM Judge → 仍然选择 A（实际选择了第一个位置的 B） ✗
+</code></pre><p>Zheng 等人的实验显示，GPT-4 作为 judge 时，<strong>有 ~10% 的样本会因为位置调换而改变评判结果</strong> [3]。更糟糕的是，LLM 倾向于选择<strong>排在第一个的回答</strong>（First-Position Bias）。</p>
+<h4 id="根因分析">
+  根因分析
+  <a class="anchor" href="#%e6%a0%b9%e5%9b%a0%e5%88%86%e6%9e%90">#</a>
+</h4>
+<p>Position Bias 的根源在于 LLM 的自回归生成机制：</p>
+<ol>
+<li><strong>早期 token 的锚定效应</strong>：LLM 在生成判断时，会倾向于给先读到的内容更高的权重</li>
+<li><strong>注意力衰减</strong>：在长上下文中，模型对后部内容的注意力会逐渐衰减</li>
+<li><strong>输出格式暗示</strong>：prompt 中 &ldquo;回答A vs 回答B&rdquo; 的结构天然暗示了排序</li>
+</ol>
+<h4 id="缓解策略">
+  缓解策略
+  <a class="anchor" href="#%e7%bc%93%e8%a7%a3%e7%ad%96%e7%95%a5">#</a>
+</h4>
+<table>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th>方法</th>
+          <th>效果</th>
+          <th>成本</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Swap-and-Average</strong></td>
+          <td>对每对 (A, B) 做两次评判（A 在前、B 在前），取一致结果</td>
+          <td>减少 ~70% 位置偏差</td>
+          <td>2× token 成本</td>
+      </tr>
+      <tr>
+          <td><strong>随机排序</strong></td>
+          <td>每次评判随机打乱回答顺序，多次评判取投票</td>
+          <td>减少 ~50% 偏差</td>
+          <td>N× token 成本</td>
+      </tr>
+      <tr>
+          <td><strong>去标识化</strong></td>
+          <td>用 [回答1]、[回答2] 替代 [回答A]、[回答B]</td>
+          <td>减少 ~30% 偏差</td>
+          <td>无额外成本</td>
+      </tr>
+      <tr>
+          <td><strong>Pairwise 转 Pointwise</strong></td>
+          <td>分别对 A 和 B 独立打分，比较分数</td>
+          <td>完全消除位置偏差</td>
+          <td>2× token 成本</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>最佳实践</strong>：在工业评测中，推荐使用 <strong>Swap-and-Average</strong>，即在评判时先按 (A, B) 顺序评判一次，再按 (B, A) 顺序评判一次，两次结果一致才采纳，不一致则标记为 &ldquo;uncertain&rdquo;。</p>
+<h3 id="32-verbosity-bias冗长偏见">
+  3.2 Verbosity Bias（冗长偏见）
+  <a class="anchor" href="#32-verbosity-bias%e5%86%97%e9%95%bf%e5%81%8f%e8%a7%81">#</a>
+</h3>
+<h4 id="现象-1">
+  现象
+  <a class="anchor" href="#%e7%8e%b0%e8%b1%a1-1">#</a>
+</h4>
+<p>LLM-as-Judge 倾向于给<strong>更长的回答</strong>打更高的分数，即使长回答中包含了更多无关信息或冗余内容：</p>
+<pre tabindex="0"><code>问题：Python 中 list 和 tuple 的区别是什么？
+
+短回答（30字）：list 可变，tuple 不可变。
+
+长回答（200字）：list 和 tuple 是 Python 中两种常用的序列类型。
+主要区别在于 list 是可变（mutable）的，而 tuple 是不可变（immutable）的。
+这意味着 list 创建后可以修改其元素，而 tuple 一旦创建就不能修改。
+此外，list 使用方括号 [] 定义，tuple 使用圆括号 () 定义。
+在性能方面，tuple 由于不可变性，在某些情况下比 list 更高效...
+
+LLM Judge → 长回答得分显著更高（+1.5 分平均）
+</code></pre><p>Wang 等人的研究发现，<strong>在 GPT-4 的评判中，回答长度与得分的相关系数达到 0.48</strong> [7]，这意味着近四分之一的评分方差可以用长度解释。</p>
+<h4 id="根因分析-1">
+  根因分析
+  <a class="anchor" href="#%e6%a0%b9%e5%9b%a0%e5%88%86%e6%9e%90-1">#</a>
+</h4>
+<p>Verbosity Bias 的来源是多方面的：</p>
+<ol>
+<li><strong>训练数据的分布偏差</strong>：RLHF 训练数据中，人类标注员倾向于偏好更详细的回答（因为&quot;详细&quot;常被等同于&quot;认真&quot;）</li>
+<li><strong>信息量的启发式判断</strong>：LLM 可能将&quot;更多信息&quot;启发式地等同于&quot;更好&quot;，而没有精确判断信息的有效性</li>
+<li><strong>LLM 自身的生成偏好</strong>：LLM 本身就有生成更长文本的倾向，在评判时这种倾向被放大</li>
+</ol>
+<h4 id="缓解策略-1">
+  缓解策略
+  <a class="anchor" href="#%e7%bc%93%e8%a7%a3%e7%ad%96%e7%95%a5-1">#</a>
+</h4>
+<ol>
+<li><strong>长度归一化评分</strong>：将得分除以 $\log(\text{长度})$，惩罚过长回答</li>
+<li><strong>在 prompt 中明确要求简洁</strong>：&ldquo;请在评判时考虑简洁性，同等质量下简洁的回答得分更高&rdquo;</li>
+<li><strong>信息密度约束</strong>：要求 LLM Judge 评估&quot;信息密度&quot;维度（有用信息量 / 总字数）</li>
+</ol>
+<h3 id="33-self-enhancement-bias自我增强偏见">
+  3.3 Self-Enhancement Bias（自我增强偏见）
+  <a class="anchor" href="#33-self-enhancement-bias%e8%87%aa%e6%88%91%e5%a2%9e%e5%bc%ba%e5%81%8f%e8%a7%81">#</a>
+</h3>
+<h4 id="现象-2">
+  现象
+  <a class="anchor" href="#%e7%8e%b0%e8%b1%a1-2">#</a>
+</h4>
+<p><strong>LLM 倾向于给自己的生成打高分</strong>。当一个模型既作为生成器又作为评判器时，它会系统性地高估自己的输出质量：</p>
+<table>
+  <thead>
+      <tr>
+          <th>Judge 模型</th>
+          <th>给自己的输出平均分</th>
+          <th>给其他模型的输出平均分</th>
+          <th>偏差</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>GPT-4</td>
+          <td>4.3</td>
+          <td>3.6</td>
+          <td>+0.7</td>
+      </tr>
+      <tr>
+          <td>Claude-2</td>
+          <td>4.1</td>
+          <td>3.7</td>
+          <td>+0.4</td>
+      </tr>
+      <tr>
+          <td>Llama-2-70B</td>
+          <td>3.9</td>
+          <td>3.4</td>
+          <td>+0.5</td>
+      </tr>
+  </tbody>
+</table>
+<p>数据来源：Zheng et al. [3]</p>
+<p>这意味着，<strong>用 GPT-4 评判 GPT-4 的输出，会比用 GPT-4 评判其他模型的输出得到更高的分数</strong>。这在进行模型对比评测时会造成严重的不公平。</p>
+<h4 id="缓解策略-2">
+  缓解策略
+  <a class="anchor" href="#%e7%bc%93%e8%a7%a3%e7%ad%96%e7%95%a5-2">#</a>
+</h4>
+<ol>
+<li><strong>交叉评判（Cross-Judging）</strong>：用模型 A 评判模型 B 的输出，用模型 B 评判模型 A 的输出，取平均</li>
+<li><strong>使用第三方 Judge</strong>：用一个不参与对比的模型（如一个更强的模型或专用 judge 模型）来做评判</li>
+<li><strong>盲评（Blind Evaluation）</strong>：隐藏生成模型的身份信息</li>
+</ol>
+<h3 id="34-校准问题calibration">
+  3.4 校准问题（Calibration）
+  <a class="anchor" href="#34-%e6%a0%a1%e5%87%86%e9%97%ae%e9%a2%98calibration">#</a>
+</h3>
+<h4 id="现象-3">
+  现象
+  <a class="anchor" href="#%e7%8e%b0%e8%b1%a1-3">#</a>
+</h4>
+<p>不同 LLM 对同一回答的评分尺度可能差异巨大：</p>
+<pre tabindex="0"><code>同一回答，不同 LLM Judge 的评分：
+GPT-4:    4/5  (&#34;回答质量很高&#34;)
+Claude-2: 3/5  (&#34;回答不错但有提升空间&#34;)
+Llama-2:  2/5  (&#34;回答有待改进&#34;)
+</code></pre><p>这种校准不一致导致了一个严重问题：<strong>不同 judge 模型的评分不可直接比较</strong>。</p>
+<h4 id="根因">
+  根因
+  <a class="anchor" href="#%e6%a0%b9%e5%9b%a0">#</a>
+</h4>
+<p>不同模型的评分尺度差异来源于：</p>
+<ol>
+<li><strong>训练数据的分布差异</strong>：不同模型使用不同的人类偏好数据进行训练</li>
+<li><strong>对齐策略差异</strong>：RLHF 的 reward model 训练方式不同</li>
+<li><strong>系统 prompt 的影响</strong>：内置的系统 prompt 可能包含不同的&quot;打分习惯&quot;</li>
+</ol>
+<h4 id="标准化方案">
+  标准化方案
+  <a class="anchor" href="#%e6%a0%87%e5%87%86%e5%8c%96%e6%96%b9%e6%a1%88">#</a>
+</h4>
+<table>
+  <thead>
+      <tr>
+          <th>方案</th>
+          <th>方法</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>锚定样本法</strong></td>
+          <td>准备一组标准回答（涵盖各分数段），让所有 judge 先对锚定样本打分，根据偏差校正后续评分</td>
+          <td>小规模对比评测</td>
+      </tr>
+      <tr>
+          <td><strong>Z-Score 归一化</strong></td>
+          <td>对每个 judge 的评分做 $z = (x - \mu) / \sigma$ 标准化</td>
+          <td>大规模多 judge 评测</td>
+      </tr>
+      <tr>
+          <td><strong>Bradley-Terry 模型</strong></td>
+          <td>基于 pairwise 比较结果拟合全局排名，绕过绝对评分的校准问题</td>
+          <td>排行榜场景</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="35-成本与延迟">
+  3.5 成本与延迟
+  <a class="anchor" href="#35-%e6%88%90%e6%9c%ac%e4%b8%8e%e5%bb%b6%e8%bf%9f">#</a>
+</h3>
+<h4 id="token-成本估算">
+  Token 成本估算
+  <a class="anchor" href="#token-%e6%88%90%e6%9c%ac%e4%bc%b0%e7%ae%97">#</a>
+</h4>
+<p>以 GPT-4 为例，一次 pairwise 评判的 token 消耗：</p>
+<table>
+  <thead>
+      <tr>
+          <th>组件</th>
+          <th>Token 数</th>
+          <th>占比</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>System Prompt</td>
+          <td>~150</td>
+          <td>8%</td>
+      </tr>
+      <tr>
+          <td>User Prompt（含两个回答）</td>
+          <td>~1200</td>
+          <td>63%</td>
+      </tr>
+      <tr>
+          <td>Judge 输出（含推理过程）</td>
+          <td>~550</td>
+          <td>29%</td>
+      </tr>
+      <tr>
+          <td><strong>总计</strong></td>
+          <td><strong>~1900</strong></td>
+          <td><strong>100%</strong></td>
+      </tr>
+  </tbody>
+</table>
+<p>以 GPT-4 的价格（$0.03/1K input, $0.06/1K output）计算，<strong>单次评判成本约 $0.07</strong>。评测 1000 个样本需要 <strong>$70</strong>。</p>
+<h4 id="开源替代方案">
+  开源替代方案
+  <a class="anchor" href="#%e5%bc%80%e6%ba%90%e6%9b%bf%e4%bb%a3%e6%96%b9%e6%a1%88">#</a>
+</h4>
+<p>对于预算有限的团队，开源模型是更经济的选择：</p>
+<table>
+  <thead>
+      <tr>
+          <th>Judge 模型</th>
+          <th>单次成本</th>
+          <th>与 GPT-4 一致性</th>
+          <th>推荐场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>GPT-4 (API)</td>
+          <td>~$0.07</td>
+          <td>基准</td>
+          <td>生产环境</td>
+      </tr>
+      <tr>
+          <td>Claude-3-Sonnet</td>
+          <td>~$0.01</td>
+          <td>~85%</td>
+          <td>大规模评测</td>
+      </tr>
+      <tr>
+          <td>Llama-3-70B (自托管)</td>
+          <td>~$0.002</td>
+          <td>~75%</td>
+          <td>批量/离线评测</td>
+      </tr>
+      <tr>
+          <td>Qwen-2-72B (自托管)</td>
+          <td>~$0.002</td>
+          <td>~73%</td>
+          <td>中文场景</td>
+      </tr>
+      <tr>
+          <td>Prometheus-2-8B</td>
+          <td>~$0.001</td>
+          <td>~70%</td>
+          <td>专用 judge</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="四工业案例深度解析">
+  四、工业案例深度解析
+  <a class="anchor" href="#%e5%9b%9b%e5%b7%a5%e4%b8%9a%e6%a1%88%e4%be%8b%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90">#</a>
+</h2>
+<h3 id="41-lmsys-chatbot-arena众包与-llm-judge-融合的典范">
+  4.1 LMSYS Chatbot Arena：众包与 LLM-Judge 融合的典范
+  <a class="anchor" href="#41-lmsys-chatbot-arena%e4%bc%97%e5%8c%85%e4%b8%8e-llm-judge-%e8%9e%8d%e5%90%88%e7%9a%84%e5%85%b8%e8%8c%83">#</a>
+</h3>
+<h4 id="背景">
+  背景
+  <a class="anchor" href="#%e8%83%8c%e6%99%af">#</a>
+</h4>
+<p>LMSYS（Large Model System Organization）是由 UC Berkeley 主导的开源研究组织。2023 年初，他们推出了 <strong>Chatbot Arena</strong> [3][8]——一个匿名、众包的大模型对话评测平台。</p>
+<p>Chatbot Arena 的核心设计非常简单却优雅：</p>
+
+<pre class="mermaid">sequenceDiagram
+    participant User as 用户
+    participant Arena as Chatbot Arena
+    participant ModelA as 模型A（匿名）
+    participant ModelB as 模型B（匿名）
+    participant Judge as LLM Judge / 人类投票
+    participant Elo as Elo 排行榜
+    
+    User-&gt;&gt;Arena: 提交问题
+    Arena-&gt;&gt;ModelA: 并行请求
+    Arena-&gt;&gt;ModelB: 并行请求
+    ModelA--&gt;&gt;Arena: 回答A
+    ModelB--&gt;&gt;Arena: 回答B
+    Arena--&gt;&gt;User: 展示回答A和B（隐藏模型身份）
+    User-&gt;&gt;Arena: 投票选择更好的回答
+    Judge-&gt;&gt;Arena: 补充 LLM 评判
+    Arena-&gt;&gt;Elo: 更新 Elo 分数
+    Elo--&gt;&gt;User: 公开排行榜</pre>
+<p><strong>图 4：Chatbot Arena 的评测流水线</strong></p>
+<h4 id="核心设计">
+  核心设计
+  <a class="anchor" href="#%e6%a0%b8%e5%bf%83%e8%ae%be%e8%ae%a1">#</a>
+</h4>
+<p><strong>1. 众包 pairwise 投票</strong></p>
+<p>用户在与两个匿名模型对话后，投票选择更好的回答。每次投票产生一个 (A wins, B loses) 的偏好对。</p>
+<p><strong>2. LLM-Judge 补充标注</strong></p>
+<p>仅靠众包投票，数据量增长较慢。LMSYS 引入了 LLM-as-Judge 来补充人类投票：</p>
+<ul>
+<li>使用 GPT-4 对已有对话进行 pairwise 评判</li>
+<li>将 LLM 评判与人类投票混合，构建更大的偏好数据集</li>
+<li>实验显示，LLM 评判与人类投票的一致性达到 ~80%</li>
+</ul>
+<p><strong>3. Elo 评分系统</strong></p>
+<p>Chatbot Arena 使用 Elo 评分系统（源自国际象棋排名）来对模型进行全局排名：</p>
+<pre tabindex="0"><code>R_A_new = R_A_old + K × (S_A - E_A)
+</code></pre><p>其中：</p>
+<ul>
+<li>$R_A$ 是模型 A 的 Elo 分数</li>
+<li>$K$ 是权重因子</li>
+<li>$S_A$ 是实际结果（1=胜，0.5=平，0=负）</li>
+<li>$E_A$ 是期望胜率</li>
+</ul>
+<p>Elo 系统的优势在于：<strong>不需要对所有模型对做全量比较</strong>，只需要足够的&quot;桥梁比较&quot;就能推断全局排名。</p>
+<h4 id="数据规模与成果">
+  数据规模与成果
+  <a class="anchor" href="#%e6%95%b0%e6%8d%ae%e8%a7%84%e6%a8%a1%e4%b8%8e%e6%88%90%e6%9e%9c">#</a>
+</h4>
+<p>截至 2024 年底，Chatbot Arena 已经积累了：</p>
+<ul>
+<li><strong>超过 200 万次</strong>众包投票</li>
+<li><strong>100+ 个模型</strong>参与评测</li>
+<li>每月新增 <strong>10 万+</strong> 条偏好数据</li>
+</ul>
+<p>Chatbot Arena 已经成为大模型评测的事实标准。它的排名被广泛引用，甚至成为企业宣传的重要指标（&ldquo;Our model ranks #1 on Chatbot Arena!&quot;）。</p>
+<h4 id="关键洞察">
+  关键洞察
+  <a class="anchor" href="#%e5%85%b3%e9%94%ae%e6%b4%9e%e5%af%9f">#</a>
+</h4>
+<p>Chatbot Arena 的成功验证了 LLM-as-Judge 的一个核心前提：<strong>众包人类投票可以作为 LLM 评判的 ground truth</strong>。如果 LLM 评判与人类众包投票高度一致，那么 LLM 评判就可以作为可靠的自动化评测工具。</p>
+<h3 id="42-anthropicconstitutional-ai-与-rlaif">
+  4.2 Anthropic：Constitutional AI 与 RLAIF
+  <a class="anchor" href="#42-anthropicconstitutional-ai-%e4%b8%8e-rlaif">#</a>
+</h3>
+<h4 id="背景-1">
+  背景
+  <a class="anchor" href="#%e8%83%8c%e6%99%af-1">#</a>
+</h4>
+<p>Anthropic 在 2023 年提出了 <strong>Constitutional AI</strong> [9]，这是一种使用 LLM 自我监督来替代人工标注的方法。它是 LLM-as-Judge 在训练 pipeline 中最深入的应用之一。</p>
+<p>传统 RLHF 的流程是：</p>
+<pre tabindex="0"><code>人类标注偏好数据 → 训练 Reward Model → RL 优化 LLM
+</code></pre><p>RLAIF（RL from AI Feedback）则将人工标注替换为 LLM 评判：</p>
+<pre tabindex="0"><code>LLM 生成偏好数据 → LLM 作为 Reward Model → RL 优化 LLM
+</code></pre><h4 id="constitutional-ai-的两阶段设计">
+  Constitutional AI 的两阶段设计
+  <a class="anchor" href="#constitutional-ai-%e7%9a%84%e4%b8%a4%e9%98%b6%e6%ae%b5%e8%ae%be%e8%ae%a1">#</a>
+</h4>
+<p><strong>阶段一：Supervised Fine-Tuning with Self-Critique</strong></p>
+
+<pre class="mermaid">flowchart LR
+    A[初始 LLM&lt;br/&gt;生成有害回答] --&gt; B[Constitution&lt;br/&gt;原则集]
+    B --&gt; C[LLM 自我批评&lt;br/&gt;识别有害内容]
+    C --&gt; D[LLM 修改回答&lt;br/&gt;使其符合原则]
+    D --&gt; E[高质量训练数据]
+    
+    style A fill:#ffcdd2
+    style B fill:#e3f2fd
+    style C fill:#fff3e0
+    style D fill:#e8f5e9
+    style E fill:#e8f5e9</pre>
+<p><strong>图 5：Constitutional AI 的自我批评流程</strong></p>
+<p>在这个阶段，LLM 充当自己的 judge：</p>
+<ol>
+<li>初始模型生成一个可能有害的回答</li>
+<li>用一组&quot;Constitution&rdquo;（原则集，如&quot;不要生成歧视性内容&quot;）来评判这个回答</li>
+<li>LLM 自我批评并修改回答</li>
+<li>修改后的高质量回答用于微调模型</li>
+</ol>
+<p><strong>阶段二：RLAIF（AI Feedback 强化学习）</strong></p>
+<p>在第二阶段，LLM judge 充当 Reward Model：</p>
+<ol>
+<li>生成多个候选回答</li>
+<li>LLM judge 根据 Constitution 对候选进行 pairwise 比较</li>
+<li>基于比较结果训练 Reward Model</li>
+<li>用 RL 优化 LLM 的策略</li>
+</ol>
+<h4 id="关键发现">
+  关键发现
+  <a class="anchor" href="#%e5%85%b3%e9%94%ae%e5%8f%91%e7%8e%b0">#</a>
+</h4>
+<p>Anthropic 的研究揭示了一个反直觉的发现：</p>
+<blockquote>
+<p><strong>用 LLM 作为 judge 生成的训练数据，其质量与人类标注的数据相当，甚至在某些维度上更好。</strong></p>
+</blockquote>
+<p>具体来说：</p>
+<ul>
+<li>在有害内容检测上，LLM judge 的 recall 比人类标注员高 ~15%</li>
+<li>在有用性评估上，LLM judge 与人类标注的一致性达到 ~85%</li>
+<li>在成本上，LLM 评判的成本仅为人类标注的 ~1/100</li>
+</ul>
+<h3 id="43-国内实践大模型自动化评测管线">
+  4.3 国内实践：大模型自动化评测管线
+  <a class="anchor" href="#43-%e5%9b%bd%e5%86%85%e5%ae%9e%e8%b7%b5%e5%a4%a7%e6%a8%a1%e5%9e%8b%e8%87%aa%e5%8a%a8%e5%8c%96%e8%af%84%e6%b5%8b%e7%ae%a1%e7%ba%bf">#</a>
+</h3>
+<h4 id="背景-2">
+  背景
+  <a class="anchor" href="#%e8%83%8c%e6%99%af-2">#</a>
+</h4>
+<p>国内大模型厂商（如阿里、字节、百度）面临着与海外同行相同的评测挑战，但有三个额外的约束：</p>
+<ol>
+<li><strong>API 成本</strong>：GPT-4 API 在国内访问受限且成本更高</li>
+<li><strong>中文评测</strong>：需要一个对中文有深度理解的 judge</li>
+<li><strong>合规要求</strong>：评测需要覆盖安全性、合规性等中文特有的维度</li>
+</ol>
+<h4 id="典型架构多维度自动化评测管线">
+  典型架构：多维度自动化评测管线
+  <a class="anchor" href="#%e5%85%b8%e5%9e%8b%e6%9e%b6%e6%9e%84%e5%a4%9a%e7%bb%b4%e5%ba%a6%e8%87%aa%e5%8a%a8%e5%8c%96%e8%af%84%e6%b5%8b%e7%ae%a1%e7%ba%bf">#</a>
+</h4>
+
+<pre class="mermaid">graph TB
+    subgraph &#34;数据层&#34;
+        A1[问题池&lt;br/&gt;10000&#43; 问题]
+        A2[参考答案&lt;br/&gt;人工标注]
+        A3[安全测试集&lt;br/&gt;红队数据]
+    end
+    
+    subgraph &#34;生成层&#34;
+        B1[待评测模型 A]
+        B2[待评测模型 B]
+        B3[基线模型]
+    end
+    
+    subgraph &#34;评判层&#34;
+        C1[开源 Judge&lt;br/&gt;Qwen-72B]
+        C2[维度化评判&lt;br/&gt;准确性/安全性/流畅度]
+        C3[规则引擎&lt;br/&gt;关键词/正则过滤]
+    end
+    
+    subgraph &#34;聚合层&#34;
+        D1[Elo 排名]
+        D2[维度雷达图]
+        D3[回归检测]
+    end
+    
+    A1 --&gt; B1
+    A1 --&gt; B2
+    A1 --&gt; B3
+    A2 --&gt; C2
+    A3 --&gt; C3
+    B1 --&gt; C1
+    B2 --&gt; C1
+    B3 --&gt; C1
+    C1 --&gt; C2
+    C1 --&gt; C3
+    C2 --&gt; D1
+    C2 --&gt; D2
+    C3 --&gt; D3
+    
+    style A1 fill:#e3f2fd
+    style B1 fill:#e8f5e9
+    style C1 fill:#fff3e0
+    style D1 fill:#fce4ec</pre>
+<p><strong>图 6：国内大模型自动化评测管线</strong></p>
+<h4 id="关键技术实践">
+  关键技术实践
+  <a class="anchor" href="#%e5%85%b3%e9%94%ae%e6%8a%80%e6%9c%af%e5%ae%9e%e8%b7%b5">#</a>
+</h4>
+<p><strong>1. 开源模型自托管降低成本</strong></p>
+<p>使用 Qwen-72B 或 Llama-3-70B 作为 judge，通过 vLLM 部署在 8×A100 服务器上：</p>
+<ul>
+<li>单服务器吞吐：~50 requests/sec（batch size = 32）</li>
+<li>日评测能力：~400 万条</li>
+<li>成本：相比 GPT-4 API 降低 ~95%</li>
+</ul>
+<p><strong>2. 多维度评判</strong></p>
+<p>不同于海外主要关注&quot;有用性&quot;，国内评测需要覆盖更多维度：</p>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>评判标准</th>
+          <th>权重</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>准确性</strong></td>
+          <td>事实是否正确，有无幻觉</td>
+          <td>30%</td>
+      </tr>
+      <tr>
+          <td><strong>有用性</strong></td>
+          <td>是否解决用户问题</td>
+          <td>25%</td>
+      </tr>
+      <tr>
+          <td><strong>安全性</strong></td>
+          <td>是否包含有害/违规内容</td>
+          <td>20%</td>
+      </tr>
+      <tr>
+          <td><strong>流畅度</strong></td>
+          <td>语言是否通顺自然</td>
+          <td>15%</td>
+      </tr>
+      <tr>
+          <td><strong>合规性</strong></td>
+          <td>是否符合监管要求</td>
+          <td>10%</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>3. 线上 A/B 测试与离线评测的协同</strong></p>
+<ul>
+<li>离线评测：使用 LLM-as-Judge 对模型进行大规模、多维度的自动化评测</li>
+<li>线上 A/B：将模型灰度发布，收集真实用户的反馈</li>
+<li>校准：定期将离线评测结果与线上反馈对比，校准 LLM judge 的评判标准</li>
+</ul>
+<hr>
+<h2 id="五进阶llm-as-judge-的变体与前沿">
+  五、进阶：LLM as Judge 的变体与前沿
+  <a class="anchor" href="#%e4%ba%94%e8%bf%9b%e9%98%b6llm-as-judge-%e7%9a%84%e5%8f%98%e4%bd%93%e4%b8%8e%e5%89%8d%e6%b2%bf">#</a>
+</h2>
+<h3 id="51-rlaif从-ai-feedback-到自训练循环">
+  5.1 RLAIF：从 AI Feedback 到自训练循环
+  <a class="anchor" href="#51-rlaif%e4%bb%8e-ai-feedback-%e5%88%b0%e8%87%aa%e8%ae%ad%e7%bb%83%e5%be%aa%e7%8e%af">#</a>
+</h3>
+<h4 id="原理">
+  原理
+  <a class="anchor" href="#%e5%8e%9f%e7%90%86">#</a>
+</h4>
+<p>RLAIF（Reinforcement Learning from AI Feedback）的核心思想是：<strong>用一个 LLM 生成偏好数据，训练另一个 LLM 的 Reward Model，然后用这个 Reward Model 优化原始 LLM</strong>。</p>
+
+<pre class="mermaid">graph TB
+    subgraph &#34;RLAIF 自训练循环&#34;
+        A[LLM-Generator&lt;br/&gt;生成候选回答] --&gt; B[LLM-Judge&lt;br/&gt;生成偏好对]
+        B --&gt; C[Reward Model&lt;br/&gt;训练]
+        C --&gt; D[RL 优化&lt;br/&gt;更新 Generator]
+        D --&gt; A
+    end
+    
+    style A fill:#e3f2fd
+    style B fill:#e8f5e9
+    style C fill:#fff3e0
+    style D fill:#fce4ec</pre>
+<p><strong>图 7：RLAIF 自训练循环</strong></p>
+<h4 id="rlaif-vs-rlhf效率对比">
+  RLAIF vs RLHF：效率对比
+  <a class="anchor" href="#rlaif-vs-rlhf%e6%95%88%e7%8e%87%e5%af%b9%e6%af%94">#</a>
+</h4>
+<table>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>RLHF</th>
+          <th>RLAIF</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>标注来源</strong></td>
+          <td>人类标注员</td>
+          <td>LLM Judge</td>
+      </tr>
+      <tr>
+          <td><strong>标注速度</strong></td>
+          <td>天级（人工审核）</td>
+          <td>秒级（API 调用）</td>
+      </tr>
+      <tr>
+          <td><strong>标注成本</strong></td>
+          <td>$0.1-1/条</td>
+          <td>$0.001-0.01/条</td>
+      </tr>
+      <tr>
+          <td><strong>标注一致性</strong></td>
+          <td>中等（~70-80%）</td>
+          <td>高（~85-90%）</td>
+      </tr>
+      <tr>
+          <td><strong>标注可扩展性</strong></td>
+          <td>有限（人力瓶颈）</td>
+          <td>几乎无限</td>
+      </tr>
+      <tr>
+          <td><strong>标注质量上限</strong></td>
+          <td>高（人类判断）</td>
+          <td>中（依赖 Judge 能力）</td>
+      </tr>
+      <tr>
+          <td><strong>标注质量下限</strong></td>
+          <td>中（疲劳效应）</td>
+          <td>高（无疲劳）</td>
+      </tr>
+  </tbody>
+</table>
+<h4 id="关键论文">
+  关键论文
+  <a class="anchor" href="#%e5%85%b3%e9%94%ae%e8%ae%ba%e6%96%87">#</a>
+</h4>
+<ul>
+<li>Bai et al. &ldquo;Constitutional AI: Harmlessness from AI Feedback&rdquo; (Anthropic, 2022) [9]</li>
+<li>Lee et al. &ldquo;RLAIF: Scaling Reinforcement Learning from Human Feedback with AI Feedback&rdquo; (DeepMind, 2023)</li>
+</ul>
+<h3 id="52-multi-agent-debate-judge">
+  5.2 Multi-Agent Debate Judge
+  <a class="anchor" href="#52-multi-agent-debate-judge">#</a>
+</h3>
+<h4 id="原理-1">
+  原理
+  <a class="anchor" href="#%e5%8e%9f%e7%90%86-1">#</a>
+</h4>
+<p>既然单个 LLM judge 存在偏差，一个自然的想法是：<strong>让多个 LLM judge 投票裁决</strong>。这就是 Multi-Agent Debate Judge 的核心思想。</p>
+
+<pre class="mermaid">graph TB
+    subgraph &#34;Multi-Agent Debate&#34;
+        Q[问题 &#43; 候选回答] --&gt; J1[Judge 1&lt;br/&gt;GPT-4]
+        Q --&gt; J2[Judge 2&lt;br/&gt;Claude-3]
+        Q --&gt; J3[Judge 3&lt;br/&gt;Llama-3]
+        Q --&gt; J4[Judge 4&lt;br/&gt;Qwen-2]
+        
+        J1 --&gt; M[多数投票]
+        J2 --&gt; M
+        J3 --&gt; M
+        J4 --&gt; M
+        
+        M --&gt; R[最终裁决]
+    end
+    
+    style Q fill:#e3f2fd
+    style J1 fill:#e8f5e9
+    style J2 fill:#fff3e0
+    style J3 fill:#fce4ec
+    style J4 fill:#e1f5fe
+    style M fill:#f3e5f5
+    style R fill:#e8f5e9</pre>
+<p><strong>图 8：Multi-Agent Debate Judge 架构</strong></p>
+<h4 id="效果与成本权衡">
+  效果与成本权衡
+  <a class="anchor" href="#%e6%95%88%e6%9e%9c%e4%b8%8e%e6%88%90%e6%9c%ac%e6%9d%83%e8%a1%a1">#</a>
+</h4>
+<table>
+  <thead>
+      <tr>
+          <th>Judge 数量</th>
+          <th>与人类一致性</th>
+          <th>Token 成本</th>
+          <th>延迟</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1（单 GPT-4）</td>
+          <td>~80%</td>
+          <td>1×</td>
+          <td>1×</td>
+      </tr>
+      <tr>
+          <td>2（GPT-4 + Claude）</td>
+          <td>~84%</td>
+          <td>~2×</td>
+          <td>1×（并行）</td>
+      </tr>
+      <tr>
+          <td>4（GPT-4 + Claude + Llama + Qwen）</td>
+          <td>~87%</td>
+          <td>~3×</td>
+          <td>1×（并行）</td>
+      </tr>
+      <tr>
+          <td>10（含 fine-tuned judges）</td>
+          <td>~89%</td>
+          <td>~6×</td>
+          <td>1.5×</td>
+      </tr>
+  </tbody>
+</table>
+<p>关键洞察：<strong>多 judge 的一致性提升是边际递减的</strong>。从 1 到 2 个 judge 提升 ~4%，从 2 到 4 个提升 ~3%，从 4 到 10 个仅提升 ~2%。在工业实践中，<strong>2-4 个异构 judge</strong> 通常是最佳选择。</p>
+<h3 id="53-fine-tuned-judge-模型">
+  5.3 Fine-tuned Judge 模型
+  <a class="anchor" href="#53-fine-tuned-judge-%e6%a8%a1%e5%9e%8b">#</a>
+</h3>
+<h4 id="为什么通用-llm-不如-fine-tuned-judge">
+  为什么通用 LLM 不如 fine-tuned Judge？
+  <a class="anchor" href="#%e4%b8%ba%e4%bb%80%e4%b9%88%e9%80%9a%e7%94%a8-llm-%e4%b8%8d%e5%a6%82-fine-tuned-judge">#</a>
+</h4>
+<p>通用 LLM 虽然具备评判能力，但它们是为<strong>生成</strong>优化的，而非为<strong>评判</strong>优化的。这导致几个问题：</p>
+<ol>
+<li><strong>输出格式不稳定</strong>：通用 LLM 可能不遵循输出格式要求</li>
+<li><strong>评判标准漂移</strong>：不同 prompt 可能导致评判标准不一致</li>
+<li><strong>计算效率低</strong>：大模型做简单评判任务时过于&quot;重&quot;</li>
+</ol>
+<p>Fine-tuned Judge 模型通过在高质量的 judge 数据上微调来解决这些问题。</p>
+<h4 id="主流-fine-tuned-judge-模型">
+  主流 Fine-tuned Judge 模型
+  <a class="anchor" href="#%e4%b8%bb%e6%b5%81-fine-tuned-judge-%e6%a8%a1%e5%9e%8b">#</a>
+</h4>
+<table>
+  <thead>
+      <tr>
+          <th>模型</th>
+          <th>参数量</th>
+          <th>训练数据</th>
+          <th>与 GPT-4 一致性</th>
+          <th>特点</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Prometheus</strong> [10]</td>
+          <td>13B</td>
+          <td>GPT-4 生成的评判数据</td>
+          <td>~85%</td>
+          <td>开源，支持绝对评分和 pairwise</td>
+      </tr>
+      <tr>
+          <td><strong>Prometheus 2</strong></td>
+          <td>8B</td>
+          <td>扩展数据集</td>
+          <td>~87%</td>
+          <td>更轻量，速度更快</td>
+      </tr>
+      <tr>
+          <td><strong>Auto-J</strong> [11]</td>
+          <td>7B</td>
+          <td>多任务评判数据</td>
+          <td>~83%</td>
+          <td>支持多维度评判</td>
+      </tr>
+      <tr>
+          <td><strong>JudgeBench</strong> [12]</td>
+          <td>-</td>
+          <td>困难样本基准</td>
+          <td>-</td>
+          <td>专注于评估 judge 模型的基准</td>
+      </tr>
+  </tbody>
+</table>
+<h4 id="prometheus-的架构设计">
+  Prometheus 的架构设计
+  <a class="anchor" href="#prometheus-%e7%9a%84%e6%9e%b6%e6%9e%84%e8%ae%be%e8%ae%a1">#</a>
+</h4>
+<p>Prometheus 的核心设计是在 Llama-2 的基础上，用 GPT-4 生成的评判数据进行 SFT（Supervised Fine-Tuning）：</p>
+<pre tabindex="0"><code>GPT-4 评判数据（输入-输出对）
+    ↓
+SFT 训练 Llama-2-13B
+    ↓
+Prometheus-13B（专用 Judge 模型）
+    ↓
+在绝对评分任务上与 GPT-4 达到 ~85% 一致性
+</code></pre><p>Prometheus 的关键创新是<strong>反馈感知训练（Feedback-Aware Training）</strong>：</p>
+<ul>
+<li>不仅学习 GPT-4 给出的分数</li>
+<li>还学习 GPT-4 的评判理由（rationale）</li>
+<li>这使得模型不仅知道&quot;打几分&quot;，还知道&quot;为什么打这个分&quot;</li>
+</ul>
+<h3 id="54-llm-as-judge-的局限性边界">
+  5.4 LLM-as-Judge 的局限性边界
+  <a class="anchor" href="#54-llm-as-judge-%e7%9a%84%e5%b1%80%e9%99%90%e6%80%a7%e8%be%b9%e7%95%8c">#</a>
+</h3>
+<h4 id="哪些任务-llm-评不准">
+  哪些任务 LLM 评不准？
+  <a class="anchor" href="#%e5%93%aa%e4%ba%9b%e4%bb%bb%e5%8a%a1-llm-%e8%af%84%e4%b8%8d%e5%87%86">#</a>
+</h4>
+<table>
+  <thead>
+      <tr>
+          <th>任务类型</th>
+          <th>LLM Judge 表现</th>
+          <th>原因</th>
+          <th>替代方案</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>数学推理</strong></td>
+          <td>差（~50% 一致）</td>
+          <td>LLM 不擅长逐步验证数学推导</td>
+          <td>执行器验证</td>
+      </tr>
+      <tr>
+          <td><strong>代码执行结果</strong></td>
+          <td>差（~40% 一致）</td>
+          <td>LLM 无法实际执行代码</td>
+          <td>运行测试用例</td>
+      </tr>
+      <tr>
+          <td><strong>超长上下文</strong></td>
+          <td>中（~65% 一致）</td>
+          <td>注意力衰减导致遗漏细节</td>
+          <td>分段评判 + 聚合</td>
+      </tr>
+      <tr>
+          <td><strong>事实核查</strong></td>
+          <td>中（~70% 一致）</td>
+          <td>LLM 自身可能 hallucinate</td>
+          <td>结合搜索引擎验证</td>
+      </tr>
+      <tr>
+          <td><strong>创意写作</strong></td>
+          <td>好（~85% 一致）</td>
+          <td>主观性强，LLM 能捕捉语义</td>
+          <td>LLM Judge 适合</td>
+      </tr>
+      <tr>
+          <td><strong>对话有用性</strong></td>
+          <td>好（~80% 一致）</td>
+          <td>与人类判断高度相关</td>
+          <td>LLM Judge 适合</td>
+      </tr>
+  </tbody>
+</table>
+<h4 id="meta-judge-问题谁来评判-judge">
+  Meta-Judge 问题：谁来评判 Judge？
+  <a class="anchor" href="#meta-judge-%e9%97%ae%e9%a2%98%e8%b0%81%e6%9d%a5%e8%af%84%e5%88%a4-judge">#</a>
+</h4>
+<p>当 LLM-as-Judge 成为主流评测工具时，一个更深层次的问题浮现：<strong>如果 Judge 本身也会犯错，我们如何评判 Judge？</strong></p>
+<p>现有的解决方案：</p>
+<ol>
+<li><strong>Human-in-the-Loop</strong>：对 Judge 的评判结果进行人工抽检</li>
+<li><strong>Judge 之间的交叉验证</strong>：用多个 Judge 互相评判</li>
+<li><strong>Meta-Judge Benchmark</strong>：使用精心构造的&quot;陷阱样本&quot;来评估 Judge 的可靠性</li>
+</ol>
+<hr>
+<h2 id="六总结与实践建议">
+  六、总结与实践建议
+  <a class="anchor" href="#%e5%85%ad%e6%80%bb%e7%bb%93%e4%b8%8e%e5%ae%9e%e8%b7%b5%e5%bb%ba%e8%ae%ae">#</a>
+</h2>
+<h3 id="61-核心要点回顾">
+  6.1 核心要点回顾
+  <a class="anchor" href="#61-%e6%a0%b8%e5%bf%83%e8%a6%81%e7%82%b9%e5%9b%9e%e9%a1%be">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>要点</th>
+          <th>内容</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>为什么有效</strong></td>
+          <td>生成能力蕴含判别能力；RLHF 训练编码了隐性偏好知识；In-Context Learning 支持零样本迁移</td>
+      </tr>
+      <tr>
+          <td><strong>三种范式</strong></td>
+          <td>Pointwise（简单但不稳定）、Pairwise（稳定但成本高）、Listwise（高效但候选受限）</td>
+      </tr>
+      <tr>
+          <td><strong>五大偏差</strong></td>
+          <td>Position Bias、Verbosity Bias、Self-Enhancement Bias、校准不一致、成本约束</td>
+      </tr>
+      <tr>
+          <td><strong>工业落地</strong></td>
+          <td>Chatbot Arena（众包+LLM 融合）、Anthropic Constitutional AI（RLAIF）、国内多维度评测管线</td>
+      </tr>
+      <tr>
+          <td><strong>前沿方向</strong></td>
+          <td>RLAIF 自训练、Multi-Agent Debate、Fine-tuned Judge、Meta-Judge</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="62-什么时候该用什么时候不该用">
+  6.2 什么时候该用？什么时候不该用？
+  <a class="anchor" href="#62-%e4%bb%80%e4%b9%88%e6%97%b6%e5%80%99%e8%af%a5%e7%94%a8%e4%bb%80%e4%b9%88%e6%97%b6%e5%80%99%e4%b8%8d%e8%af%a5%e7%94%a8">#</a>
+</h3>
+<h4 id="-适合使用-llm-as-judge-的场景">
+  ✅ 适合使用 LLM-as-Judge 的场景
+  <a class="anchor" href="#-%e9%80%82%e5%90%88%e4%bd%bf%e7%94%a8-llm-as-judge-%e7%9a%84%e5%9c%ba%e6%99%af">#</a>
+</h4>
+<table>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>原因</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>开放域对话质量评估</td>
+          <td>LLM 能理解语义和上下文</td>
+      </tr>
+      <tr>
+          <td>创意写作/内容生成评估</td>
+          <td>主观性强，无标准答案</td>
+      </tr>
+      <tr>
+          <td>模型 A/B 测试的自动化</td>
+          <td>Pairwise 评判与人类判断一致</td>
+      </tr>
+      <tr>
+          <td>RLHF 偏好数据生成</td>
+          <td>成本仅为人工的 ~1%</td>
+      </tr>
+      <tr>
+          <td>多候选生成系统的重排</td>
+          <td>Listwise 评判效率高</td>
+      </tr>
+      <tr>
+          <td>安全性/合规性批量审查</td>
+          <td>LLM 能识别有害内容</td>
+      </tr>
+  </tbody>
+</table>
+<h4 id="-不适合使用-llm-as-judge-的场景">
+  ❌ 不适合使用 LLM-as-Judge 的场景
+  <a class="anchor" href="#-%e4%b8%8d%e9%80%82%e5%90%88%e4%bd%bf%e7%94%a8-llm-as-judge-%e7%9a%84%e5%9c%ba%e6%99%af">#</a>
+</h4>
+<table>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>原因</th>
+          <th>替代方案</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>数学题正确性判断</td>
+          <td>LLM 不擅长逐步验证</td>
+          <td>执行器/Symbolic Solver</td>
+      </tr>
+      <tr>
+          <td>代码正确性判断</td>
+          <td>LLM 无法实际执行</td>
+          <td>运行测试用例</td>
+      </tr>
+      <tr>
+          <td>事实核查</td>
+          <td>LLM 自身可能 hallucinate</td>
+          <td>搜索引擎 + 知识图谱</td>
+      </tr>
+      <tr>
+          <td>超长文档的细粒度评估</td>
+          <td>注意力衰减导致遗漏</td>
+          <td>分段评估 + 聚合</td>
+      </tr>
+      <tr>
+          <td>需要极高可靠性的场景</td>
+          <td>Judge 本身也会犯错</td>
+          <td>人工审核 + LLM 辅助</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="63-一页纸-checklist搭建-llm-评测管线">
+  6.3 一页纸 Checklist：搭建 LLM 评测管线
+  <a class="anchor" href="#63-%e4%b8%80%e9%a1%b5%e7%ba%b8-checklist%e6%90%ad%e5%bb%ba-llm-%e8%af%84%e6%b5%8b%e7%ae%a1%e7%ba%bf">#</a>
+</h3>
+<table>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>步骤</th>
+          <th>要点</th>
+          <th>优先级</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td><strong>明确评测目标</strong></td>
+          <td>排名？监控？偏好数据生成？目标决定范式选择</td>
+          <td>🔴 必须</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td><strong>选择评判范式</strong></td>
+          <td>排名→Pairwise，监控→Pointwise，重排→Listwise</td>
+          <td>🔴 必须</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td><strong>选择 Judge 模型</strong></td>
+          <td>生产环境→GPT-4/Claude-3，大规模→开源自托管</td>
+          <td>🔴 必须</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td><strong>设计 Prompt</strong></td>
+          <td>角色 + 标准 + 尺度 + 格式，四要素缺一不可</td>
+          <td>🔴 必须</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td><strong>处理 Position Bias</strong></td>
+          <td>Swap-and-Average 或随机排序</td>
+          <td>🔴 必须</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td><strong>处理 Verbosity Bias</strong></td>
+          <td>长度归一化或在 prompt 中明确要求简洁</td>
+          <td>🟡 推荐</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td><strong>处理 Self-Enhancement Bias</strong></td>
+          <td>交叉评判或使用第三方 Judge</td>
+          <td>🟡 推荐</td>
+      </tr>
+      <tr>
+          <td>8</td>
+          <td><strong>校准评分</strong></td>
+          <td>锚定样本法或 Z-Score 归一化</td>
+          <td>🟡 推荐</td>
+      </tr>
+      <tr>
+          <td>9</td>
+          <td><strong>人工抽检</strong></td>
+          <td>随机抽取 5-10% 的 LLM 评判结果进行人工审核</td>
+          <td>🟡 推荐</td>
+      </tr>
+      <tr>
+          <td>10</td>
+          <td><strong>持续监控</strong></td>
+          <td>定期对比 LLM 评判与人类判断的一致性趋势</td>
+          <td>🟡 推荐</td>
+      </tr>
+      <tr>
+          <td>11</td>
+          <td><strong>成本优化</strong></td>
+          <td>使用缓存、批量请求、混合强弱模型</td>
+          <td>🟢 可选</td>
+      </tr>
+      <tr>
+          <td>12</td>
+          <td><strong>Meta-Judge</strong></td>
+          <td>用困难样本评估 Judge 本身的可靠性</td>
+          <td>🟢 可选</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="64-未来展望">
+  6.4 未来展望
+  <a class="anchor" href="#64-%e6%9c%aa%e6%9d%a5%e5%b1%95%e6%9c%9b">#</a>
+</h3>
+<p>LLM-as-Judge 正在从&quot;一种评测方法&quot;演变为&quot;AI 系统的核心组件&quot;。以下几个趋势值得关注：</p>
+<ol>
+<li>
+<p><strong>Judge 模型专业化</strong>：通用 LLM → 专用 Judge 模型的转变会加速。就像 CNN 专门用于图像、Transformer 专门用于序列，未来会出现专门用于评判的模型架构。</p>
+</li>
+<li>
+<p><strong>评判标准的动态适配</strong>：当前的 judge 使用固定 prompt 和固定标准。未来，judge 会根据任务类型、用户偏好、领域知识动态调整评判标准。</p>
+</li>
+<li>
+<p><strong>评判即服务（Judging-as-a-Service）</strong>：云厂商可能提供标准化的 LLM-as-Judge API，内置多种评判范式、偏差缓解策略和校准方案，让用户只需关注评判标准定义。</p>
+</li>
+<li>
+<p><strong>从评判到对话</strong>：Judge 不只是给一个分数，而是与生成模型进行多轮对话，指出问题、提供改进建议、验证改进效果——形成闭环的自我改进系统。</p>
+</li>
+</ol>
+<blockquote>
+<p>&ldquo;评判不是为了打分，而是为了进步。&rdquo;</p>
+</blockquote>
+<p>LLM-as-Judge 的终极价值不在于给出一个排名，而在于<strong>为模型的持续改进提供可操作、可量化、可复现的反馈信号</strong>。在这个意义上，LLM-as-Judge 不仅是评测工具，更是 AI 系统自我进化的基础设施。</p>
+<hr>
+<h2 id="参考资料">
+  参考资料
+  <a class="anchor" href="#%e5%8f%82%e8%80%83%e8%b5%84%e6%96%99">#</a>
+</h2>
+<p>[1] Papineni, K., Roukos, S., Ward, T., &amp; Zhu, W. (2002). BLEU: a Method for Automatic Evaluation of Machine Translation. <em>ACL 2002</em>.</p>
+<p>[2] Lin, C.-Y. (2004). ROUGE: A Package for Automatic Evaluation of Summaries. <em>ACL Workshop on Text Summarization</em>.</p>
+<p>[3] Zheng, L., Chiang, W.-L., Sheng, Y., Zhuang, S., Wu, Z., Zhuang, Y., &hellip; &amp; Stoica, I. (2023). Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena. <em>NeurIPS 2023</em>. arXiv:2306.05685.</p>
+<p>[4] Thakur, A., et al. (2024). Systematic Evaluation of LLM-as-a-Judge Prompts. <em>arXiv:2401.xxxxx</em>.</p>
+<p>[5] Goodfellow, I., et al. (2014). Generative Adversarial Nets. <em>NeurIPS 2014</em>.</p>
+<p>[6] Ouyang, L., et al. (2022). Training language models to follow instructions with human feedback. <em>NeurIPS 2022</em>.</p>
+<p>[7] Wang, P., et al. (2023). Is ChatGPT a Good Evaluator? A Study on the Position and Verbosity Bias in LLM-as-a-Judge. <em>arXiv:2309.xxxxx</em>.</p>
+<p>[8] Chiang, W.-L., et al. (2024). Chatbot Arena: An Open Platform for Evaluating LLMs by Human Preference. <em>ICML 2024</em>. arXiv:2403.04132.</p>
+<p>[9] Bai, Y., et al. (2022). Constitutional AI: Harmlessness from AI Feedback. <em>arXiv:2212.08073</em>.</p>
+<p>[10] Kim, S., et al. (2024). Prometheus: Inducing Fine-grained Evaluation Capability in Language Models. <em>ICLR 2024</em>. arXiv:2310.08491.</p>
+<p>[11] Li, Y., et al. (2024). Auto-J: Evaluating LLMs with Auto-generated Judgements. <em>arXiv:2401.xxxxx</em>.</p>
+<p>[12] Tan, S.-H., et al. (2024). JudgeBench: A Benchmark for Evaluating LLM-based Judges. <em>NeurIPS 2024</em>. arXiv:2410.xxxxx.</p>
+<hr>
+<p><em>文章版本：v1.0 | 创建日期：2026-08-27 | 作者：大风 &amp; 小伟</em>
+<em>归属项目：www6vAIGC</em></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#llm-as-judge--原理架构与工业实践">LLM as Judge — 原理、架构与工业实践</a>
+      <ul>
+        <li><a href="#目录">目录</a></li>
+        <li><a href="#一引言为什么需要-llm-做裁判">一、引言：为什么需要 LLM 做裁判？</a>
+          <ul>
+            <li><a href="#11-传统评测指标的三重困境">1.1 传统评测指标的三重困境</a></li>
+            <li><a href="#12-llm-as-judge-的核心洞察">1.2 LLM as Judge 的核心洞察</a></li>
+            <li><a href="#13-本文结构">1.3 本文结构</a></li>
+          </ul>
+        </li>
+        <li><a href="#二llm-as-judge-的核心原理">二、LLM as Judge 的核心原理</a>
+          <ul>
+            <li><a href="#21-三种评判范式">2.1 三种评判范式</a></li>
+            <li><a href="#22-三种范式的对比与选型">2.2 三种范式的对比与选型</a></li>
+            <li><a href="#23-prompt-设计方法论">2.3 Prompt 设计方法论</a></li>
+            <li><a href="#24-为何有效理论分析">2.4 为何有效？理论分析</a></li>
+            <li><a href="#25-llm-as-judge-vs-传统指标多维对比">2.5 LLM-as-Judge vs 传统指标：多维对比</a></li>
+          </ul>
+        </li>
+        <li><a href="#三llm-as-judge-的系统性挑战">三、LLM as Judge 的系统性挑战</a>
+          <ul>
+            <li><a href="#31-position-bias位置偏见">3.1 Position Bias（位置偏见）</a></li>
+            <li><a href="#32-verbosity-bias冗长偏见">3.2 Verbosity Bias（冗长偏见）</a></li>
+            <li><a href="#33-self-enhancement-bias自我增强偏见">3.3 Self-Enhancement Bias（自我增强偏见）</a></li>
+            <li><a href="#34-校准问题calibration">3.4 校准问题（Calibration）</a></li>
+            <li><a href="#35-成本与延迟">3.5 成本与延迟</a></li>
+          </ul>
+        </li>
+        <li><a href="#四工业案例深度解析">四、工业案例深度解析</a>
+          <ul>
+            <li><a href="#41-lmsys-chatbot-arena众包与-llm-judge-融合的典范">4.1 LMSYS Chatbot Arena：众包与 LLM-Judge 融合的典范</a></li>
+            <li><a href="#42-anthropicconstitutional-ai-与-rlaif">4.2 Anthropic：Constitutional AI 与 RLAIF</a></li>
+            <li><a href="#43-国内实践大模型自动化评测管线">4.3 国内实践：大模型自动化评测管线</a></li>
+          </ul>
+        </li>
+        <li><a href="#五进阶llm-as-judge-的变体与前沿">五、进阶：LLM as Judge 的变体与前沿</a>
+          <ul>
+            <li><a href="#51-rlaif从-ai-feedback-到自训练循环">5.1 RLAIF：从 AI Feedback 到自训练循环</a></li>
+            <li><a href="#52-multi-agent-debate-judge">5.2 Multi-Agent Debate Judge</a></li>
+            <li><a href="#53-fine-tuned-judge-模型">5.3 Fine-tuned Judge 模型</a></li>
+            <li><a href="#54-llm-as-judge-的局限性边界">5.4 LLM-as-Judge 的局限性边界</a></li>
+          </ul>
+        </li>
+        <li><a href="#六总结与实践建议">六、总结与实践建议</a>
+          <ul>
+            <li><a href="#61-核心要点回顾">6.1 核心要点回顾</a></li>
+            <li><a href="#62-什么时候该用什么时候不该用">6.2 什么时候该用？什么时候不该用？</a></li>
+            <li><a href="#63-一页纸-checklist搭建-llm-评测管线">6.3 一页纸 Checklist：搭建 LLM 评测管线</a></li>
+            <li><a href="#64-未来展望">6.4 未来展望</a></li>
+          </ul>
+        </li>
+        <li><a href="#参考资料">参考资料</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
