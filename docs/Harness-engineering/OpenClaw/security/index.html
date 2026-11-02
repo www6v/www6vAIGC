@@ -1,0 +1,7503 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  OpenClaw 安全执行环境：沙箱、审批、策略管道与深度防御体系
+  #
+
+
+基于 OpenClaw v2026.4.21 源码深度分析
+作者：小伟 | 2026-04-30
+
+
+
+  导读
+  #
+
+LLM Agent 最危险的操作是什么？执行不受控的命令。OpenClaw 面对这个问题的答案不是&quot;信任模型&quot;，而是构建了一套多层纵深防御体系（Defense in Depth）：从 Docker 沙箱隔离 → exec 安全策略 → 命令审批 → 文件系统保护 → SSRF 防护 → 工具策略管道，每一层都独立有效，合在一起构成完整的安全执行环境。
+本文将从源码级别完整拆解这套体系。
+
+
+  1. 总览：纵深防御架构
+  #
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    OpenClaw 安全执行环境                                 │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │  第1层：沙箱隔离（Sandbox Isolation）                               │ │
+│  │  Docker Container: readOnlyRoot, capDrop ALL, network none        │ │
+│  │  SSH Backend: 严格 Host Key 校验 &#43; 独立 workspaceRoot             │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                                │                                       │
+│  ┌─────────────────────────────▼─────────────────────────────────────┐ │
+│  │  第2层：Exec 安全策略（Exec Safety）                                │ │
+│  │  Shell 元字符检测 &#43; 安全可执行值判断                               │ │
+│  │  Safe Bin Profile（仅允许白名单命令）                               │ │
+│  └─────────────────────────────┬─────────────────────────────────────┘ │
+│                                │                                       │
+│  ┌─────────────────────────────▼─────────────────────────────────────┐ │
+│  │  第3层：命令审批（Exec Approval）                                   │ │
+│  │  命令 → 用户确认 → 允许/拒绝/allowlist                             │ │
+│  │  iOS Push / Channel 推送 / Web 界面                               │ │
+│  └─────────────────────────────┬─────────────────────────────────────┘ │
+│                                │                                       │
+│  ┌─────────────────────────────▼─────────────────────────────────────┐ │
+│  │  第4层：文件系统安全（Filesystem Safety）                           │ │
+│  │  readFileWithinRoot / writeFileWithinRoot                         │ │
+│  │  Path Alias Guards / Hardlink Guards                              │ │
+│  │  Path Safety（穿越/符号链接/越界检测）                               │ │
+│  └─────────────────────────────┬─────────────────────────────────────┘ │
+│                                │                                       │
+│  ┌─────────────────────────────▼─────────────────────────────────────┐ │
+│  │  第5层：网络与 SSRF 防护（Network &amp; SSRF）                          │ │
+│  │  Sandbox network=none &#43; SSRF Policy                               │ │
+│  │  Fetch Guard（内网 IP 拦截 &#43; 端口限制）                              │ │
+│  └─────────────────────────────┬─────────────────────────────────────┘ │
+│                                │                                       │
+│  ┌─────────────────────────────▼─────────────────────────────────────┐ │
+│  │  第6层：工具策略管道（Tool Policy Pipeline）                        │ │
+│  │  Allowlist / Denylist / Owner-Only / Profile / FS Policy          │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+  2. 第1层：沙箱隔离（Sandbox Isolation）
+  #
+
+
+  2.1 沙箱配置解析
+  #
+
+源码：sandbox/config.ts">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/security/">
+	<meta property="og:site_name" content="Modern Agent">
+	<meta property="og:title" content="Modern Agent">
+	<meta property="og:description" content="OpenClaw 安全执行环境：沙箱、审批、策略管道与深度防御体系#基于 OpenClaw v2026.4.21 源码深度分析 作者：小伟 | 2026-04-30
+导读#LLM Agent 最危险的操作是什么？执行不受控的命令。OpenClaw 面对这个问题的答案不是&#34;信任模型&#34;，而是构建了一套多层纵深防御体系（Defense in Depth）：从 Docker 沙箱隔离 → exec 安全策略 → 命令审批 → 文件系统保护 → SSRF 防护 → 工具策略管道，每一层都独立有效，合在一起构成完整的安全执行环境。
+本文将从源码级别完整拆解这套体系。
+1. 总览：纵深防御架构#┌─────────────────────────────────────────────────────────────────────────┐│ OpenClaw 安全执行环境 ││ ││ ┌───────────────────────────────────────────────────────────────────┐ ││ │ 第1层：沙箱隔离（Sandbox Isolation） │ ││ │ Docker Container: readOnlyRoot, capDrop ALL, network none │ ││ │ SSH Backend: 严格 Host Key 校验 &#43; 独立 workspaceRoot │ ││ └───────────────────────────────────────────────────────────────────┘ ││ │ ││ ┌─────────────────────────────▼─────────────────────────────────────┐ ││ │ 第2层：Exec 安全策略（Exec Safety） │ ││ │ Shell 元字符检测 &#43; 安全可执行值判断 │ ││ │ Safe Bin Profile（仅允许白名单命令） │ ││ └─────────────────────────────┬─────────────────────────────────────┘ ││ │ ││ ┌─────────────────────────────▼─────────────────────────────────────┐ ││ │ 第3层：命令审批（Exec Approval） │ ││ │ 命令 → 用户确认 → 允许/拒绝/allowlist │ ││ │ iOS Push / Channel 推送 / Web 界面 │ ││ └─────────────────────────────┬─────────────────────────────────────┘ ││ │ ││ ┌─────────────────────────────▼─────────────────────────────────────┐ ││ │ 第4层：文件系统安全（Filesystem Safety） │ ││ │ readFileWithinRoot / writeFileWithinRoot │ ││ │ Path Alias Guards / Hardlink Guards │ ││ │ Path Safety（穿越/符号链接/越界检测） │ ││ └─────────────────────────────┬─────────────────────────────────────┘ ││ │ ││ ┌─────────────────────────────▼─────────────────────────────────────┐ ││ │ 第5层：网络与 SSRF 防护（Network &amp; SSRF） │ ││ │ Sandbox network=none &#43; SSRF Policy │ ││ │ Fetch Guard（内网 IP 拦截 &#43; 端口限制） │ ││ └─────────────────────────────┬─────────────────────────────────────┘ ││ │ ││ ┌─────────────────────────────▼─────────────────────────────────────┐ ││ │ 第6层：工具策略管道（Tool Policy Pipeline） │ ││ │ Allowlist / Denylist / Owner-Only / Profile / FS Policy │ ││ └───────────────────────────────────────────────────────────────────┘ ││ │└─────────────────────────────────────────────────────────────────────────┘ 2. 第1层：沙箱隔离（Sandbox Isolation）#2.1 沙箱配置解析#源码：sandbox/config.ts">
+	<meta property="og:locale" content="en">
+	<meta property="og:type" content="website">
+<title>Security | Modern Agent</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/security/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.b03d70a1a41ebd2598f66475385e5f3acbb00c4c00220e8b32e57e4ea027ff4e.js" integrity="sha256-sD1woaQevSWY9mR1OF5fOsuwDEwAIg6LMuV&#43;TqAn/04=" crossorigin="anonymous"></script>
+<link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/OpenClaw/security/index.xml" title="Modern Agent" />
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="toggle"  />
+    <label for="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c551263d461ebff83b9463dc3a94952c" class="toggle"  />
+    <label for="section-c551263d461ebff83b9463dc3a94952c" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6d871616372a4994f42a7668d9af7715" class="toggle"  />
+    <label for="section-6d871616372a4994f42a7668d9af7715" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall/" class="">Rag Recall</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/" class="">Rag Recall 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cd42bffd52a5c198755daef56da179f9" class="toggle"  />
+    <label for="section-cd42bffd52a5c198755daef56da179f9" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-afec0c322e2a85b11a48111f0dba315c" class="toggle"  />
+    <label for="section-afec0c322e2a85b11a48111f0dba315c" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="toggle"  />
+    <label for="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="toggle"  />
+    <label for="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="toggle"  />
+    <label for="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="flex justify-between">
+      <a role="button" class="">Dify</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d35a724145e4438b19d0128310151060" class="toggle"  />
+    <label for="section-d35a724145e4438b19d0128310151060" class="flex justify-between">
+      <a role="button" class="">产品</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/list/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d8fb1e2742348190fede849f378398c8" class="toggle"  />
+    <label for="section-d8fb1e2742348190fede849f378398c8" class="flex justify-between">
+      <a role="button" class="">API</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/api/API/" class="">LLM API</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/api/openai-api/" class="">Openai Agent API</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="toggle"  />
+    <label for="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="flex justify-between">
+      <a role="button" class="">Sandbox</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/opensource/" class="">Opensource</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="toggle"  />
+    <label for="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="flex justify-between">
+      <a role="button" class="">SDK</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk%E5%85%BC%E5%AE%B9%E6%80%A7/" class="">AI SDK 向后兼容性*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk%E5%85%BC%E5%AE%B9%E6%80%A71/" class="">Sdk兼容性1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-465ebbe8c8eae209a571787ecebad2c0" class="toggle"  />
+    <label for="section-465ebbe8c8eae209a571787ecebad2c0" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f76aa66a03b4f060262d5e206195edee" class="toggle"  />
+    <label for="section-f76aa66a03b4f060262d5e206195edee" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d28aa4a73439b10799fd7621d99b09a8" class="toggle"  />
+    <label for="section-d28aa4a73439b10799fd7621d99b09a8" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="toggle"  />
+    <label for="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="flex justify-between">
+      <a role="button" class="">Reflection</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c1c7bf1336ea4ad525ce468e5624159f" class="toggle"  />
+    <label for="section-c1c7bf1336ea4ad525ce468e5624159f" class="flex justify-between">
+      <a role="button" class="">Planning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning1/agent-planning-principles-to-implementation/" class="">Agent Planning Principles to Implementation</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="toggle"  />
+    <label for="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e338773a0b87bd3d5520b81d5b88db62" class="toggle"  />
+    <label for="section-e338773a0b87bd3d5520b81d5b88db62" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9d0fe56670c342283f8f972214b72137" class="toggle"  />
+    <label for="section-9d0fe56670c342283f8f972214b72137" class="flex justify-between">
+      <a role="button" class="">Hermes</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes1/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes2/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes/" class="">Hermes Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a9773226cdddc85ff8f10cae8bdb49a2" class="toggle"  />
+    <label for="section-a9773226cdddc85ff8f10cae8bdb49a2" class="flex justify-between">
+      <a role="button" class="">managed agents</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming1/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-041a0b369c13985983a2e78e073f1143" class="toggle"  />
+    <label for="section-041a0b369c13985983a2e78e073f1143" class="flex justify-between">
+      <a role="button" class="">Memory *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/hindsight/" class="">Hindsight</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/mem0-hermes/Mem0-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Mem0 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking-hermes/OpenViking-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Open Viking 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking-hermes1/" class="">Openviking Hermes1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openViking-openclaw/openviking-architecture-full/" class="">Openviking Architecture Full</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--hermes/TencentDB-Agent-Memory-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Tencent Db Agent Memory 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--openclaw/tencentdb-agent-memory-full/" class="">Tencentdb Agent Memory Full</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-360e9d19bffa35d5db5a46e0c0c05a65" class="toggle"  />
+    <label for="section-360e9d19bffa35d5db5a46e0c0c05a65" class="flex justify-between">
+      <a role="button" class="">Openclaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="toggle"  />
+    <label for="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="toggle"  />
+    <label for="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="flex justify-between">
+      <a role="button" class="">Multi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e496587d113a69d69794ccf2791a9ec7" class="toggle"  />
+    <label for="section-e496587d113a69d69794ccf2791a9ec7" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Kanban/" class="">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-386b9d0b04e254d93a6bcfe648c4dabb" class="toggle"  />
+    <label for="section-386b9d0b04e254d93a6bcfe648c4dabb" class="flex justify-between">
+      <a role="button" class="">Multi-agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-3b952b230f5462315a195fb221f48926" class="toggle"  />
+    <label for="section-3b952b230f5462315a195fb221f48926" class="flex justify-between">
+      <a role="button" class="">OpenClaw *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/multiagent2/" class="">OpenClaw 多 Agent*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/mulitagent1/" class="">Mulitagent1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f7a2a771a519d5e8b989f2e775ff25" class="toggle"  />
+    <label for="section-d1f7a2a771a519d5e8b989f2e775ff25" class="flex justify-between">
+      <a role="button" class="">subagent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/Claude-code/" class="">Claude Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/subagent/" class="">Subagent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b8e7621552172a9013b3c0dae0dba198" class="toggle"  />
+    <label for="section-b8e7621552172a9013b3c0dae0dba198" class="flex justify-between">
+      <a role="button" class="">Teams *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-Teams/" class="">Claude Code Teams</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-TeamsA1/" class="">Claude Code Teams[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="toggle"  />
+    <label for="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="flex justify-between">
+      <a role="button" class="">Tool &amp; Skill</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5cca64c106a3667481dd63b47c86e87a" class="toggle"  />
+    <label for="section-5cca64c106a3667481dd63b47c86e87a" class="flex justify-between">
+      <a role="button" class="">Survey &amp; SFT</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c655fd9062845f96cffb72685b2fd696" class="toggle"  />
+    <label for="section-c655fd9062845f96cffb72685b2fd696" class="flex justify-between">
+      <a role="button" class="">Tool 演进</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/%E6%BC%94%E8%BF%9B/fc&#43;mcp&#43;cli/" class="">Functioncall-&gt;MCP-&gt;cli &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-412785899ca57a1289f566e38e9ac427" class="toggle"  />
+    <label for="section-412785899ca57a1289f566e38e9ac427" class="flex justify-between">
+      <a role="button" class="">tools</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/Tools/claude-searchTool/" class="">Claude toolsearch</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="toggle"  />
+    <label for="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="flex justify-between">
+      <a role="button" class="">MCP *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-efd004ff6efd6d01576ed8f1a0e02adf" class="toggle"  />
+    <label for="section-efd004ff6efd6d01576ed8f1a0e02adf" class="flex justify-between">
+      <a role="button" class="">skill *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/skill/" class="">编写高质量Skill的六大失效模式</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/openclaw/" class="">Openclaw</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/openclaw1/" class="">Openclaw1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/skill-route---hermes/Skill%E8%B7%AF%E7%94%B1%E4%B8%8E%E5%91%BD%E4%B8%AD%E7%8E%87%E4%BC%98%E5%8C%96%E6%8C%87%E5%8D%97/" class="">Skill路由与命中率优化指南</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/skill-route---openclaw/agent-skill-routing/" class="">Agent Skill Routing</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="toggle"  />
+    <label for="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="flex justify-between">
+      <a role="button" class="">Agent Eval</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/ali/" class="">Agent可观测与评估[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a89b3f08479487c94e6a45e37e72a862" class="toggle"  />
+    <label for="section-a89b3f08479487c94e6a45e37e72a862" class="flex justify-between">
+      <a role="button" class="">Demystifying Evals for AI Agents</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/anthropic/Demystifying-Evals-for-AI-Agents/" class="">Demystifying Evals for Ai Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/anthropic/Demystifying-Evals-for-AI-Agents-%E6%80%BB%E7%BB%93/demystifying-evals-for-ai-agents/" class="">Demystifying Evals for Ai Agents</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-83c0821b846e1dac2e8bfc2d8d45e825" class="toggle"  />
+    <label for="section-83c0821b846e1dac2e8bfc2d8d45e825" class="flex justify-between">
+      <a role="button" class="">langfuse</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/langfuse/langfuse/" class="">langfuse</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9c20639ed9ed4feb764f4bac9cac218f" class="toggle"  />
+    <label for="section-9c20639ed9ed4feb764f4bac9cac218f" class="flex justify-between">
+      <a role="button" class="">ragas</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/ragas/ragas/" class="">ragas</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f0f5dda3ea316a50f6d522c3904406d7" class="toggle"  />
+    <label for="section-f0f5dda3ea316a50f6d522c3904406d7" class="flex justify-between">
+      <a role="button" class="">llm-as-judge</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/LLL-as-judge---hermes/" class="">Lll as Judge Hermes</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/" class="">Llm as Judge Openclaw</a>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig1-judge-flow/" class="">Fig1 Judge Flow</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig2-paradigms/" class="">Fig2 Paradigms</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig3-bias-table/" class="">Fig3 Bias Table</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig4-cases-table/" class="">Fig4 Cases Table</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig5-ensemble-arch/" class="">Fig5 Ensemble Arch</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig6-human-calibration/" class="">Fig6 Human Calibration</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig8-specialized-judge/" class="">Fig8 Specialized Judge</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="toggle" checked />
+    <label for="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fba0f3dbc923c98eb8930452d3ded9da" class="toggle"  />
+    <label for="section-fba0f3dbc923c98eb8930452d3ded9da" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="toggle" checked />
+    <label for="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/core/" class="">OpenClaw 核心特性 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/" class="">State</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/" class="">Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/" class="active">Security</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%811/" class="">OpenClaw 生态1 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%812/" class="">OpenClaw 生态2 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-946abd4062c933c072a8c623969add46" class="toggle"  />
+    <label for="section-946abd4062c933c072a8c623969add46" class="flex justify-between">
+      <a role="button" class="">Hermes Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/apiwebhook/" class="">Api&amp;webhook</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitctureA1/" class="">Arcitcture[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/interrupt/" class="">Interrupt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/moa/" class="">Moa</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/" class="">Skill Envolve</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e7b0748ad48450dde76b72297d165429" class="toggle"  />
+    <label for="section-e7b0748ad48450dde76b72297d165429" class="flex justify-between">
+      <a role="button" class="">JEV</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/JEV/JEV/" class="">JEV</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fcf812d87768431bb3ab86201a4222e2" class="toggle"  />
+    <label for="section-fcf812d87768431bb3ab86201a4222e2" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1A1/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/permission/" class="">Permission[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/source-code/" class="">claude code 源码 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-02af4685675e68e6f8179d748eeb6c5a" class="toggle"  />
+    <label for="section-02af4685675e68e6f8179d748eeb6c5a" class="flex justify-between">
+      <a role="button" class="">Codex</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/codex/codex/arch/" class="">Arch</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ad440789e1a7ba07eb2b3918829c7257" class="toggle"  />
+    <label for="section-ad440789e1a7ba07eb2b3918829c7257" class="flex justify-between">
+      <a role="button" class="">Compress *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code/" class="">Claude /compact[A1] *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-compress/" class="">Claude Code - Compact summary</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/codex/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code2/" class="">Claude Code2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code3/" class="">Claude Code3</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7b4eb57325a2b2a77e7753390fc7d915" class="toggle"  />
+    <label for="section-7b4eb57325a2b2a77e7753390fc7d915" class="flex justify-between">
+      <a role="button" class="">Pi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent/" class="">Pi Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent1/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent2/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Tau-Agent/" class="">Tau Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c47c9c73c26a489b07f412d8d4ee4f40" class="toggle"  />
+    <label for="section-c47c9c73c26a489b07f412d8d4ee4f40" class="flex justify-between">
+      <a role="button" class="">可靠性 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/reliable/codex/" class="">Codex 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/reliable/dsh/" class="">Deepseek harness 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/reliable/pi-durable/" class="">Pi Durable</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-eec787204d3e675b4351db6ec0be7bc8" class="toggle"  />
+    <label for="section-eec787204d3e675b4351db6ec0be7bc8" class="flex justify-between">
+      <a role="button" class="">实战</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/deepseek-harness/" class="">Deepseek Harness</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b41552d83299a260ffc5181fd5bf1177" class="toggle"  />
+    <label for="section-b41552d83299a260ffc5181fd5bf1177" class="flex justify-between">
+      <a role="button" class="">Loops engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a4757bdd1099e1149094c77f1470e5d" class="toggle"  />
+    <label for="section-1a4757bdd1099e1149094c77f1470e5d" class="flex justify-between">
+      <a role="button" class="">goal</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/" class="">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-eca2bd358c3e27c981a441ba4e158cb3" class="toggle"  />
+    <label for="section-eca2bd358c3e27c981a441ba4e158cb3" class="flex justify-between">
+      <a role="button" class="">loop engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loops/" class="">loops engineering[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loop-engineering1/" class="">Loop Engineering1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27d39407dbc0d87e956d19638a0f1da3" class="toggle"  />
+    <label for="section-27d39407dbc0d87e956d19638a0f1da3" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/" class="">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/openclaw/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-689fa0c955be06dbb890852c4c2826e8" class="toggle"  />
+    <label for="section-689fa0c955be06dbb890852c4c2826e8" class="flex justify-between">
+      <a role="button" class="">Meta Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-524d9cf59683da54d7ecc3c0ff6519ce" class="toggle"  />
+    <label for="section-524d9cf59683da54d7ecc3c0ff6519ce" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/managed-agent/%E4%BC%98%E5%8C%96/" class="">Claude Platform 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/managed-agent/managed-agent/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/managed-agent/managed-agent2/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/managed-agent/managed-agent3/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E8%A7%A3%E8%AF%BB/" class="">脑和手的解耦</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E5%8E%9F%E6%96%87/" class="">原文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="toggle"  />
+    <label for="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="flex justify-between">
+      <a role="button" class="">Omnigent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/Omnigent/omnigent/" class="">omnigent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="toggle"  />
+    <label for="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering1/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering2/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">context engineering[Manus]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="toggle"  />
+    <label for="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="flex justify-between">
+      <a role="button" class="">Plan mode</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/plan-mode/claude/" class="">Claude</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/plan-mode/claue1/" class="">Claue1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a730712863635107d9ac9a5d3e3abd6" class="toggle"  />
+    <label for="section-4a730712863635107d9ac9a5d3e3abd6" class="flex justify-between">
+      <a role="button" class="">Prompting caching *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/prompt-caching/Prompting-caching/" class="">Claude Prompt Cache [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-98dd33716c353fd55829a04c54d5e57e" class="toggle"  />
+    <label for="section-98dd33716c353fd55829a04c54d5e57e" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ad26e82e3d025c385444444a93d72502" class="toggle"  />
+    <label for="section-ad26e82e3d025c385444444a93d72502" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9cc3ec6d88705686bc94595daa8aa25e" class="toggle"  />
+    <label for="section-9cc3ec6d88705686bc94595daa8aa25e" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7b3c994f2c17601a215b6b57dc71b7ef" class="toggle"  />
+    <label for="section-7b3c994f2c17601a215b6b57dc71b7ef" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ebf0a5559cc09bbc171db379534a7dc9" class="toggle"  />
+    <label for="section-ebf0a5559cc09bbc171db379534a7dc9" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0082251d40c765323fa32be9b3686aa0" class="toggle"  />
+    <label for="section-0082251d40c765323fa32be9b3686aa0" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d763501d6c35330245339b6c8531cf7c" class="toggle"  />
+    <label for="section-d763501d6c35330245339b6c8531cf7c" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-284de0efced75cd016672664a17456be" class="toggle"  />
+    <label for="section-284de0efced75cd016672664a17456be" class="flex justify-between">
+      <a role="button" class="">AI Native</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeminimax/" class="">AI原生组织实践(MiniMax)</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Claude-tag/" class="">Claude tag</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Ai-nativeali/" class="">AI native与人机协作[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/SDLC/" class="">AI-native SDLC</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeclaude/" class="">Bottleneck Shift in AI-native Engineering[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a67b63d6d594556c363a35d7d38cd355" class="toggle"  />
+    <label for="section-a67b63d6d594556c363a35d7d38cd355" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-3926c431ee2abb31fef9cd9185588ed0" class="toggle"  />
+    <label for="section-3926c431ee2abb31fef9cd9185588ed0" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="toggle"  />
+    <label for="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Security</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openclaw-安全执行环境沙箱审批策略管道与深度防御体系">OpenClaw 安全执行环境：沙箱、审批、策略管道与深度防御体系</a>
+      <ul>
+        <li><a href="#导读">导读</a></li>
+        <li><a href="#1-总览纵深防御架构">1. 总览：纵深防御架构</a></li>
+        <li><a href="#2-第1层沙箱隔离sandbox-isolation">2. 第1层：沙箱隔离（Sandbox Isolation）</a>
+          <ul>
+            <li><a href="#21-沙箱配置解析">2.1 沙箱配置解析</a></li>
+            <li><a href="#22-三种沙箱作用域">2.2 三种沙箱作用域</a></li>
+            <li><a href="#23-docker-沙箱后端">2.3 Docker 沙箱后端</a></li>
+            <li><a href="#24-ssh-沙箱后端">2.4 SSH 沙箱后端</a></li>
+            <li><a href="#25-沙箱浏览器安全">2.5 沙箱浏览器安全</a></li>
+            <li><a href="#26-沙箱文件系统桥接">2.6 沙箱文件系统桥接</a></li>
+            <li><a href="#27-沙箱验证">2.7 沙箱验证</a></li>
+            <li><a href="#28-沙箱修剪prune">2.8 沙箱修剪（Prune）</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-第2层exec-安全策略">3. 第2层：Exec 安全策略</a>
+          <ul>
+            <li><a href="#31-安全可执行值判断">3.1 安全可执行值判断</a></li>
+            <li><a href="#32-safe-bin-profile">3.2 Safe Bin Profile</a></li>
+            <li><a href="#33-exec-host-选择">3.3 Exec Host 选择</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-第3层命令审批exec-approval">4. 第3层：命令审批（Exec Approval）</a>
+          <ul>
+            <li><a href="#41-审批流程">4.1 审批流程</a></li>
+            <li><a href="#42-审批请求构建">4.2 审批请求构建</a></li>
+            <li><a href="#43-审批转发">4.3 审批转发</a></li>
+            <li><a href="#44-审批管理">4.4 审批管理</a></li>
+            <li><a href="#45-allowlist-管理">4.5 Allowlist 管理</a></li>
+            <li><a href="#46-审批分析">4.6 审批分析</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-第4层文件系统安全">5. 第4层：文件系统安全</a>
+          <ul>
+            <li><a href="#51-安全文件操作">5.1 安全文件操作</a></li>
+            <li><a href="#52-路径安全校验">5.2 路径安全校验</a></li>
+            <li><a href="#53-路径别名保护">5.3 路径别名保护</a></li>
+            <li><a href="#54-硬链接保护">5.4 硬链接保护</a></li>
+            <li><a href="#55-工作区守卫">5.5 工作区守卫</a></li>
+            <li><a href="#56-安装安全路径">5.6 安装安全路径</a></li>
+          </ul>
+        </li>
+        <li><a href="#6-第5层网络与-ssrf-防护">6. 第5层：网络与 SSRF 防护</a>
+          <ul>
+            <li><a href="#61-ssrf-防护">6.1 SSRF 防护</a></li>
+            <li><a href="#62-fetch-guard">6.2 Fetch Guard</a></li>
+            <li><a href="#63-ssrf-策略">6.3 SSRF 策略</a></li>
+            <li><a href="#64-web-guarded-fetch">6.4 Web Guarded Fetch</a></li>
+          </ul>
+        </li>
+        <li><a href="#7-第6层工具策略管道tool-policy-pipeline">7. 第6层：工具策略管道（Tool Policy Pipeline）</a>
+          <ul>
+            <li><a href="#71-策略管道">7.1 策略管道</a></li>
+            <li><a href="#72-策略匹配">7.2 策略匹配</a></li>
+            <li><a href="#73-沙箱工具策略">7.3 沙箱工具策略</a></li>
+            <li><a href="#74-有效工具策略">7.4 有效工具策略</a></li>
+            <li><a href="#75-消息-provider-策略">7.5 消息 Provider 策略</a></li>
+          </ul>
+        </li>
+        <li><a href="#8-第7层运行时安全">8. 第7层：运行时安全</a>
+          <ul>
+            <li><a href="#81-运行时守卫">8.1 运行时守卫</a></li>
+            <li><a href="#82-主机环境安全">8.2 主机环境安全</a></li>
+            <li><a href="#83-环境变量清理">8.3 环境变量清理</a></li>
+            <li><a href="#84-安全打开文件">8.4 安全打开文件</a></li>
+          </ul>
+        </li>
+        <li><a href="#9-第8层安全审计">9. 第8层：安全审计</a>
+          <ul>
+            <li><a href="#91-安全审计系统">9.1 安全审计系统</a></li>
+            <li><a href="#92-各审计模块">9.2 各审计模块</a></li>
+            <li><a href="#93-doctor-安全命令">9.3 Doctor 安全命令</a></li>
+          </ul>
+        </li>
+        <li><a href="#10-安全执行完整序列图">10. 安全执行完整序列图</a></li>
+        <li><a href="#11-关键安全设计模式">11. 关键安全设计模式</a>
+          <ul>
+            <li><a href="#111-默认安全secure-by-default">11.1 默认安全（Secure by Default）</a></li>
+            <li><a href="#112-纵深防御defense-in-depth">11.2 纵深防御（Defense in Depth）</a></li>
+            <li><a href="#113-最小权限原则least-privilege">11.3 最小权限原则（Least Privilege）</a></li>
+            <li><a href="#114-失败安全fail-safe">11.4 失败安全（Fail-Safe）</a></li>
+            <li><a href="#115-路径别名保护">11.5 路径别名保护</a></li>
+            <li><a href="#116-环境变量隔离">11.6 环境变量隔离</a></li>
+          </ul>
+        </li>
+        <li><a href="#12-配置示例">12. 配置示例</a>
+          <ul>
+            <li><a href="#121-开启沙箱">12.1 开启沙箱</a></li>
+            <li><a href="#122-配置-ssh-沙箱">12.2 配置 SSH 沙箱</a></li>
+            <li><a href="#123-配置-exec-approval">12.3 配置 Exec Approval</a></li>
+          </ul>
+        </li>
+        <li><a href="#13-源码模块索引">13. 源码模块索引</a></li>
+        <li><a href="#14-参考资料">14. 参考资料</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="openclaw-安全执行环境沙箱审批策略管道与深度防御体系">
+  OpenClaw 安全执行环境：沙箱、审批、策略管道与深度防御体系
+  <a class="anchor" href="#openclaw-%e5%ae%89%e5%85%a8%e6%89%a7%e8%a1%8c%e7%8e%af%e5%a2%83%e6%b2%99%e7%ae%b1%e5%ae%a1%e6%89%b9%e7%ad%96%e7%95%a5%e7%ae%a1%e9%81%93%e4%b8%8e%e6%b7%b1%e5%ba%a6%e9%98%b2%e5%be%a1%e4%bd%93%e7%b3%bb">#</a>
+</h1>
+<blockquote>
+<p><strong>基于 OpenClaw v2026.4.21 源码深度分析</strong>
+作者：小伟 | 2026-04-30</p>
+</blockquote>
+<hr>
+<h2 id="导读">
+  导读
+  <a class="anchor" href="#%e5%af%bc%e8%af%bb">#</a>
+</h2>
+<p>LLM Agent 最危险的操作是什么？<strong>执行不受控的命令</strong>。OpenClaw 面对这个问题的答案不是&quot;信任模型&quot;，而是构建了一套多层纵深防御体系（Defense in Depth）：从 Docker 沙箱隔离 → exec 安全策略 → 命令审批 → 文件系统保护 → SSRF 防护 → 工具策略管道，每一层都独立有效，合在一起构成完整的安全执行环境。</p>
+<p>本文将从源码级别完整拆解这套体系。</p>
+<hr>
+<h2 id="1-总览纵深防御架构">
+  1. 总览：纵深防御架构
+  <a class="anchor" href="#1-%e6%80%bb%e8%a7%88%e7%ba%b5%e6%b7%b1%e9%98%b2%e5%be%a1%e6%9e%b6%e6%9e%84">#</a>
+</h2>
+<pre tabindex="0"><code>┌─────────────────────────────────────────────────────────────────────────┐
+│                    OpenClaw 安全执行环境                                 │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │  第1层：沙箱隔离（Sandbox Isolation）                               │ │
+│  │  Docker Container: readOnlyRoot, capDrop ALL, network none        │ │
+│  │  SSH Backend: 严格 Host Key 校验 + 独立 workspaceRoot             │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                                │                                       │
+│  ┌─────────────────────────────▼─────────────────────────────────────┐ │
+│  │  第2层：Exec 安全策略（Exec Safety）                                │ │
+│  │  Shell 元字符检测 + 安全可执行值判断                               │ │
+│  │  Safe Bin Profile（仅允许白名单命令）                               │ │
+│  └─────────────────────────────┬─────────────────────────────────────┘ │
+│                                │                                       │
+│  ┌─────────────────────────────▼─────────────────────────────────────┐ │
+│  │  第3层：命令审批（Exec Approval）                                   │ │
+│  │  命令 → 用户确认 → 允许/拒绝/allowlist                             │ │
+│  │  iOS Push / Channel 推送 / Web 界面                               │ │
+│  └─────────────────────────────┬─────────────────────────────────────┘ │
+│                                │                                       │
+│  ┌─────────────────────────────▼─────────────────────────────────────┐ │
+│  │  第4层：文件系统安全（Filesystem Safety）                           │ │
+│  │  readFileWithinRoot / writeFileWithinRoot                         │ │
+│  │  Path Alias Guards / Hardlink Guards                              │ │
+│  │  Path Safety（穿越/符号链接/越界检测）                               │ │
+│  └─────────────────────────────┬─────────────────────────────────────┘ │
+│                                │                                       │
+│  ┌─────────────────────────────▼─────────────────────────────────────┐ │
+│  │  第5层：网络与 SSRF 防护（Network &amp; SSRF）                          │ │
+│  │  Sandbox network=none + SSRF Policy                               │ │
+│  │  Fetch Guard（内网 IP 拦截 + 端口限制）                              │ │
+│  └─────────────────────────────┬─────────────────────────────────────┘ │
+│                                │                                       │
+│  ┌─────────────────────────────▼─────────────────────────────────────┐ │
+│  │  第6层：工具策略管道（Tool Policy Pipeline）                        │ │
+│  │  Allowlist / Denylist / Owner-Only / Profile / FS Policy          │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+</code></pre><hr>
+<h2 id="2-第1层沙箱隔离sandbox-isolation">
+  2. 第1层：沙箱隔离（Sandbox Isolation）
+  <a class="anchor" href="#2-%e7%ac%ac1%e5%b1%82%e6%b2%99%e7%ae%b1%e9%9a%94%e7%a6%bbsandbox-isolation">#</a>
+</h2>
+<h3 id="21-沙箱配置解析">
+  2.1 沙箱配置解析
+  <a class="anchor" href="#21-%e6%b2%99%e7%ae%b1%e9%85%8d%e7%bd%ae%e8%a7%a3%e6%9e%90">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/config.ts">sandbox/config.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/sandbox/config.ts
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 沙箱模式
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">SANDBOX_MODES</span> <span style="color:#f92672">=</span> [<span style="color:#e6db74">&#39;off&#39;</span>, <span style="color:#e6db74">&#39;local&#39;</span>, <span style="color:#e6db74">&#39;remote&#39;</span>];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 后端类型
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">SANDBOX_BACKENDS</span> <span style="color:#f92672">=</span> [<span style="color:#e6db74">&#39;docker&#39;</span>, <span style="color:#e6db74">&#39;ssh&#39;</span>];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 默认 Docker 配置
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveSandboxDockerConfig</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">image</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;openclaw-sandbox:bookworm-slim&#39;</span>,    <span style="color:#75715e">// 默认沙箱镜像
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">containerPrefix</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;openclaw-sbx-&#39;</span>,           <span style="color:#75715e">// 容器名前缀
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">workdir</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;/workspace&#39;</span>,                       <span style="color:#75715e">// 工作目录
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">readOnlyRoot</span>: <span style="color:#66d9ef">true</span>,                          <span style="color:#75715e">// 只读根文件系统
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">tmpfs</span><span style="color:#f92672">:</span> [<span style="color:#e6db74">&#39;/tmp&#39;</span>, <span style="color:#e6db74">&#39;/var/tmp&#39;</span>, <span style="color:#e6db74">&#39;/run&#39;</span>],         <span style="color:#75715e">// 临时文件系统
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">network</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;none&#39;</span>,                             <span style="color:#75715e">// 默认无网络
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">capDrop</span><span style="color:#f92672">:</span> [<span style="color:#e6db74">&#39;ALL&#39;</span>],                            <span style="color:#75715e">// 丢弃所有 Linux 能力
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 可选的 seccomp / apparmor profile
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">seccompProfile</span>: <span style="color:#66d9ef">...</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">apparmorProfile</span>: <span style="color:#66d9ef">...</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 资源限制
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">pidsLimit</span>: <span style="color:#66d9ef">...</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">memory</span>: <span style="color:#66d9ef">...</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">memorySwap</span>: <span style="color:#66d9ef">...</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">cpus</span>: <span style="color:#66d9ef">...</span>,
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>关键安全参数解读</strong>：</p>
+<table>
+	<thead>
+			<tr>
+					<th>参数</th>
+					<th>默认值</th>
+					<th>安全意义</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>readOnlyRoot</code></td>
+					<td><code>true</code></td>
+					<td>根文件系统只读，防止持久化恶意文件</td>
+			</tr>
+			<tr>
+					<td><code>network</code></td>
+					<td><code>none</code></td>
+					<td>无网络，无法发起出站连接（防数据外泄）</td>
+			</tr>
+			<tr>
+					<td><code>capDrop: ['ALL']</code></td>
+					<td>丢弃全部</td>
+					<td>移除所有 Linux capabilities（防提权）</td>
+			</tr>
+			<tr>
+					<td><code>tmpfs</code></td>
+					<td><code>/tmp,/var/tmp,/run</code></td>
+					<td>内存文件系统，重启即清空</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="22-三种沙箱作用域">
+  2.2 三种沙箱作用域
+  <a class="anchor" href="#22-%e4%b8%89%e7%a7%8d%e6%b2%99%e7%ae%b1%e4%bd%9c%e7%94%a8%e5%9f%9f">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/config.ts">sandbox/config.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/sandbox/config.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveSandboxScope</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">scope</span>) <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">scope</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#66d9ef">typeof</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">perSession</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;boolean&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">perSession</span> <span style="color:#f92672">?</span> <span style="color:#e6db74">&#34;session&#34;</span> <span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;shared&#34;</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;agent&#34;</span>;  <span style="color:#75715e">// 默认按 agent 隔离
+</span></span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><table>
+	<thead>
+			<tr>
+					<th>作用域</th>
+					<th>说明</th>
+					<th>适用场景</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>session</code></td>
+					<td>每个会话独立沙箱</td>
+					<td>最高隔离级别，多用户环境</td>
+			</tr>
+			<tr>
+					<td><code>agent</code></td>
+					<td>每个 Agent 共享沙箱</td>
+					<td>默认级别，平衡安全与性能</td>
+			</tr>
+			<tr>
+					<td><code>shared</code></td>
+					<td>所有 Agent 共享沙箱</td>
+					<td>单用户开发环境</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="23-docker-沙箱后端">
+  2.3 Docker 沙箱后端
+  <a class="anchor" href="#23-docker-%e6%b2%99%e7%ae%b1%e5%90%8e%e7%ab%af">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/docker-backend.ts">sandbox/docker-backend.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/sandbox/docker-backend.ts
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">createDockerSandboxBackend</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">createDockerSandboxBackendHandle</span>({
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">containerName</span>: <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">ensureSandboxContainer</span>({
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">sessionKey</span>, <span style="color:#a6e22e">workspaceDir</span>, <span style="color:#a6e22e">agentWorkspaceDir</span>, <span style="color:#a6e22e">cfg</span>
+</span></span><span style="display:flex;"><span>    }),
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">workdir</span>: <span style="color:#66d9ef">params.cfg.docker.workdir</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">env</span>: <span style="color:#66d9ef">params.cfg.docker.env</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">image</span>: <span style="color:#66d9ef">params.cfg.docker.image</span>
+</span></span><span style="display:flex;"><span>  });
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">createDockerSandboxBackendHandle</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">id</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;docker&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">runtimeId</span>: <span style="color:#66d9ef">params.containerName</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">capabilities</span><span style="color:#f92672">:</span> { <span style="color:#a6e22e">browser</span>: <span style="color:#66d9ef">true</span> },
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 构建 exec 规格：通过 docker exec 在容器内执行
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#a6e22e">buildExecSpec</span>({ <span style="color:#a6e22e">command</span>, <span style="color:#a6e22e">workdir</span>, <span style="color:#a6e22e">env</span>, <span style="color:#a6e22e">usePty</span> }) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">argv</span><span style="color:#f92672">:</span> [<span style="color:#e6db74">&#34;docker&#34;</span>, ...<span style="color:#a6e22e">buildDockerExecArgs</span>({
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">containerName</span>: <span style="color:#66d9ef">params.containerName</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">command</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">workdir</span>: <span style="color:#66d9ef">workdir</span> <span style="color:#f92672">??</span> <span style="color:#a6e22e">params</span>.<span style="color:#a6e22e">workdir</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">env</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">tty</span>: <span style="color:#66d9ef">usePty</span>
+</span></span><span style="display:flex;"><span>        })],
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">env</span>: <span style="color:#66d9ef">process.env</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">stdinMode</span>: <span style="color:#66d9ef">usePty</span> <span style="color:#f92672">?</span> <span style="color:#e6db74">&#34;pipe-open&#34;</span> <span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;pipe-closed&#34;</span>
+</span></span><span style="display:flex;"><span>      };
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>核心思路</strong>：所有命令都通过 <code>docker exec</code> 在隔离容器内执行，而不是直接在宿主机上执行。</p>
+<h3 id="24-ssh-沙箱后端">
+  2.4 SSH 沙箱后端
+  <a class="anchor" href="#24-ssh-%e6%b2%99%e7%ae%b1%e5%90%8e%e7%ab%af">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/config.ts">sandbox/config.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/sandbox/config.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveSandboxSshConfig</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">target</span>: <span style="color:#66d9ef">...</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">command</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;ssh&#39;</span>,                        <span style="color:#75715e">// SSH 命令
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">workspaceRoot</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;/tmp/openclaw-sandboxes&#39;</span>,  <span style="color:#75715e">// 远程工作目录
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">strictHostKeyChecking</span>: <span style="color:#66d9ef">true</span>,           <span style="color:#75715e">// 严格 Host Key 校验
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">updateHostKeys</span>: <span style="color:#66d9ef">true</span>,                  <span style="color:#75715e">// 自动更新 Host Keys
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">identityFile</span>: <span style="color:#66d9ef">...</span>,                     <span style="color:#75715e">// SSH 私钥
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">certificateFile</span>: <span style="color:#66d9ef">...</span>,                  <span style="color:#75715e">// SSH 证书
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">knownHostsFile</span>: <span style="color:#66d9ef">...</span>,                   <span style="color:#75715e">// 已知主机文件
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">identityData</span>: <span style="color:#66d9ef">...</span>,                     <span style="color:#75715e">// 私钥数据（可加密存储）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">certificateData</span>: <span style="color:#66d9ef">...</span>,                  <span style="color:#75715e">// 证书数据
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">knownHostsData</span>: <span style="color:#66d9ef">...</span>                    <span style="color:#75715e">// 已知主机数据
+</span></span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>安全要点</strong>：SSH 后端支持完整的证书/密钥管理，<code>strictHostKeyChecking: true</code> 防止中间人攻击。</p>
+<h3 id="25-沙箱浏览器安全">
+  2.5 沙箱浏览器安全
+  <a class="anchor" href="#25-%e6%b2%99%e7%ae%b1%e6%b5%8f%e8%a7%88%e5%99%a8%e5%ae%89%e5%85%a8">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/config.ts">sandbox/config.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/sandbox/config.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveSandboxBrowserConfig</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">enabled</span>: <span style="color:#66d9ef">false</span>,                          <span style="color:#75715e">// 默认禁用
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">image</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;openclaw-sandbox-browser:bookworm-slim&#39;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">network</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;openclaw-sandbox-browser&#39;</span>,      <span style="color:#75715e">// 独立网络
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">cdpPort</span>: <span style="color:#66d9ef">9222</span>,                            <span style="color:#75715e">// Chrome DevTools Protocol
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">vncPort</span>: <span style="color:#66d9ef">5900</span>,                            <span style="color:#75715e">// VNC 端口
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">noVncPort</span>: <span style="color:#66d9ef">6080</span>,                          <span style="color:#75715e">// noVNC Web 端口
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">headless</span>: <span style="color:#66d9ef">false</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">enableNoVnc</span>: <span style="color:#66d9ef">true</span>,                        <span style="color:#75715e">// 启用 noVNC
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">allowHostControl</span>: <span style="color:#66d9ef">false</span>,                  <span style="color:#75715e">// 默认不允许宿主机控制
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">autoStart</span>: <span style="color:#66d9ef">true</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">autoStartTimeoutMs</span>: <span style="color:#66d9ef">12000</span>                 <span style="color:#75715e">// 启动超时 12s
+</span></span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>浏览器沙箱安全</strong>：</p>
+<ul>
+<li>浏览器运行在独立网络命名空间（<code>openclaw-sandbox-browser</code>）</li>
+<li>noVNC 提供 Web 访问，但不直接暴露 CDP 端口</li>
+<li><code>allowHostControl: false</code> 默认禁止浏览器控制宿主机</li>
+</ul>
+<h3 id="26-沙箱文件系统桥接">
+  2.6 沙箱文件系统桥接
+  <a class="anchor" href="#26-%e6%b2%99%e7%ae%b1%e6%96%87%e4%bb%b6%e7%b3%bb%e7%bb%9f%e6%a1%a5%e6%8e%a5">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/fs-bridge.ts">sandbox/fs-bridge.ts</a> / <a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/fs-bridge-path-safety.ts">sandbox/fs-bridge-path-safety.ts</a></p>
+<p>沙箱容器内的文件操作需要通过 <strong>FS Bridge</strong> 安全地映射到宿主机文件系统。桥接过程中进行路径安全校验，防止路径穿越攻击。</p>
+<h3 id="27-沙箱验证">
+  2.7 沙箱验证
+  <a class="anchor" href="#27-%e6%b2%99%e7%ae%b1%e9%aa%8c%e8%af%81">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/validate-sandbox-security.ts">sandbox/validate-sandbox-security.ts</a></p>
+<p>在沙箱创建后运行安全验证，确保隔离生效。</p>
+<h3 id="28-沙箱修剪prune">
+  2.8 沙箱修剪（Prune）
+  <a class="anchor" href="#28-%e6%b2%99%e7%ae%b1%e4%bf%ae%e5%89%aaprune">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/prune.ts">sandbox/prune.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/sandbox/prune.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveSandboxPruneConfig</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">idleHours</span>: <span style="color:#66d9ef">24</span>,    <span style="color:#75715e">// 空闲 24 小时后自动清理
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">maxAgeDays</span>: <span style="color:#66d9ef">7</span>     <span style="color:#75715e">// 最大存活 7 天
+</span></span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>防止僵尸沙箱容器持续消耗资源。</p>
+<hr>
+<h2 id="3-第2层exec-安全策略">
+  3. 第2层：Exec 安全策略
+  <a class="anchor" href="#3-%e7%ac%ac2%e5%b1%82exec-%e5%ae%89%e5%85%a8%e7%ad%96%e7%95%a5">#</a>
+</h2>
+<h3 id="31-安全可执行值判断">
+  3.1 安全可执行值判断
+  <a class="anchor" href="#31-%e5%ae%89%e5%85%a8%e5%8f%af%e6%89%a7%e8%a1%8c%e5%80%bc%e5%88%a4%e6%96%ad">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-safety.ts">infra/exec-safety.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/infra/exec-safety.ts
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Shell 元字符：可能触发命令注入
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">SHELL_METACHARS</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">/[;&amp;|`$&lt;&gt;]/</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 控制字符：可能导致命令拼接
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">CONTROL_CHARS</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">/[\r\n]/</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 引号字符：可能逃逸参数
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">QUOTE_CHARS</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">/[&#34;&#39;]/</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 安全名称模式
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">BARE_NAME_PATTERN</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">/^[A-Za-z0-9._+-]+$/</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">isLikelyPath</span>(<span style="color:#a6e22e">value</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">value</span>.<span style="color:#a6e22e">startsWith</span>(<span style="color:#e6db74">&#34;.&#34;</span>) <span style="color:#f92672">||</span> <span style="color:#a6e22e">value</span>.<span style="color:#a6e22e">startsWith</span>(<span style="color:#e6db74">&#34;~&#34;</span>)) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">value</span>.<span style="color:#a6e22e">includes</span>(<span style="color:#e6db74">&#34;/&#34;</span>) <span style="color:#f92672">||</span> <span style="color:#a6e22e">value</span>.<span style="color:#a6e22e">includes</span>(<span style="color:#e6db74">&#34;\\&#34;</span>)) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#e6db74">/^[A-Za-z]:[\\/]/</span>.<span style="color:#a6e22e">test</span>(<span style="color:#a6e22e">value</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">isSafeExecutableValue</span>(<span style="color:#a6e22e">value</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">value</span>) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">trimmed</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">value</span>.<span style="color:#a6e22e">trim</span>();
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">trimmed</span>) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">trimmed</span>.<span style="color:#a6e22e">includes</span>(<span style="color:#e6db74">&#34;\0&#34;</span>)) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>;           <span style="color:#75715e">// 拒绝 null 字符
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">CONTROL_CHARS</span>.<span style="color:#a6e22e">test</span>(<span style="color:#a6e22e">trimmed</span>)) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>;      <span style="color:#75715e">// 拒绝换行
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">SHELL_METACHARS</span>.<span style="color:#a6e22e">test</span>(<span style="color:#a6e22e">trimmed</span>)) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>;    <span style="color:#75715e">// 拒绝 shell 元字符
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">QUOTE_CHARS</span>.<span style="color:#a6e22e">test</span>(<span style="color:#a6e22e">trimmed</span>)) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>;        <span style="color:#75715e">// 拒绝引号
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">isLikelyPath</span>(<span style="color:#a6e22e">trimmed</span>)) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>;             <span style="color:#75715e">// 路径认为是安全的
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">trimmed</span>.<span style="color:#a6e22e">startsWith</span>(<span style="color:#e6db74">&#34;-&#34;</span>)) <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>;          <span style="color:#75715e">// 拒绝 flag 参数
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">BARE_NAME_PATTERN</span>.<span style="color:#a6e22e">test</span>(<span style="color:#a6e22e">trimmed</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>防护目标</strong>：防止通过参数注入恶意 shell 命令。</p>
+<h3 id="32-safe-bin-profile">
+  3.2 Safe Bin Profile
+  <a class="anchor" href="#32-safe-bin-profile">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-safe-bin-runtime-policy.ts">infra/exec-safe-bin-runtime-policy.ts</a> / <a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-safe-bin-policy-profiles.ts">infra/exec-safe-bin-policy-profiles.ts</a></p>
+<p>Safe Bin Profile 是 OpenClaw 的命令白名单机制：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/infra/exec-safe-bin-runtime-policy.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 定义哪些命令可以在&#34;安全模式&#34;下直接执行而无需审批
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 常见安全命令：ls, cat, grep, find, head, tail, wc 等
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// src/infra/exec-safe-bin-policy-profiles.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 定义不同的安全策略 profile（strict / moderate / permissive）
+</span></span></span></code></pre></div><h3 id="33-exec-host-选择">
+  3.3 Exec Host 选择
+  <a class="anchor" href="#33-exec-host-%e9%80%89%e6%8b%a9">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-host.ts">infra/exec-host.ts</a></p>
+<p>命令可以在多个宿主上执行：</p>
+<table>
+	<thead>
+			<tr>
+					<th>执行宿主</th>
+					<th>说明</th>
+					<th>安全性</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>gateway</code></td>
+					<td>在 Gateway 进程内执行</td>
+					<td>最低（宿主机）</td>
+			</tr>
+			<tr>
+					<td><code>node</code></td>
+					<td>在 Node 节点上执行</td>
+					<td>中（可远程隔离）</td>
+			</tr>
+			<tr>
+					<td><code>sandbox</code></td>
+					<td>在 Docker/SSH 沙箱内执行</td>
+					<td>最高</td>
+			</tr>
+	</tbody>
+</table>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/bash-tools.exec-host-gateway.ts">bash-tools.exec-host-gateway.ts</a> / <a href="https://github.com/openclaw/openclaw/blob/main/src/agents/bash-tools.exec-host-node.ts">bash-tools.exec-host-node.ts</a></p>
+<hr>
+<h2 id="4-第3层命令审批exec-approval">
+  4. 第3层：命令审批（Exec Approval）
+  <a class="anchor" href="#4-%e7%ac%ac3%e5%b1%82%e5%91%bd%e4%bb%a4%e5%ae%a1%e6%89%b9exec-approval">#</a>
+</h2>
+<h3 id="41-审批流程">
+  4.1 审批流程
+  <a class="anchor" href="#41-%e5%ae%a1%e6%89%b9%e6%b5%81%e7%a8%8b">#</a>
+</h3>
+<p>当模型尝试执行不在 allowlist 中的命令时，触发审批流程：</p>
+<pre tabindex="0"><code>模型请求: exec(&#34;rm -rf /tmp/data&#34;)
+         │
+         ▼
+  ┌──────────────────┐
+  │ 命令是否在       │──Yes──▶ 直接执行
+  │ allowlist 中？   │
+  └────────┬─────────┘
+           │ No
+           ▼
+  ┌──────────────────┐
+  │ 生成审批请求      │
+  │ exec-approval    │
+  │ -request.ts      │
+  └────────┬─────────┘
+           │
+           ▼
+  ┌──────────────────┐
+  │ 推送审批通知      │
+  │ 到用户终端        │
+  │ (Channel/Push)   │
+  └────────┬─────────┘
+           │
+           ▼
+  ┌──────────────────┐
+  │ 用户决策          │
+  │ ✅ 允许 / ❌ 拒绝  │
+  │ 🔁 加入 allowlist │
+  └────────┬─────────┘
+           │
+     ┌─────┴─────┐
+     ▼           ▼
+   执行        拒绝并反馈
+</code></pre><h3 id="42-审批请求构建">
+  4.2 审批请求构建
+  <a class="anchor" href="#42-%e5%ae%a1%e6%89%b9%e8%af%b7%e6%b1%82%e6%9e%84%e5%bb%ba">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/bash-tools.exec-approval-request.ts">bash-tools.exec-approval-request.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/bash-tools.exec-approval-request.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 构建命令审批请求：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 命令原文
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 安全分析（shell 元字符、可疑模式）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 命令显示优化（高亮关键部分）
+</span></span></span></code></pre></div><h3 id="43-审批转发">
+  4.3 审批转发
+  <a class="anchor" href="#43-%e5%ae%a1%e6%89%b9%e8%bd%ac%e5%8f%91">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-approval-forwarder.ts">infra/exec-approval-forwarder.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/infra/exec-approval-forwarder.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 将审批请求转发到用户的各种渠道：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 钉钉消息
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 钉钉 iOS Push 通知
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - Web 界面
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 其他 Channel
+</span></span></span></code></pre></div><h3 id="44-审批管理">
+  4.4 审批管理
+  <a class="anchor" href="#44-%e5%ae%a1%e6%89%b9%e7%ae%a1%e7%90%86">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/gateway/exec-approval-manager.ts">gateway/exec-approval-manager.ts</a></p>
+<p>管理所有待审批的命令请求，支持超时自动拒绝。</p>
+<h3 id="45-allowlist-管理">
+  4.5 Allowlist 管理
+  <a class="anchor" href="#45-allowlist-%e7%ae%a1%e7%90%86">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-approvals-allowlist.ts">infra/exec-approvals-allowlist.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/infra/exec-approvals-allowlist.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 用户可以将常用命令加入 allowlist，避免重复审批
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 支持通配符模式
+</span></span></span></code></pre></div><h3 id="46-审批分析">
+  4.6 审批分析
+  <a class="anchor" href="#46-%e5%ae%a1%e6%89%b9%e5%88%86%e6%9e%90">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-approvals-analysis.ts">infra/exec-approvals-analysis.ts</a></p>
+<p>对命令进行安全分析，识别可疑模式：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/infra/exec-approvals-analysis.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 检测：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 删除命令（rm -rf）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 网络命令（curl, wget）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 系统修改（chmod, chown）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 敏感路径访问（/etc/shadow）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 命令注入模式
+</span></span></span></code></pre></div><hr>
+<h2 id="5-第4层文件系统安全">
+  5. 第4层：文件系统安全
+  <a class="anchor" href="#5-%e7%ac%ac4%e5%b1%82%e6%96%87%e4%bb%b6%e7%b3%bb%e7%bb%9f%e5%ae%89%e5%85%a8">#</a>
+</h2>
+<h3 id="51-安全文件操作">
+  5.1 安全文件操作
+  <a class="anchor" href="#51-%e5%ae%89%e5%85%a8%e6%96%87%e4%bb%b6%e6%93%8d%e4%bd%9c">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/fs-safe.ts">infra/fs-safe.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/infra/fs-safe.ts
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 所有文件操作都必须在工作区根目录内
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">readFileWithinRoot</span>(<span style="color:#a6e22e">rootDir</span>, <span style="color:#a6e22e">filePath</span>) { ... }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">writeFileWithinRoot</span>(<span style="color:#a6e22e">rootDir</span>, <span style="color:#a6e22e">filePath</span>, <span style="color:#a6e22e">content</span>) { ... }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">appendFileWithinRoot</span>(<span style="color:#a6e22e">rootDir</span>, <span style="color:#a6e22e">filePath</span>, <span style="color:#a6e22e">content</span>) { ... }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">openFileWithinRoot</span>(<span style="color:#a6e22e">rootDir</span>, <span style="color:#a6e22e">filePath</span>, <span style="color:#a6e22e">flags</span>) { ... }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 路径校验：拒绝 ../ 穿越、符号链接逃逸
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">SafeOpenError</span> <span style="color:#66d9ef">extends</span> Error { ... }
+</span></span></code></pre></div><p><strong>核心原则</strong>：Agent 只能读写工作区（workspace）内的文件，无法访问系统文件。</p>
+<h3 id="52-路径安全校验">
+  5.2 路径安全校验
+  <a class="anchor" href="#52-%e8%b7%af%e5%be%84%e5%ae%89%e5%85%a8%e6%a0%a1%e9%aa%8c">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/path-safety.ts">infra/path-safety.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/infra/path-safety.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 路径安全检测：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 拒绝 ../ 路径穿越
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 拒绝绝对路径逃逸
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 符号链接解析后必须在根目录内
+</span></span></span></code></pre></div><h3 id="53-路径别名保护">
+  5.3 路径别名保护
+  <a class="anchor" href="#53-%e8%b7%af%e5%be%84%e5%88%ab%e5%90%8d%e4%bf%9d%e6%8a%a4">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/path-alias-guards.ts">infra/path-alias-guards.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/infra/path-alias-guards.ts
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// PATH_ALIAS_POLICIES - 路径别名策略
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 防止通过 @alias 等别名机制绕过路径限制
+</span></span></span></code></pre></div><h3 id="54-硬链接保护">
+  5.4 硬链接保护
+  <a class="anchor" href="#54-%e7%a1%ac%e9%93%be%e6%8e%a5%e4%bf%9d%e6%8a%a4">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/hardlink-guards.ts">infra/hardlink-guards.ts</a></p>
+<p>防止通过硬链接绕过文件访问限制。</p>
+<h3 id="55-工作区守卫">
+  5.5 工作区守卫
+  <a class="anchor" href="#55-%e5%b7%a5%e4%bd%9c%e5%8c%ba%e5%ae%88%e5%8d%ab">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/openclaw-tools.nodes-workspace-guard.ts">openclaw-tools.nodes-workspace-guard.ts</a></p>
+<p>Node 节点上的工具执行同样受工作区限制。</p>
+<h3 id="56-安装安全路径">
+  5.6 安装安全路径
+  <a class="anchor" href="#56-%e5%ae%89%e8%a3%85%e5%ae%89%e5%85%a8%e8%b7%af%e5%be%84">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/install-safe-path.ts">infra/install-safe-path.ts</a></p>
+<p>插件/技能安装时的路径安全校验，防止安装到系统目录。</p>
+<hr>
+<h2 id="6-第5层网络与-ssrf-防护">
+  6. 第5层：网络与 SSRF 防护
+  <a class="anchor" href="#6-%e7%ac%ac5%e5%b1%82%e7%bd%91%e7%bb%9c%e4%b8%8e-ssrf-%e9%98%b2%e6%8a%a4">#</a>
+</h2>
+<h3 id="61-ssrf-防护">
+  6.1 SSRF 防护
+  <a class="anchor" href="#61-ssrf-%e9%98%b2%e6%8a%a4">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/net/ssrf.ts">infra/net/ssrf.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/infra/net/ssrf.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// SSRF（Server-Side Request Forgery）防护：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 拦截内网 IP 地址（10.x, 172.16-31.x, 192.168.x, 127.x）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 拦截 DNS 重绑定攻击
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 拦截 IPv6 本地地址
+</span></span></span></code></pre></div><h3 id="62-fetch-guard">
+  6.2 Fetch Guard
+  <a class="anchor" href="#62-fetch-guard">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/net/fetch-guard.ts">infra/net/fetch-guard.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/infra/net/fetch-guard.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// web_fetch 工具的安全网关：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - SSRF 检查
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - URL 方案检查（仅 http/https）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 重定向限制
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 响应大小限制
+</span></span></span></code></pre></div><h3 id="63-ssrf-策略">
+  6.3 SSRF 策略
+  <a class="anchor" href="#63-ssrf-%e7%ad%96%e7%95%a5">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/plugin-sdk/ssrf-policy.ts">plugin-sdk/ssrf-policy.ts</a></p>
+<p>插件 SDK 层面的 SSRF 策略定义。</p>
+<h3 id="64-web-guarded-fetch">
+  6.4 Web Guarded Fetch
+  <a class="anchor" href="#64-web-guarded-fetch">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/tools/web-guarded-fetch.ts">tools/web-guarded-fetch.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/tools/web-guarded-fetch.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// web_fetch 工具的安全封装：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 自动应用 SSRF 防护
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 自动限制响应大小
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 自动处理重定向
+</span></span></span></code></pre></div><hr>
+<h2 id="7-第6层工具策略管道tool-policy-pipeline">
+  7. 第6层：工具策略管道（Tool Policy Pipeline）
+  <a class="anchor" href="#7-%e7%ac%ac6%e5%b1%82%e5%b7%a5%e5%85%b7%e7%ad%96%e7%95%a5%e7%ae%a1%e9%81%93tool-policy-pipeline">#</a>
+</h2>
+<h3 id="71-策略管道">
+  7.1 策略管道
+  <a class="anchor" href="#71-%e7%ad%96%e7%95%a5%e7%ae%a1%e9%81%93">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/tool-policy-pipeline.ts">tool-policy-pipeline.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/tool-policy-pipeline.ts
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 默认管道步骤：
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEFAULT_PIPELINE_STEPS</span> <span style="color:#f92672">=</span> [
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#39;tool-name-allowlist&#39;</span>,     <span style="color:#75715e">// 工具名称白名单
+</span></span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#39;owner-only-policy&#39;</span>,        <span style="color:#75715e">// 仅 owner 可执行
+</span></span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#39;tool-profile-policy&#39;</span>,      <span style="color:#75715e">// 工具 profile
+</span></span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#39;tool-fs-policy&#39;</span>,           <span style="color:#75715e">// 文件系统限制
+</span></span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#39;sandbox-policy&#39;</span>,           <span style="color:#75715e">// 沙箱策略
+</span></span></span><span style="display:flex;"><span>];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">applyToolPolicyPipeline</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">const</span> <span style="color:#a6e22e">step</span> <span style="color:#66d9ef">of</span> <span style="color:#a6e22e">pipelineSteps</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">result</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">step</span>.<span style="color:#a6e22e">evaluate</span>(<span style="color:#a6e22e">toolName</span>, <span style="color:#a6e22e">args</span>, <span style="color:#a6e22e">context</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">result</span>.<span style="color:#a6e22e">deny</span>) <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">allowed</span>: <span style="color:#66d9ef">false</span>, <span style="color:#a6e22e">reason</span>: <span style="color:#66d9ef">result.deny</span> };
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">allowed</span>: <span style="color:#66d9ef">true</span> };
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="72-策略匹配">
+  7.2 策略匹配
+  <a class="anchor" href="#72-%e7%ad%96%e7%95%a5%e5%8c%b9%e9%85%8d">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/tool-policy-match.ts">tool-policy-match.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/tool-policy-match.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">isToolAllowedByPolicies</span>(<span style="color:#a6e22e">params</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 1. 检查 allow / deny / alsoAllow 列表
+</span></span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 2. 检查 owner-only 策略
+</span></span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 3. 检查 tool profile（safeBin / fullAccess 等）
+</span></span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 4. 检查 fs workspace 限制
+</span></span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 5. 检查 subagent tool policy
+</span></span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="73-沙箱工具策略">
+  7.3 沙箱工具策略
+  <a class="anchor" href="#73-%e6%b2%99%e7%ae%b1%e5%b7%a5%e5%85%b7%e7%ad%96%e7%95%a5">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox-tool-policy.ts">sandbox-tool-policy.ts</a> / <a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/tool-policy.ts">sandbox/tool-policy.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/sandbox-tool-policy.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 沙箱环境下的工具策略：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 沙箱中允许的工具列表
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 沙箱中禁止的操作
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - exec 在沙箱中的特殊处理
+</span></span></span></code></pre></div><h3 id="74-有效工具策略">
+  7.4 有效工具策略
+  <a class="anchor" href="#74-%e6%9c%89%e6%95%88%e5%b7%a5%e5%85%b7%e7%ad%96%e7%95%a5">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/effective-tool-policy.ts">pi-embedded-runner/effective-tool-policy.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/pi-embedded-runner/effective-tool-policy.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 计算最终生效的工具策略：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 合并多层策略配置
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 处理策略冲突
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 生成最终 allow/deny 列表
+</span></span></span></code></pre></div><h3 id="75-消息-provider-策略">
+  7.5 消息 Provider 策略
+  <a class="anchor" href="#75-%e6%b6%88%e6%81%af-provider-%e7%ad%96%e7%95%a5">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-tools.message-provider-policy.ts">pi-tools.message-provider-policy.ts</a></p>
+<p>消息类工具的策略控制，防止向未授权渠道发送消息。</p>
+<hr>
+<h2 id="8-第7层运行时安全">
+  8. 第7层：运行时安全
+  <a class="anchor" href="#8-%e7%ac%ac7%e5%b1%82%e8%bf%90%e8%a1%8c%e6%97%b6%e5%ae%89%e5%85%a8">#</a>
+</h2>
+<h3 id="81-运行时守卫">
+  8.1 运行时守卫
+  <a class="anchor" href="#81-%e8%bf%90%e8%a1%8c%e6%97%b6%e5%ae%88%e5%8d%ab">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/runtime-guard.ts">infra/runtime-guard.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/infra/runtime-guard.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 运行时安全检查：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 进程权限检查
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 文件权限检查
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 环境变量安全检查
+</span></span></span></code></pre></div><h3 id="82-主机环境安全">
+  8.2 主机环境安全
+  <a class="anchor" href="#82-%e4%b8%bb%e6%9c%ba%e7%8e%af%e5%a2%83%e5%ae%89%e5%85%a8">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/host-env-security.ts">infra/host-env-security.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/infra/host-env-security.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 主机环境变量安全策略：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - host-env-security-policy.json - 定义敏感环境变量
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 防止泄露 API keys、数据库密码等
+</span></span></span></code></pre></div><h3 id="83-环境变量清理">
+  8.3 环境变量清理
+  <a class="anchor" href="#83-%e7%8e%af%e5%a2%83%e5%8f%98%e9%87%8f%e6%b8%85%e7%90%86">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/sanitize-env-vars.ts">sandbox/sanitize-env-vars.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/sandbox/sanitize-env-vars.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 传入沙箱的环境变量需要过滤：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 移除敏感变量（AWS_SECRET_KEY, DATABASE_URL 等）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 仅传递必要的 LANG、PATH 等基础变量
+</span></span></span></code></pre></div><h3 id="84-安全打开文件">
+  8.4 安全打开文件
+  <a class="anchor" href="#84-%e5%ae%89%e5%85%a8%e6%89%93%e5%bc%80%e6%96%87%e4%bb%b6">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/infra/safe-open-sync.ts">infra/safe-open-sync.ts</a></p>
+<p>同步文件打开操作的安全封装。</p>
+<hr>
+<h2 id="9-第8层安全审计">
+  9. 第8层：安全审计
+  <a class="anchor" href="#9-%e7%ac%ac8%e5%b1%82%e5%ae%89%e5%85%a8%e5%ae%a1%e8%ae%a1">#</a>
+</h2>
+<h3 id="91-安全审计系统">
+  9.1 安全审计系统
+  <a class="anchor" href="#91-%e5%ae%89%e5%85%a8%e5%ae%a1%e8%ae%a1%e7%b3%bb%e7%bb%9f">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/security/audit.ts">security/audit.ts</a></p>
+<p>OpenClaw 内置安全审计系统，支持多维度的安全检查：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/security/audit.ts
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 审计维度：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - Gateway 配置安全
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 文件系统安全
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 插件信任度
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 技能扫描
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// - 深度代码安全
+</span></span></span></code></pre></div><h3 id="92-各审计模块">
+  9.2 各审计模块
+  <a class="anchor" href="#92-%e5%90%84%e5%ae%a1%e8%ae%a1%e6%a8%a1%e5%9d%97">#</a>
+</h3>
+<table>
+	<thead>
+			<tr>
+					<th>模块</th>
+					<th>功能</th>
+					<th>GitHub 链接</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>audit-gateway-config</code></td>
+					<td>Gateway 配置审计</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/security/audit-gateway-config.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>audit-fs</code></td>
+					<td>文件系统审计</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/security/audit-fs.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>audit-plugins-trust</code></td>
+					<td>插件信任审计</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/security/audit-plugins-trust.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>audit-deep-code-safety</code></td>
+					<td>深度代码安全</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/security/audit-deep-code-safety.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>skill-scanner</code></td>
+					<td>技能扫描</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/security/skill-scanner.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>dangerous-config-flags</code></td>
+					<td>危险配置标志</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/security/dangerous-config-flags.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>dangerous-tools</code></td>
+					<td>危险工具检测</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/security/dangerous-tools.ts">查看</a></td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="93-doctor-安全命令">
+  9.3 Doctor 安全命令
+  <a class="anchor" href="#93-doctor-%e5%ae%89%e5%85%a8%e5%91%bd%e4%bb%a4">#</a>
+</h3>
+<p><strong>源码</strong>：<a href="https://github.com/openclaw/openclaw/blob/main/src/commands/doctor-security.ts">commands/doctor-security.ts</a> / <a href="https://github.com/openclaw/openclaw/blob/main/src/commands/doctor-sandbox.ts">commands/doctor-sandbox.ts</a></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 检查安全配置</span>
+</span></span><span style="display:flex;"><span>openclaw doctor security
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 检查沙箱状态</span>
+</span></span><span style="display:flex;"><span>openclaw doctor sandbox
+</span></span></code></pre></div><hr>
+<h2 id="10-安全执行完整序列图">
+  10. 安全执行完整序列图
+  <a class="anchor" href="#10-%e5%ae%89%e5%85%a8%e6%89%a7%e8%a1%8c%e5%ae%8c%e6%95%b4%e5%ba%8f%e5%88%97%e5%9b%be">#</a>
+</h2>
+<pre tabindex="0"><code>用户/模型请求: exec(&#34;curl https://api.example.com/data&#34;)
+              │
+              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 1: 工具策略管道（Tool Policy Pipeline）                      │
+│  - isToolAllowedByPolicies()                                     │
+│  - 检查 allowlist/denylist                                      │
+│  - 检查 owner-only                                              │
+│  - 检查 tool profile                                             │
+│  └─▶ 通过                                                        │
+└─────────────────────────────┬───────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 2: before_tool_call 钩子                                    │
+│  - detectToolCallLoop() 检测循环调用                             │
+│  - recordToolCall() 记录调用                                    │
+│  └─▶ 通过                                                        │
+└─────────────────────────────┬───────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 3: Exec Host 选择                                           │
+│  - 如果有沙箱 → 选择 sandbox 后端                                │
+│  - 否则 → gateway 或 node                                       │
+│  └─▶ sandbox (docker)                                           │
+└─────────────────────────────┬───────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 4: 命令安全检查                                              │
+│  - isSafeExecutableValue() 检查 shell 元字符                     │
+│  - exec-safe-bin 检查命令是否在白名单                            │
+│  └─▶ 不在白名单 → 触发审批                                        │
+└─────────────────────────────┬───────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 5: Exec Approval（命令审批）                                 │
+│  - exec-approval-request.ts 构建审批请求                          │
+│  - exec-approval-forwarder.ts 推送通知到用户                      │
+│  - exec-approvals-analysis.ts 分析命令风险                        │
+│  - exec-approvals-allowlist.ts 检查 allowlist                     │
+│  └─▶ 用户批准 ✅                                                  │
+└─────────────────────────────┬───────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 6: Docker 沙箱执行                                           │
+│  - docker exec openclaw-sbx-&lt;id&gt; sh -c &#34;curl ...&#34;               │
+│  - 容器: readOnlyRoot=true, network=none, capDrop=ALL           │
+│  - buildExecSpec() 构建 docker exec 命令                          │
+│  - buildDockerExecArgs() 构建参数                                │
+│  └─▶ 命令执行完成                                                 │
+└─────────────────────────────┬───────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 7: SSRF 检查（如果涉及网络访问）                               │
+│  - ssrf.ts 检查目标 IP 是否内网                                   │
+│  - fetch-guard.ts 检查 URL 合法性                                 │
+│  └─▶ （本例中网络被 sandbox network=none 阻断）                   │
+└─────────────────────────────┬───────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 8: 结果处理                                                  │
+│  - sanitizeToolResult() 清洗结果                                 │
+│  - 过滤敏感信息                                                   │
+│  - 截断过长结果                                                   │
+│  └─▶ 返回结果给模型                                               │
+└─────────────────────────────────────────────────────────────────┘
+</code></pre><hr>
+<h2 id="11-关键安全设计模式">
+  11. 关键安全设计模式
+  <a class="anchor" href="#11-%e5%85%b3%e9%94%ae%e5%ae%89%e5%85%a8%e8%ae%be%e8%ae%a1%e6%a8%a1%e5%bc%8f">#</a>
+</h2>
+<h3 id="111-默认安全secure-by-default">
+  11.1 默认安全（Secure by Default）
+  <a class="anchor" href="#111-%e9%bb%98%e8%ae%a4%e5%ae%89%e5%85%a8secure-by-default">#</a>
+</h3>
+<p>所有安全选项默认都是最严格的：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 沙箱默认配置
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">readOnlyRoot</span>: <span style="color:#66d9ef">true</span>          <span style="color:#75715e">// 根文件系统只读
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">network</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;none&#39;</span>             <span style="color:#75715e">// 无网络
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">capDrop</span><span style="color:#f92672">:</span> [<span style="color:#e6db74">&#39;ALL&#39;</span>]            <span style="color:#75715e">// 丢弃所有能力
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">strictHostKeyChecking</span>: <span style="color:#66d9ef">true</span> <span style="color:#75715e">// 严格 Host Key 校验
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">allowHostControl</span>: <span style="color:#66d9ef">false</span>     <span style="color:#75715e">// 不允许宿主机控制
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">enabled</span>: <span style="color:#66d9ef">false</span>              <span style="color:#75715e">// 浏览器默认禁用
+</span></span></span></code></pre></div><h3 id="112-纵深防御defense-in-depth">
+  11.2 纵深防御（Defense in Depth）
+  <a class="anchor" href="#112-%e7%ba%b5%e6%b7%b1%e9%98%b2%e5%be%a1defense-in-depth">#</a>
+</h3>
+<p>每一层安全机制都独立有效：</p>
+<pre tabindex="0"><code>即使绕过了沙箱（几乎不可能），还有：
+├── 文件系统保护（readFileWithinRoot）
+├── 工具策略管道（denylist）
+├── SSRF 防护
+└── 安全审计
+</code></pre><h3 id="113-最小权限原则least-privilege">
+  11.3 最小权限原则（Least Privilege）
+  <a class="anchor" href="#113-%e6%9c%80%e5%b0%8f%e6%9d%83%e9%99%90%e5%8e%9f%e5%88%99least-privilege">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 沙箱容器只挂载必要目录
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">binds</span><span style="color:#f92672">:</span> [
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">`</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">workspaceDir</span><span style="color:#e6db74">}</span><span style="color:#e6db74">:/workspace`</span>,        <span style="color:#75715e">// 工作区
+</span></span></span><span style="display:flex;"><span>  <span style="color:#e6db74">`</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">agentWorkspaceDir</span><span style="color:#e6db74">}</span><span style="color:#e6db74">:/agent`</span>        <span style="color:#75715e">// Agent 工作区
+</span></span></span><span style="display:flex;"><span>]
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 不挂载系统目录、不共享宿主机网络
+</span></span></span></code></pre></div><h3 id="114-失败安全fail-safe">
+  11.4 失败安全（Fail-Safe）
+  <a class="anchor" href="#114-%e5%a4%b1%e8%b4%a5%e5%ae%89%e5%85%a8fail-safe">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 任何安全检测失败时，默认拒绝
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">result</span>.<span style="color:#a6e22e">deny</span>) <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">allowed</span>: <span style="color:#66d9ef">false</span>, <span style="color:#a6e22e">reason</span>: <span style="color:#66d9ef">result.deny</span> };
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 而不是 allow on error
+</span></span></span></code></pre></div><h3 id="115-路径别名保护">
+  11.5 路径别名保护
+  <a class="anchor" href="#115-%e8%b7%af%e5%be%84%e5%88%ab%e5%90%8d%e4%bf%9d%e6%8a%a4">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// PATH_ALIAS_POLICIES - 防止通过别名绕过路径限制
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 例如 @root 只能解析到 workspace 根目录
+</span></span></span></code></pre></div><h3 id="116-环境变量隔离">
+  11.6 环境变量隔离
+  <a class="anchor" href="#116-%e7%8e%af%e5%a2%83%e5%8f%98%e9%87%8f%e9%9a%94%e7%a6%bb">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 沙箱内只接收清理后的环境变量
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 移除 AWS_SECRET_KEY, DATABASE_URL 等敏感变量
+</span></span></span></code></pre></div><hr>
+<h2 id="12-配置示例">
+  12. 配置示例
+  <a class="anchor" href="#12-%e9%85%8d%e7%bd%ae%e7%a4%ba%e4%be%8b">#</a>
+</h2>
+<h3 id="121-开启沙箱">
+  12.1 开启沙箱
+  <a class="anchor" href="#121-%e5%bc%80%e5%90%af%e6%b2%99%e7%ae%b1">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json5" data-lang="json5"><span style="display:flex;"><span><span style="color:#75715e">// openclaw.json
+</span></span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;agents&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;defaults&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;sandbox&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;mode&#34;</span>: <span style="color:#e6db74">&#34;local&#34;</span>,              <span style="color:#75715e">// local | remote
+</span></span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;backend&#34;</span>: <span style="color:#e6db74">&#34;docker&#34;</span>,          <span style="color:#75715e">// docker | ssh
+</span></span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;scope&#34;</span>: <span style="color:#e6db74">&#34;session&#34;</span>,           <span style="color:#75715e">// session | agent | shared
+</span></span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;workspaceAccess&#34;</span>: <span style="color:#e6db74">&#34;readwrite&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;docker&#34;</span>: {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;image&#34;</span>: <span style="color:#e6db74">&#34;openclaw-sandbox:bookworm-slim&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;readOnlyRoot&#34;</span>: <span style="color:#66d9ef">true</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;network&#34;</span>: <span style="color:#e6db74">&#34;none&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;capDrop&#34;</span>: [<span style="color:#e6db74">&#34;ALL&#34;</span>],
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;memory&#34;</span>: <span style="color:#e6db74">&#34;1g&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;cpus&#34;</span>: <span style="color:#ae81ff">2</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="122-配置-ssh-沙箱">
+  12.2 配置 SSH 沙箱
+  <a class="anchor" href="#122-%e9%85%8d%e7%bd%ae-ssh-%e6%b2%99%e7%ae%b1">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json5" data-lang="json5"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;sandbox&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;mode&#34;</span>: <span style="color:#e6db74">&#34;remote&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;backend&#34;</span>: <span style="color:#e6db74">&#34;ssh&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;ssh&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;target&#34;</span>: <span style="color:#e6db74">&#34;sandbox-host.example.com&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;workspaceRoot&#34;</span>: <span style="color:#e6db74">&#34;/tmp/openclaw-sandboxes&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;strictHostKeyChecking&#34;</span>: <span style="color:#66d9ef">true</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;identityFile&#34;</span>: <span style="color:#e6db74">&#34;~/.ssh/openclaw-sandbox&#34;</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="123-配置-exec-approval">
+  12.3 配置 Exec Approval
+  <a class="anchor" href="#123-%e9%85%8d%e7%bd%ae-exec-approval">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json5" data-lang="json5"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;tools&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;exec&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;approval&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;mode&#34;</span>: <span style="color:#e6db74">&#34;prompt&#34;</span>,            <span style="color:#75715e">// prompt | auto-allow | block
+</span></span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;allowlist&#34;</span>: [<span style="color:#e6db74">&#34;ls&#34;</span>, <span style="color:#e6db74">&#34;cat&#34;</span>, <span style="color:#e6db74">&#34;grep&#34;</span>],
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;notifyOnExit&#34;</span>: <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><hr>
+<h2 id="13-源码模块索引">
+  13. 源码模块索引
+  <a class="anchor" href="#13-%e6%ba%90%e7%a0%81%e6%a8%a1%e5%9d%97%e7%b4%a2%e5%bc%95">#</a>
+</h2>
+<table>
+	<thead>
+			<tr>
+					<th>模块</th>
+					<th>功能</th>
+					<th>GitHub 链接</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><strong>沙箱核心</strong></td>
+					<td></td>
+					<td></td>
+			</tr>
+			<tr>
+					<td><code>sandbox/config.ts</code></td>
+					<td>沙箱配置解析</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/config.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>sandbox/docker-backend.ts</code></td>
+					<td>Docker 沙箱后端</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/docker-backend.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>sandbox/ssh-backend.ts</code></td>
+					<td>SSH 沙箱后端</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/ssh-backend.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>sandbox/browser.ts</code></td>
+					<td>沙箱浏览器</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/browser.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>sandbox/registry.ts</code></td>
+					<td>沙箱注册表</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/registry.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>sandbox/prune.ts</code></td>
+					<td>沙箱修剪</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/prune.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>sandbox/fs-bridge.ts</code></td>
+					<td>文件系统桥接</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/fs-bridge.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>sandbox/fs-bridge-path-safety.ts</code></td>
+					<td>桥接路径安全</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/fs-bridge-path-safety.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>sandbox/workspace-mounts.ts</code></td>
+					<td>工作区挂载</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/workspace-mounts.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>sandbox/sanitize-env-vars.ts</code></td>
+					<td>环境变量清理</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/sanitize-env-vars.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>sandbox/validate-sandbox-security.ts</code></td>
+					<td>沙箱安全验证</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/validate-sandbox-security.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>sandbox/network-mode.ts</code></td>
+					<td>网络模式</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox/network-mode.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><strong>Exec 安全</strong></td>
+					<td></td>
+					<td></td>
+			</tr>
+			<tr>
+					<td><code>infra/exec-safety.ts</code></td>
+					<td>Exec 安全检查</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-safety.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>infra/exec-safe-bin-runtime-policy.ts</code></td>
+					<td>Safe Bin 策略</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-safe-bin-runtime-policy.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>infra/exec-host.ts</code></td>
+					<td>Exec Host 选择</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-host.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><strong>命令审批</strong></td>
+					<td></td>
+					<td></td>
+			</tr>
+			<tr>
+					<td><code>bash-tools.exec-approval-request.ts</code></td>
+					<td>审批请求构建</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/bash-tools.exec-approval-request.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>bash-tools.exec-approval-followup.ts</code></td>
+					<td>审批跟进</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/bash-tools.exec-approval-followup.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>infra/exec-approvals.ts</code></td>
+					<td>审批核心逻辑</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-approvals.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>infra/exec-approvals-allowlist.ts</code></td>
+					<td>审批白名单</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-approvals-allowlist.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>infra/exec-approvals-analysis.ts</code></td>
+					<td>审批安全分析</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-approvals-analysis.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>infra/exec-approval-forwarder.ts</code></td>
+					<td>审批转发</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/exec-approval-forwarder.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>gateway/exec-approval-manager.ts</code></td>
+					<td>审批管理器</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/gateway/exec-approval-manager.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>gateway/exec-approval-ios-push.ts</code></td>
+					<td>iOS Push 通知</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/gateway/exec-approval-ios-push.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><strong>文件系统安全</strong></td>
+					<td></td>
+					<td></td>
+			</tr>
+			<tr>
+					<td><code>infra/fs-safe.ts</code></td>
+					<td>安全文件操作</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/fs-safe.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>infra/path-safety.ts</code></td>
+					<td>路径安全</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/path-safety.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>infra/path-alias-guards.ts</code></td>
+					<td>路径别名保护</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/path-alias-guards.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>infra/hardlink-guards.ts</code></td>
+					<td>硬链接保护</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/hardlink-guards.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>infra/install-safe-path.ts</code></td>
+					<td>安装路径安全</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/install-safe-path.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><strong>网络/SSRF</strong></td>
+					<td></td>
+					<td></td>
+			</tr>
+			<tr>
+					<td><code>infra/net/ssrf.ts</code></td>
+					<td>SSRF 防护</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/net/ssrf.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>infra/net/fetch-guard.ts</code></td>
+					<td>Fetch 网关</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/net/fetch-guard.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>plugin-sdk/ssrf-policy.ts</code></td>
+					<td>SSRF 策略</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/plugin-sdk/ssrf-policy.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><strong>工具策略</strong></td>
+					<td></td>
+					<td></td>
+			</tr>
+			<tr>
+					<td><code>tool-policy-pipeline.ts</code></td>
+					<td>策略管道</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/tool-policy-pipeline.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>tool-policy-match.ts</code></td>
+					<td>策略匹配</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/tool-policy-match.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>sandbox-tool-policy.ts</code></td>
+					<td>沙箱工具策略</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/sandbox-tool-policy.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>pi-embedded-runner/effective-tool-policy.ts</code></td>
+					<td>有效工具策略</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/agents/pi-embedded-runner/effective-tool-policy.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><strong>运行时安全</strong></td>
+					<td></td>
+					<td></td>
+			</tr>
+			<tr>
+					<td><code>infra/runtime-guard.ts</code></td>
+					<td>运行时守卫</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/runtime-guard.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>infra/host-env-security.ts</code></td>
+					<td>主机环境安全</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/host-env-security.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><strong>安全审计</strong></td>
+					<td></td>
+					<td></td>
+			</tr>
+			<tr>
+					<td><code>security/audit.ts</code></td>
+					<td>安全审计</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/security/audit.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>security/audit-fs.ts</code></td>
+					<td>文件系统审计</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/security/audit-fs.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>security/audit-gateway-config.ts</code></td>
+					<td>配置审计</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/security/audit-gateway-config.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>security/audit-plugins-trust.ts</code></td>
+					<td>插件审计</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/security/audit-plugins-trust.ts">查看</a></td>
+			</tr>
+			<tr>
+					<td><code>security/skill-scanner.ts</code></td>
+					<td>技能扫描</td>
+					<td><a href="https://github.com/openclaw/openclaw/blob/main/src/security/skill-scanner.ts">查看</a></td>
+			</tr>
+	</tbody>
+</table>
+<hr>
+<h2 id="14-参考资料">
+  14. 参考资料
+  <a class="anchor" href="#14-%e5%8f%82%e8%80%83%e8%b5%84%e6%96%99">#</a>
+</h2>
+<table>
+	<thead>
+			<tr>
+					<th>资源</th>
+					<th>链接</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td>OpenClaw 文档</td>
+					<td><a href="https://docs.openclaw.ai">https://docs.openclaw.ai</a></td>
+			</tr>
+			<tr>
+					<td>GitHub 仓库</td>
+					<td><a href="https://github.com/openclaw/openclaw">https://github.com/openclaw/openclaw</a></td>
+			</tr>
+			<tr>
+					<td>DeepWiki（AI 源码导读）</td>
+					<td><a href="https://deepwiki.com/openclaw/openclaw">https://deepwiki.com/openclaw/openclaw</a></td>
+			</tr>
+			<tr>
+					<td>Agent Runtimes</td>
+					<td><a href="https://docs.openclaw.ai/concepts/agent-runtimes.md">https://docs.openclaw.ai/concepts/agent-runtimes.md</a></td>
+			</tr>
+			<tr>
+					<td>Sandbox 配置</td>
+					<td><a href="https://docs.openclaw.ai/config/sandbox.md">https://docs.openclaw.ai/config/sandbox.md</a></td>
+			</tr>
+			<tr>
+					<td>Exec Approval</td>
+					<td><a href="https://docs.openclaw.ai/gateway/exec-approval.md">https://docs.openclaw.ai/gateway/exec-approval.md</a></td>
+			</tr>
+			<tr>
+					<td>Security CLI</td>
+					<td><a href="https://docs.openclaw.ai/cli/security.md">https://docs.openclaw.ai/cli/security.md</a></td>
+			</tr>
+	</tbody>
+</table>
+<hr>
+<p><em>本文基于 OpenClaw v2026.4.21 源码分析，所有代码引用均来自官方 GitHub 仓库。</em></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#openclaw-安全执行环境沙箱审批策略管道与深度防御体系">OpenClaw 安全执行环境：沙箱、审批、策略管道与深度防御体系</a>
+      <ul>
+        <li><a href="#导读">导读</a></li>
+        <li><a href="#1-总览纵深防御架构">1. 总览：纵深防御架构</a></li>
+        <li><a href="#2-第1层沙箱隔离sandbox-isolation">2. 第1层：沙箱隔离（Sandbox Isolation）</a>
+          <ul>
+            <li><a href="#21-沙箱配置解析">2.1 沙箱配置解析</a></li>
+            <li><a href="#22-三种沙箱作用域">2.2 三种沙箱作用域</a></li>
+            <li><a href="#23-docker-沙箱后端">2.3 Docker 沙箱后端</a></li>
+            <li><a href="#24-ssh-沙箱后端">2.4 SSH 沙箱后端</a></li>
+            <li><a href="#25-沙箱浏览器安全">2.5 沙箱浏览器安全</a></li>
+            <li><a href="#26-沙箱文件系统桥接">2.6 沙箱文件系统桥接</a></li>
+            <li><a href="#27-沙箱验证">2.7 沙箱验证</a></li>
+            <li><a href="#28-沙箱修剪prune">2.8 沙箱修剪（Prune）</a></li>
+          </ul>
+        </li>
+        <li><a href="#3-第2层exec-安全策略">3. 第2层：Exec 安全策略</a>
+          <ul>
+            <li><a href="#31-安全可执行值判断">3.1 安全可执行值判断</a></li>
+            <li><a href="#32-safe-bin-profile">3.2 Safe Bin Profile</a></li>
+            <li><a href="#33-exec-host-选择">3.3 Exec Host 选择</a></li>
+          </ul>
+        </li>
+        <li><a href="#4-第3层命令审批exec-approval">4. 第3层：命令审批（Exec Approval）</a>
+          <ul>
+            <li><a href="#41-审批流程">4.1 审批流程</a></li>
+            <li><a href="#42-审批请求构建">4.2 审批请求构建</a></li>
+            <li><a href="#43-审批转发">4.3 审批转发</a></li>
+            <li><a href="#44-审批管理">4.4 审批管理</a></li>
+            <li><a href="#45-allowlist-管理">4.5 Allowlist 管理</a></li>
+            <li><a href="#46-审批分析">4.6 审批分析</a></li>
+          </ul>
+        </li>
+        <li><a href="#5-第4层文件系统安全">5. 第4层：文件系统安全</a>
+          <ul>
+            <li><a href="#51-安全文件操作">5.1 安全文件操作</a></li>
+            <li><a href="#52-路径安全校验">5.2 路径安全校验</a></li>
+            <li><a href="#53-路径别名保护">5.3 路径别名保护</a></li>
+            <li><a href="#54-硬链接保护">5.4 硬链接保护</a></li>
+            <li><a href="#55-工作区守卫">5.5 工作区守卫</a></li>
+            <li><a href="#56-安装安全路径">5.6 安装安全路径</a></li>
+          </ul>
+        </li>
+        <li><a href="#6-第5层网络与-ssrf-防护">6. 第5层：网络与 SSRF 防护</a>
+          <ul>
+            <li><a href="#61-ssrf-防护">6.1 SSRF 防护</a></li>
+            <li><a href="#62-fetch-guard">6.2 Fetch Guard</a></li>
+            <li><a href="#63-ssrf-策略">6.3 SSRF 策略</a></li>
+            <li><a href="#64-web-guarded-fetch">6.4 Web Guarded Fetch</a></li>
+          </ul>
+        </li>
+        <li><a href="#7-第6层工具策略管道tool-policy-pipeline">7. 第6层：工具策略管道（Tool Policy Pipeline）</a>
+          <ul>
+            <li><a href="#71-策略管道">7.1 策略管道</a></li>
+            <li><a href="#72-策略匹配">7.2 策略匹配</a></li>
+            <li><a href="#73-沙箱工具策略">7.3 沙箱工具策略</a></li>
+            <li><a href="#74-有效工具策略">7.4 有效工具策略</a></li>
+            <li><a href="#75-消息-provider-策略">7.5 消息 Provider 策略</a></li>
+          </ul>
+        </li>
+        <li><a href="#8-第7层运行时安全">8. 第7层：运行时安全</a>
+          <ul>
+            <li><a href="#81-运行时守卫">8.1 运行时守卫</a></li>
+            <li><a href="#82-主机环境安全">8.2 主机环境安全</a></li>
+            <li><a href="#83-环境变量清理">8.3 环境变量清理</a></li>
+            <li><a href="#84-安全打开文件">8.4 安全打开文件</a></li>
+          </ul>
+        </li>
+        <li><a href="#9-第8层安全审计">9. 第8层：安全审计</a>
+          <ul>
+            <li><a href="#91-安全审计系统">9.1 安全审计系统</a></li>
+            <li><a href="#92-各审计模块">9.2 各审计模块</a></li>
+            <li><a href="#93-doctor-安全命令">9.3 Doctor 安全命令</a></li>
+          </ul>
+        </li>
+        <li><a href="#10-安全执行完整序列图">10. 安全执行完整序列图</a></li>
+        <li><a href="#11-关键安全设计模式">11. 关键安全设计模式</a>
+          <ul>
+            <li><a href="#111-默认安全secure-by-default">11.1 默认安全（Secure by Default）</a></li>
+            <li><a href="#112-纵深防御defense-in-depth">11.2 纵深防御（Defense in Depth）</a></li>
+            <li><a href="#113-最小权限原则least-privilege">11.3 最小权限原则（Least Privilege）</a></li>
+            <li><a href="#114-失败安全fail-safe">11.4 失败安全（Fail-Safe）</a></li>
+            <li><a href="#115-路径别名保护">11.5 路径别名保护</a></li>
+            <li><a href="#116-环境变量隔离">11.6 环境变量隔离</a></li>
+          </ul>
+        </li>
+        <li><a href="#12-配置示例">12. 配置示例</a>
+          <ul>
+            <li><a href="#121-开启沙箱">12.1 开启沙箱</a></li>
+            <li><a href="#122-配置-ssh-沙箱">12.2 配置 SSH 沙箱</a></li>
+            <li><a href="#123-配置-exec-approval">12.3 配置 Exec Approval</a></li>
+          </ul>
+        </li>
+        <li><a href="#13-源码模块索引">13. 源码模块索引</a></li>
+        <li><a href="#14-参考资料">14. 参考资料</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+

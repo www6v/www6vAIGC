@@ -1,0 +1,7328 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="
+  Mem0 源码深度解析：Universal Memory Layer for AI Agents
+  #
+
+
+&ldquo;Any sufficiently advanced memory is indistinguishable from a living mind.&rdquo;
+Agent 的记忆不应该只是聊天记录的堆砌。它应该像人脑一样：自动提取、结构化存储、按需检索、随时间演化。
+
+
+
+  一、引言：Agent 的&quot;记忆困境&quot;
+  #
+
+
+&ldquo;我昨天明明告诉过你我不吃香菜，为什么今天的推荐里还有？&rdquo;
+&ldquo;这个用户上次已经拒绝过这个方案了，别再提了。&rdquo;
+
+这是每一个开发过 AI Agent 的人都会遇到的痛点。Agent 很聪明，但它们有一个致命弱点：换 Session 就失忆。
+
+  1.1 为什么 RAG 不够？
+  #
+
+很多团队的第一反应是：&ldquo;上 RAG 不就行了？把聊天记录向量化，让 Agent 检索。&rdquo;
+但 RAG 解决的是 &ldquo;能查到什么&rdquo;，而不是：
+
+❌ &ldquo;哪些信息是事实，哪些是闲聊？&rdquo;
+❌ &ldquo;用户现在的偏好和三个月前一样吗？&rdquo;
+❌ &ldquo;这段记忆属于哪个用户、哪个 Agent？&rdquo;
+
+RAG 是&quot;图书馆&quot;——书在那里，但你需要自己找、自己判断。
+Mem0 做的是&quot;记忆层&quot;——它自动从对话中提取事实，结构化存储，并在需要时精准注入。
+
+  1.2 项目概况
+  #
+
+Mem0 (mem0ai) 是一个开源的 AI 记忆层项目：
+
+	
+			
+					指标
+					值
+			
+	
+	
+			
+					Stars
+					62,000&#43;
+			
+			
+					协议
+					Apache-2.0
+			
+			
+					语言
+					Python
+			
+			
+					定位
+					Universal Memory Layer for AI Agents
+			
+	
+
+
+
+  二、总体架构：记忆层的三层模型
+  #
+
+Mem0 的架构可以概括为 三层模型：">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
+<meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Agent-Memory/independent/mem0-hermes/Mem0-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/">
+	<meta property="og:site_name" content="Modern Agent">
+	<meta property="og:title" content="Modern Agent">
+	<meta property="og:description" content="Mem0 源码深度解析：Universal Memory Layer for AI Agents#“Any sufficiently advanced memory is indistinguishable from a living mind.”
+Agent 的记忆不应该只是聊天记录的堆砌。它应该像人脑一样：自动提取、结构化存储、按需检索、随时间演化。
+一、引言：Agent 的&#34;记忆困境&#34;#“我昨天明明告诉过你我不吃香菜，为什么今天的推荐里还有？”
+“这个用户上次已经拒绝过这个方案了，别再提了。”
+这是每一个开发过 AI Agent 的人都会遇到的痛点。Agent 很聪明，但它们有一个致命弱点：换 Session 就失忆。
+1.1 为什么 RAG 不够？#很多团队的第一反应是：“上 RAG 不就行了？把聊天记录向量化，让 Agent 检索。”
+但 RAG 解决的是 “能查到什么”，而不是：
+❌ “哪些信息是事实，哪些是闲聊？” ❌ “用户现在的偏好和三个月前一样吗？” ❌ “这段记忆属于哪个用户、哪个 Agent？” RAG 是&#34;图书馆&#34;——书在那里，但你需要自己找、自己判断。
+Mem0 做的是&#34;记忆层&#34;——它自动从对话中提取事实，结构化存储，并在需要时精准注入。
+1.2 项目概况#Mem0 (mem0ai) 是一个开源的 AI 记忆层项目：
+指标 值 Stars 62,000&#43; 协议 Apache-2.0 语言 Python 定位 Universal Memory Layer for AI Agents 二、总体架构：记忆层的三层模型#Mem0 的架构可以概括为 三层模型：">
+	<meta property="og:locale" content="en">
+	<meta property="og:type" content="article">
+		<meta property="article:section" content="docs">
+<title>Mem0 源码深度解析 | Modern Agent</title>
+<link rel="icon" href="/www6vAIGC/favicon.png" >
+<link rel="manifest" href="/www6vAIGC/manifest.json">
+<link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Agent-Memory/independent/mem0-hermes/Mem0-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/">
+<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+  <script defer src="/www6vAIGC/fuse.min.js"></script>
+  <script defer src="/www6vAIGC/en.search.min.b03d70a1a41ebd2598f66475385e5f3acbb00c4c00220e8b32e57e4ea027ff4e.js" integrity="sha256-sD1woaQevSWY9mR1OF5fOsuwDEwAIg6LMuV&#43;TqAn/04=" crossorigin="anonymous"></script>
+<!--
+Made with Book Theme
+https://github.com/alex-shpak/hugo-book
+-->
+  
+</head>
+<body dir="ltr">
+  <input type="checkbox" class="hidden toggle" id="menu-control" />
+  <input type="checkbox" class="hidden toggle" id="toc-control" />
+  <main class="container flex">
+    <aside class="book-menu">
+      <div class="book-menu-content">
+        
+  <nav>
+<h2 class="book-brand">
+  <a class="flex align-center" href="/www6vAIGC/"><span>Modern Agent</span>
+  </a>
+</h2>
+
+
+<div class="book-search hidden">
+  <input type="text" id="book-search-input" placeholder="Search" aria-label="Search" maxlength="64" data-hotkeys="s/" />
+  <div class="book-search-spinner hidden"></div>
+  <ul id="book-search-results"></ul>
+</div>
+<script>document.querySelector(".book-search").classList.remove("hidden")</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="toggle"  />
+    <label for="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="flex justify-between">
+      <a role="button" class="">RAG</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c551263d461ebff83b9463dc3a94952c" class="toggle"  />
+    <label for="section-c551263d461ebff83b9463dc3a94952c" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAG/" class="">(综述)RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGModularRAG/" class="">(原理)Modular RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGPerformance/" class="">(原理)Advanced RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGEval/" class="">RAG 评估</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Overview/RAGSFT/" class="">RAG vs SFT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6d871616372a4994f42a7668d9af7715" class="toggle"  />
+    <label for="section-6d871616372a4994f42a7668d9af7715" class="flex justify-between">
+      <a role="button" class="">实战 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGBestPractice/" class="">(Work)RAG 最佳实践 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG-ant/" class="">(蚂蚁)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGPractice/" class="">(实战)RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGFailure/" class="">(Work)RAG 故障点 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAGOptimize/" class="">RAG 优化 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>framework</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGFramework/" class="">RAG Framework</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGchatchat/" class="">(框架)RAG Langchain-Chatchat</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGQanything/" class="">(框架) Qanything</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/framework/RAGRAGflow/" class="">(框架)RAGflow &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall/" class="">Rag Recall</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/" class="">Rag Recall 1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cd42bffd52a5c198755daef56da179f9" class="toggle"  />
+    <label for="section-cd42bffd52a5c198755daef56da179f9" class="flex justify-between">
+      <a role="button" class="">Pattern</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/RAGPattern/" class="">(原理) RAG Pattern *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Agentic RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/AgenticRAG/" class="">(原理|实战)Agentic RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Agentic-RAG/RAGSelfReflective/" class="">(原理|实战)Self-Reflective RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>KG-RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/graphRAG/" class="">GraphRAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/KG-RAG/RAGKG/" class="">RAG KG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Multimodal RAG</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodal/" class="">(Survey)多模态 RAG &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/Pattern/Multimodal-RAG/RAGMultimodalPractice/" class="">(实战)多模态 RAG</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-afec0c322e2a85b11a48111f0dba315c" class="toggle"  />
+    <label for="section-afec0c322e2a85b11a48111f0dba315c" class="flex justify-between">
+      <a role="button" class="">phase *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)index</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGIndex/" class="">(原理) Index &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGIndex/RAGChunk/" class="">(原理|实战) Chunk &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)pre-retrival</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryRewrite/" class="">(原理|实战)Query Rewrite</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/QueryTransformation/" class="">(原理|实战)Query Transformation</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPreRetrieval/RAGRouting/" class="">(原理|实战)Query Routing</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <span>(Phase)post-retrieval</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGFusion/" class="">(原理|实战)RAG Fusion</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/phase/phaseRAGPostRetrieval/RAGRerank/" class="">(原理|实战)RAG Rerank</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="toggle"  />
+    <label for="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="flex justify-between">
+      <a role="button" class="">案例</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGOpenAI/" class="">(原理)RAG OpenAI案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/RAG/%E6%A1%88%E4%BE%8B/RAGBaichuan/" class="">(原理)RAG Baichuan案例</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="toggle"  />
+    <label for="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="flex justify-between">
+      <a role="button" class="">Agent Infra</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="toggle"  />
+    <label for="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="flex justify-between">
+      <a role="button" class="">Dify</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify/" class="">(实现)Dify *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/DifySandbox/" class="">(实现)Dify sandbox *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Dify/Dify-deploy/" class="">(实践)Dify 生产部署 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d35a724145e4438b19d0128310151060" class="toggle"  />
+    <label for="section-d35a724145e4438b19d0128310151060" class="flex justify-between">
+      <a role="button" class="">产品</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/list/AgentList/" class="">(List)Agent 产品 平台</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d8fb1e2742348190fede849f378398c8" class="toggle"  />
+    <label for="section-d8fb1e2742348190fede849f378398c8" class="flex justify-between">
+      <a role="button" class="">API</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/api/API/" class="">LLM API</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/api/openai-api/" class="">Openai Agent API</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="toggle"  />
+    <label for="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="flex justify-between">
+      <a role="button" class="">Sandbox</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/Sandbox/" class="">Sandbox</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/Sandbox/opensource/" class="">Opensource</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="toggle"  />
+    <label for="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="flex justify-between">
+      <a role="button" class="">SDK</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk%E5%85%BC%E5%AE%B9%E6%80%A7/" class="">AI SDK 向后兼容性*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Infra/SDK/sdk%E5%85%BC%E5%AE%B9%E6%80%A71/" class="">Sdk兼容性1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-465ebbe8c8eae209a571787ecebad2c0" class="toggle"  />
+    <label for="section-465ebbe8c8eae209a571787ecebad2c0" class="flex justify-between">
+      <a role="button" class="">Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f76aa66a03b4f060262d5e206195edee" class="toggle"  />
+    <label for="section-f76aa66a03b4f060262d5e206195edee" class="flex justify-between">
+      <a role="button" class="">Overview</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/Agent/" class="">(原理)Agent 架构 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Overview/AgentGuide/" class="">(原理) Agent Guide &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d28aa4a73439b10799fd7621d99b09a8" class="toggle"  />
+    <label for="section-d28aa4a73439b10799fd7621d99b09a8" class="flex justify-between">
+      <a role="button" class="">Practice</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentOpt/" class="">(Survey) Agent 优化 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentPractice/" class="">(实战)Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/AgentChallenge/" class="">(原理)Agent Challenge</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Practice/Agent12Factor/" class="">Agent 12-Factor &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="toggle"  />
+    <label for="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="flex justify-between">
+      <a role="button" class="">Reflection</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Reflection/AgentReflection/" class="">Reflection Agent *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c1c7bf1336ea4ad525ce468e5624159f" class="toggle"  />
+    <label for="section-c1c7bf1336ea4ad525ce468e5624159f" class="flex justify-between">
+      <a role="button" class="">Planning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning/" class="">Agent Planning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/COT/" class="">(原理)COT</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanAndExecute/" class="">(Work|实战)Plan&amp;Execute,ReWOO</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent/Planning/AgentPlanning1/agent-planning-principles-to-implementation/" class="">Agent Planning Principles to Implementation</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="toggle" checked />
+    <label for="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e338773a0b87bd3d5520b81d5b88db62" class="toggle"  />
+    <label for="section-e338773a0b87bd3d5520b81d5b88db62" class="flex justify-between">
+      <a role="button" class="">Agent Memory</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory1/Agent-Memory1/" class="">Agent Memory 原理</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory2/Agent-Memory2/" class="">Agent Memory 实践</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/agent-memory/AgentMemory/" class="">Agent  Memory &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9d0fe56670c342283f8f972214b72137" class="toggle"  />
+    <label for="section-9d0fe56670c342283f8f972214b72137" class="flex justify-between">
+      <a role="button" class="">Hermes</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes1/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes2/" class="">Hermes Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Hermes/Hermes/" class="">Hermes Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a9773226cdddc85ff8f10cae8bdb49a2" class="toggle"  />
+    <label for="section-a9773226cdddc85ff8f10cae8bdb49a2" class="flex justify-between">
+      <a role="button" class="">managed agents</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/managed-agents/memorydreaming1/" class="">Agent Memory and Dreaming[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-041a0b369c13985983a2e78e073f1143" class="toggle" checked />
+    <label for="section-041a0b369c13985983a2e78e073f1143" class="flex justify-between">
+      <a role="button" class="">Memory *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/hindsight/" class="">Hindsight</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/mem0-hermes/Mem0-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="active">Mem0 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking-hermes/OpenViking-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Open Viking 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openviking-hermes1/" class="">Openviking Hermes1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/openViking-openclaw/openviking-architecture-full/" class="">Openviking Architecture Full</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--hermes/TencentDB-Agent-Memory-%E6%BA%90%E7%A0%81%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" class="">Tencent Db Agent Memory 源码深度解析</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--openclaw/tencentdb-agent-memory-full/" class="">Tencentdb Agent Memory Full</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8A/" class="">Memory(上) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/independent/Memory-%E4%B8%8B/" class="">Memory(下) *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-360e9d19bffa35d5db5a46e0c0c05a65" class="toggle"  />
+    <label for="section-360e9d19bffa35d5db5a46e0c0c05a65" class="flex justify-between">
+      <a role="button" class="">Openclaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/OpenClaw/MemoryA1/" class="">OpenClaw Memory[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="toggle"  />
+    <label for="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-1/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/memory-2/" class="">Cloud Code Memory</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Memory/Claude-Code/Claude-Code-Memory/" class="">Cloud Code Memory 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="toggle"  />
+    <label for="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="flex justify-between">
+      <a role="button" class="">Multi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e496587d113a69d69794ccf2791a9ec7" class="toggle"  />
+    <label for="section-e496587d113a69d69794ccf2791a9ec7" class="flex justify-between">
+      <a role="button" class="">Agent编排</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Agent/" class="">Hermes Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/orchestrate/Hermes-Kanban/" class="">Hermes Kanban</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-386b9d0b04e254d93a6bcfe648c4dabb" class="toggle"  />
+    <label for="section-386b9d0b04e254d93a6bcfe648c4dabb" class="flex justify-between">
+      <a role="button" class="">Multi-agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgents/" class="">(原理)Multi-Agents &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsFail/" class="">Multi-Agent  Fail &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/MultiAgentsPractice/" class="">(实战)LangGraph</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/Multi-agent/AgentAutogen/" class="">(原理&amp;实战)AutoGen &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-3b952b230f5462315a195fb221f48926" class="toggle"  />
+    <label for="section-3b952b230f5462315a195fb221f48926" class="flex justify-between">
+      <a role="button" class="">OpenClaw *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/multiagent2/" class="">OpenClaw 多 Agent*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/AgentToAgent/" class="">Agent to Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/openclaw/mulitagent1/" class="">Mulitagent1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d1f7a2a771a519d5e8b989f2e775ff25" class="toggle"  />
+    <label for="section-d1f7a2a771a519d5e8b989f2e775ff25" class="flex justify-between">
+      <a role="button" class="">subagent *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/Claude-code/" class="">Claude Code</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/subagent/subagent/" class="">Subagent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b8e7621552172a9013b3c0dae0dba198" class="toggle"  />
+    <label for="section-b8e7621552172a9013b3c0dae0dba198" class="flex justify-between">
+      <a role="button" class="">Teams *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-Teams/" class="">Claude Code Teams</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Multi-Agent/teams/Claude-code-TeamsA1/" class="">Claude Code Teams[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="toggle"  />
+    <label for="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="flex justify-between">
+      <a role="button" class="">Tool &amp; Skill</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/FunctionCall/" class="">(原理|实战) [OpenAI]Function Call</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5cca64c106a3667481dd63b47c86e87a" class="toggle"  />
+    <label for="section-5cca64c106a3667481dd63b47c86e87a" class="flex justify-between">
+      <a role="button" class="">Survey &amp; SFT</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentTuning/" class="">(实战)Agent Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentToolGorilla/" class="">(Work)[SFT]Gorilla</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentToolformer/" class="">(Work)[SFT]Toolformer</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/SurveySFT/AgentTool/" class="">(Work)Agent-Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c655fd9062845f96cffb72685b2fd696" class="toggle"  />
+    <label for="section-c655fd9062845f96cffb72685b2fd696" class="flex justify-between">
+      <a role="button" class="">Tool 演进</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/%E6%BC%94%E8%BF%9B/fc&#43;mcp&#43;cli/" class="">Functioncall-&gt;MCP-&gt;cli &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-412785899ca57a1289f566e38e9ac427" class="toggle"  />
+    <label for="section-412785899ca57a1289f566e38e9ac427" class="flex justify-between">
+      <a role="button" class="">tools</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/Tools/claude-searchTool/" class="">Claude toolsearch</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="toggle"  />
+    <label for="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="flex justify-between">
+      <a role="button" class="">MCP *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPSurvey/" class="">(综述)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCP/" class="">(原理|实战)MCP &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPArch/" class="">(原理)MCP 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/MCP/MCPManyTools/" class="">(原理|实现)MCP 大量工具调用 &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-efd004ff6efd6d01576ed8f1a0e02adf" class="toggle"  />
+    <label for="section-efd004ff6efd6d01576ed8f1a0e02adf" class="flex justify-between">
+      <a role="button" class="">skill *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/skill/" class="">编写高质量Skill的六大失效模式</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/openclaw/" class="">Openclaw</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/openclaw1/" class="">Openclaw1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/skill-route---hermes/Skill%E8%B7%AF%E7%94%B1%E4%B8%8E%E5%91%BD%E4%B8%AD%E7%8E%87%E4%BC%98%E5%8C%96%E6%8C%87%E5%8D%97/" class="">Skill路由与命中率优化指南</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/skill/skill-route---openclaw/agent-skill-routing/" class="">Agent Skill Routing</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="toggle"  />
+    <label for="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="flex justify-between">
+      <a role="button" class="">Agent Eval</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/ali/" class="">Agent可观测与评估[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a89b3f08479487c94e6a45e37e72a862" class="toggle"  />
+    <label for="section-a89b3f08479487c94e6a45e37e72a862" class="flex justify-between">
+      <a role="button" class="">Demystifying Evals for AI Agents</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/anthropic/Demystifying-Evals-for-AI-Agents/" class="">Demystifying Evals for Ai Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/anthropic/Demystifying-Evals-for-AI-Agents-%E6%80%BB%E7%BB%93/demystifying-evals-for-ai-agents/" class="">Demystifying Evals for Ai Agents</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-83c0821b846e1dac2e8bfc2d8d45e825" class="toggle"  />
+    <label for="section-83c0821b846e1dac2e8bfc2d8d45e825" class="flex justify-between">
+      <a role="button" class="">langfuse</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/langfuse/langfuse/" class="">langfuse</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9c20639ed9ed4feb764f4bac9cac218f" class="toggle"  />
+    <label for="section-9c20639ed9ed4feb764f4bac9cac218f" class="flex justify-between">
+      <a role="button" class="">ragas</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/ragas/ragas/" class="">ragas</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f0f5dda3ea316a50f6d522c3904406d7" class="toggle"  />
+    <label for="section-f0f5dda3ea316a50f6d522c3904406d7" class="flex justify-between">
+      <a role="button" class="">llm-as-judge</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/LLL-as-judge---hermes/" class="">Lll as Judge Hermes</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/" class="">Llm as Judge Openclaw</a>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig1-judge-flow/" class="">Fig1 Judge Flow</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig2-paradigms/" class="">Fig2 Paradigms</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig3-bias-table/" class="">Fig3 Bias Table</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig4-cases-table/" class="">Fig4 Cases Table</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig5-ensemble-arch/" class="">Fig5 Ensemble Arch</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig6-human-calibration/" class="">Fig6 Human Calibration</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Agent-Eval/LLL-as-judge/llm-as-judge---openclaw/figures/fig8-specialized-judge/" class="">Fig8 Specialized Judge</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="toggle"  />
+    <label for="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="flex justify-between">
+      <a role="button" class="">Harness engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fba0f3dbc923c98eb8930452d3ded9da" class="toggle"  />
+    <label for="section-fba0f3dbc923c98eb8930452d3ded9da" class="flex justify-between">
+      <a role="button" class="">Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="toggle"  />
+    <label for="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="flex justify-between">
+      <a role="button" class="">OpenClaw</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/ArchA1/" class="">OpenClaw 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/core/" class="">OpenClaw 核心特性 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/state/" class="">State</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/tools/" class="">Tools</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/security/" class="">Security</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%811/" class="">OpenClaw 生态1 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/OpenClaw/%E7%94%9F%E6%80%812/" class="">OpenClaw 生态2 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-946abd4062c933c072a8c623969add46" class="toggle"  />
+    <label for="section-946abd4062c933c072a8c623969add46" class="flex justify-between">
+      <a role="button" class="">Hermes Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/apiwebhook/" class="">Api&amp;webhook</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/arcitctureA1/" class="">Arcitcture[ A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/interrupt/" class="">Interrupt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/moa/" class="">Moa</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Hermes-Agent/skill-envolve/" class="">Skill Envolve</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-e7b0748ad48450dde76b72297d165429" class="toggle"  />
+    <label for="section-e7b0748ad48450dde76b72297d165429" class="flex justify-between">
+      <a role="button" class="">JEV</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/JEV/JEV/" class="">JEV</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-fcf812d87768431bb3ab86201a4222e2" class="toggle"  />
+    <label for="section-fcf812d87768431bb3ab86201a4222e2" class="flex justify-between">
+      <a role="button" class="">Claude Code</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch/" class="">Claude Code 架构</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/arch1A1/" class="">Cloud Code 架构[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/permission/" class="">Permission[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/source-code/" class="">claude code 源码 [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/Learn-Claude-Code/" class="">Learn Cloud Code [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-02af4685675e68e6f8179d748eeb6c5a" class="toggle"  />
+    <label for="section-02af4685675e68e6f8179d748eeb6c5a" class="flex justify-between">
+      <a role="button" class="">Codex</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/codex/codex/arch/" class="">Arch</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ad440789e1a7ba07eb2b3918829c7257" class="toggle"  />
+    <label for="section-ad440789e1a7ba07eb2b3918829c7257" class="flex justify-between">
+      <a role="button" class="">Compress *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code/" class="">Claude /compact[A1] *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-compress/" class="">Claude Code - Compact summary</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/codex/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code2/" class="">Claude Code2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code3/" class="">Claude Code3</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7b4eb57325a2b2a77e7753390fc7d915" class="toggle"  />
+    <label for="section-7b4eb57325a2b2a77e7753390fc7d915" class="flex justify-between">
+      <a role="button" class="">Pi Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent/" class="">Pi Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent1/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Pi-Agent2/pi-coding-agent-article/" class="">Pi Coding Agent Article</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/pi-agent/Tau-Agent/" class="">Tau Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-c47c9c73c26a489b07f412d8d4ee4f40" class="toggle"  />
+    <label for="section-c47c9c73c26a489b07f412d8d4ee4f40" class="flex justify-between">
+      <a role="button" class="">可靠性 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/reliable/codex/" class="">Codex 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/reliable/dsh/" class="">Deepseek harness 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/reliable/pi-durable/" class="">Pi Durable</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-eec787204d3e675b4351db6ec0be7bc8" class="toggle"  />
+    <label for="section-eec787204d3e675b4351db6ec0be7bc8" class="flex justify-between">
+      <a role="button" class="">实战</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/deepseek-harness/" class="">Deepseek Harness</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b41552d83299a260ffc5181fd5bf1177" class="toggle"  />
+    <label for="section-b41552d83299a260ffc5181fd5bf1177" class="flex justify-between">
+      <a role="button" class="">Loops engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1a4757bdd1099e1149094c77f1470e5d" class="toggle"  />
+    <label for="section-1a4757bdd1099e1149094c77f1470e5d" class="flex justify-between">
+      <a role="button" class="">goal</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/codex-goal/" class="">Codex Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/goal/hermes-agent-goal/" class="">Hermes Agent Goal</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-eca2bd358c3e27c981a441ba4e158cb3" class="toggle"  />
+    <label for="section-eca2bd358c3e27c981a441ba4e158cb3" class="flex justify-between">
+      <a role="button" class="">loop engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loops/" class="">loops engineering[A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/loop-engineering/loop-engineering1/" class="">Loop Engineering1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-27d39407dbc0d87e956d19638a0f1da3" class="toggle"  />
+    <label for="section-27d39407dbc0d87e956d19638a0f1da3" class="flex justify-between">
+      <a role="button" class="">长程任务</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/" class="">Claude Code 长程任务稳定性</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/long-running-tasks/" class="">Long Running Tasks</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Loops-engineering/long-process/openclaw/openclaw-long-task-stability/" class="">Openclaw Long Task Stability</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-689fa0c955be06dbb890852c4c2826e8" class="toggle"  />
+    <label for="section-689fa0c955be06dbb890852c4c2826e8" class="flex justify-between">
+      <a role="button" class="">Meta Harness</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-524d9cf59683da54d7ecc3c0ff6519ce" class="toggle"  />
+    <label for="section-524d9cf59683da54d7ecc3c0ff6519ce" class="flex justify-between">
+      <a role="button" class="">Managed Agent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/managed-agent/%E4%BC%98%E5%8C%96/" class="">Claude Platform 优化</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/managed-agent/managed-agent/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/managed-agent/managed-agent2/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/managed-agent/managed-agent3/" class="">managed agent[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E8%A7%A3%E8%AF%BB/" class="">脑和手的解耦</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/managed-agent/%E8%84%91%E5%92%8C%E6%89%8B%E7%9A%84%E8%A7%A3%E8%80%A6/%E5%8E%9F%E6%96%87/" class="">原文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="toggle"  />
+    <label for="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="flex justify-between">
+      <a role="button" class="">Omnigent</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/meta-harness/Omnigent/omnigent/" class="">omnigent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="toggle"  />
+    <label for="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="flex justify-between">
+      <a role="button" class="">Context Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering1/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering2/" class="">context engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/context-engineering/" class="">context engineering[Manus]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="toggle"  />
+    <label for="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="flex justify-between">
+      <a role="button" class="">Plan mode</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/plan-mode/claude/" class="">Claude</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/plan-mode/claue1/" class="">Claue1</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-4a730712863635107d9ac9a5d3e3abd6" class="toggle"  />
+    <label for="section-4a730712863635107d9ac9a5d3e3abd6" class="flex justify-between">
+      <a role="button" class="">Prompting caching *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Context-Engineering/prompt-caching/Prompting-caching/" class="">Claude Prompt Cache [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-98dd33716c353fd55829a04c54d5e57e" class="toggle"  />
+    <label for="section-98dd33716c353fd55829a04c54d5e57e" class="flex justify-between">
+      <a role="button" class="">Prompt Engineering</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompting101/" class="">(原理) [Google]Prompting guide 101 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptEngineering/" class="">(原理)Prompt Engineering</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingClaude/" class="">(Anthropic)[Claude]Prompting Engineering  *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptCode/" class="">(原理)[Prompting]Coding</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/Prompt/" class="">(原理)[Prompting]How to use</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptOpenai/" class="">(原理)[Openai] Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptingGrok/" class="">(原理)Grok 提示框架</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Prompt-Engineering/PromptResearch/" class="">(实践)Research Prompt</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ad26e82e3d025c385444444a93d72502" class="toggle"  />
+    <label for="section-ad26e82e3d025c385444444a93d72502" class="flex justify-between">
+      <a role="button" class="">DeepResearch</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>实现</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearch/" class="">(原理&amp;实战)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepResearchJina/" class="">(原理|实现){Jina}Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchGoogle/" class="">(Google)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/DeepresearchLanggraph/" class="">(Langgraph)Deep Research</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/OpenManus/" class="">(实现)OpenManus *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/%E5%AE%9E%E7%8E%B0/researchSystem/" class="">(实践)Research system[Anthropic]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Overview</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Deep-Research/research/deep-research/" class="">(原理&amp;实战)技术全景</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-9cc3ec6d88705686bc94595daa8aa25e" class="toggle"  />
+    <label for="section-9cc3ec6d88705686bc94595daa8aa25e" class="flex justify-between">
+      <a role="button" class="">FineTuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-7b3c994f2c17601a215b6b57dc71b7ef" class="toggle"  />
+    <label for="section-7b3c994f2c17601a215b6b57dc71b7ef" class="flex justify-between">
+      <a role="button" class="">Instruct Tuning</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuning/" class="">(原理)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Instruct-Tuning/InstructTuningSurvey/" class="">(Survey)Instruct Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-ebf0a5559cc09bbc171db379534a7dc9" class="toggle"  />
+    <label for="section-ebf0a5559cc09bbc171db379534a7dc9" class="flex justify-between">
+      <a role="button" class="">实践 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBestPractice/" class="">(最佳实践)SFT  &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningWhen/" class="">(原理)Fine-Tuning 时机</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/%E5%AE%9E%E8%B7%B5/FineTuningBert/" class="">Fine Tuning-Bert</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-0082251d40c765323fa32be9b3686aa0" class="toggle"  />
+    <label for="section-0082251d40c765323fa32be9b3686aa0" class="flex justify-between">
+      <a role="button" class="">PEFT *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuning/" class="">(原理)PEFT &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/FineTuningPEFT/" class="">(实战)PEFT 概述</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Soft Prompt</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuning/" class="">(原理)Prompt Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuning/" class="">P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PEFTPtuningPractice/" class="">(实战)PEFT P-Tuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Soft-Prompt/PromptTuningPractice/" class="">(实战)PromptTuning</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Lora</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTQLora/" class="">(原理|实战) QLoRA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/PEFT/Lora/PEFTLora/" class="">(实战) Lora &#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-d763501d6c35330245339b6c8531cf7c" class="toggle"  />
+    <label for="section-d763501d6c35330245339b6c8531cf7c" class="flex justify-between">
+      <a role="button" class="">Data</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Data Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Quality</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Quality/DataSFTQuality/" class="">(原理)LIMA, LESS</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Diversity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/SelfInstruct/" class="">(原理)SELF-INSTRUCT&#43;</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Diversity/DataSelfQA/" class="">(原理|实战)Self-QA *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Instruction Complexity</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Data-Quality/Instruction-Complexity/DataWizard/" class="">(原理)Wizard</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>Task composition</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/Task-composition/DatasetSFT/" class="">(原理)SFT 数据组合 *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSFTScaling/" class="">(原理)SFT Scaling</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DataSelection/" class="">(原理)Data Selection</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/FineTuning/Data/DatasetSFTList/" class="">(List)SFT数据集</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-284de0efced75cd016672664a17456be" class="toggle"  />
+    <label for="section-284de0efced75cd016672664a17456be" class="flex justify-between">
+      <a role="button" class="">AI Native</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeminimax/" class="">AI原生组织实践(MiniMax)</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Claude-tag/" class="">Claude tag</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/Ai-nativeali/" class="">AI native与人机协作[阿里]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/SDLC/" class="">AI-native SDLC</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/AI-Native/AI-nativeclaude/" class="">Bottleneck Shift in AI-native Engineering[claude]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-a67b63d6d594556c363a35d7d38cd355" class="toggle"  />
+    <label for="section-a67b63d6d594556c363a35d7d38cd355" class="flex justify-between">
+      <a role="button" class="">Langchain</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/DeepAgent/" class="">Deep Agents</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Langchain/" class="">Langchain</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/Retrievers/" class="">Retrievers</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Langchain/LangchainAgent/" class="">Langchain  Agent</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-3926c431ee2abb31fef9cd9185588ed0" class="toggle"  />
+    <label for="section-3926c431ee2abb31fef9cd9185588ed0" class="flex justify-between">
+      <a role="button" class="">Application</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/gpt/" class="">GPT-工具和应用</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/VectorStore/" class="">向量数据库</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <span>NL2SQL</span>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/NL2SQL/" class="">NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/survey/" class="">(survey)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/chatBI-Ant/" class="">(蚂蚁)chatbi</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Application/NL2SQL/opensource/" class="">(开源)NL2SQL</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li class="book-section-flat" >
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="toggle"  />
+    <label for="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="flex justify-between">
+      <a role="button" class="">其他</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/self-work/" class="">自己的工作</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/%E5%85%B6%E4%BB%96/AgentCategory/" class="">(原理)Agent 分类[有趣|有用]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</nav>
+
+
+
+
+  <script>(function(){var e=document.querySelector("aside .book-menu-content");addEventListener("beforeunload",function(){localStorage.setItem("menu.scrollTop",e.scrollTop)}),e.scrollTop=localStorage.getItem("menu.scrollTop")})()</script>
+
+
+ 
+      </div>
+    </aside>
+
+    <div class="book-page">
+      <header class="book-header">
+        
+  <div class="flex align-center justify-between">
+  <label for="menu-control">
+    <img src="/www6vAIGC/svg/menu.svg" class="book-icon" alt="Menu" />
+  </label>
+
+  <h3>Mem0 源码深度解析</h3>
+
+  <label for="toc-control">
+    
+    <img src="/www6vAIGC/svg/toc.svg" class="book-icon" alt="Table of Contents" />
+    
+  </label>
+</div>
+
+
+  
+  <aside class="hidden clearfix">
+    
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#mem0-源码深度解析universal-memory-layer-for-ai-agents">Mem0 源码深度解析：Universal Memory Layer for AI Agents</a>
+      <ul>
+        <li><a href="#一引言agent-的记忆困境">一、引言：Agent 的&quot;记忆困境&quot;</a>
+          <ul>
+            <li><a href="#11-为什么-rag-不够">1.1 为什么 RAG 不够？</a></li>
+            <li><a href="#12-项目概况">1.2 项目概况</a></li>
+          </ul>
+        </li>
+        <li><a href="#二总体架构记忆层的三层模型">二、总体架构：记忆层的三层模型</a>
+          <ul>
+            <li><a href="#数据流全景">数据流全景</a></li>
+            <li><a href="#核心模块概览">核心模块概览</a></li>
+          </ul>
+        </li>
+        <li><a href="#三memory-门面深度解析从对话到记忆的全链路">三、Memory 门面深度解析：从对话到记忆的全链路</a>
+          <ul>
+            <li><a href="#31-核心方法清单">3.1 核心方法清单</a></li>
+            <li><a href="#32-add-方法全链路源码分析">3.2 add() 方法全链路源码分析</a></li>
+            <li><a href="#33-search-方法源码分析">3.3 search() 方法源码分析</a></li>
+            <li><a href="#34-实体身份隔离机制">3.4 实体身份隔离机制</a></li>
+          </ul>
+        </li>
+        <li><a href="#四向量存储层25-种后端统一抽象">四、向量存储层：25+ 种后端统一抽象</a>
+          <ul>
+            <li><a href="#41-vectorstorebase-抽象接口">4.1 VectorStoreBase 抽象接口</a></li>
+            <li><a href="#42-后端矩阵对比">4.2 后端矩阵对比</a></li>
+            <li><a href="#43-工厂模式源码">4.3 工厂模式源码</a></li>
+          </ul>
+        </li>
+        <li><a href="#五llm-与-embedding-适配层插件化设计">五、LLM 与 Embedding 适配层：插件化设计</a>
+          <ul>
+            <li><a href="#51-embedding-适配矩阵15-种">5.1 Embedding 适配矩阵（15+ 种）</a></li>
+            <li><a href="#52-llm-适配矩阵20-种事实提取引擎">5.2 LLM 适配矩阵（20+ 种，事实提取引擎）</a></li>
+            <li><a href="#53-插件化架构优势">5.3 插件化架构优势</a></li>
+          </ul>
+        </li>
+        <li><a href="#六核心-prompt-深度解析记忆提取的大脑">六、核心 Prompt 深度解析：记忆提取的&quot;大脑&quot;</a>
+          <ul>
+            <li><a href="#61-fact_retrieval_prompt事实提取">6.1 FACT_RETRIEVAL_PROMPT（事实提取）</a></li>
+            <li><a href="#62-memory_answer_prompt记忆问答">6.2 MEMORY_ANSWER_PROMPT（记忆问答）</a></li>
+            <li><a href="#63-procedural-memory程序记忆">6.3 Procedural Memory（程序记忆）</a></li>
+          </ul>
+        </li>
+        <li><a href="#七配置系统pydantic-驱动的热插拔架构">七、配置系统：Pydantic 驱动的热插拔架构</a>
+          <ul>
+            <li><a href="#71-memoryconfig-配置模型">7.1 MemoryConfig 配置模型</a></li>
+            <li><a href="#72-零配置-vs-生产配置">7.2 零配置 vs 生产配置</a></li>
+          </ul>
+        </li>
+        <li><a href="#八高级特性源码分析">八、高级特性源码分析</a>
+          <ul>
+            <li><a href="#81-reranker-重排序">8.1 Reranker 重排序</a></li>
+            <li><a href="#82-记忆版本与历史">8.2 记忆版本与历史</a></li>
+            <li><a href="#83-安全设计">8.3 安全设计</a></li>
+            <li><a href="#84-telemetry-遥测">8.4 Telemetry 遥测</a></li>
+          </ul>
+        </li>
+        <li><a href="#九与其他记忆方案的对比分析">九、与其他记忆方案的对比分析</a></li>
+        <li><a href="#十源码中的关键设计模式总结">十、源码中的关键设计模式总结</a>
+          <ul>
+            <li><a href="#1-factory-模式">1. Factory 模式</a></li>
+            <li><a href="#2-facade-模式">2. Facade 模式</a></li>
+            <li><a href="#3-策略模式">3. 策略模式</a></li>
+            <li><a href="#4-basemodel-配置驱动">4. BaseModel 配置驱动</a></li>
+            <li><a href="#5-安全脱敏">5. 安全脱敏</a></li>
+            <li><a href="#6-统一评分规范">6. 统一评分规范</a></li>
+          </ul>
+        </li>
+        <li><a href="#总结">总结</a>
+          <ul>
+            <li><a href="#架构亮点回顾">架构亮点回顾</a></li>
+            <li><a href="#最佳实践清单">最佳实践清单</a></li>
+            <li><a href="#未来展望">未来展望</a></li>
+          </ul>
+        </li>
+        <li><a href="#参考文章">参考文章</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+
+  </aside>
+  
+ 
+      </header>
+
+      
+      
+  <article class="markdown book-article"><h1 id="mem0-源码深度解析universal-memory-layer-for-ai-agents">
+  Mem0 源码深度解析：Universal Memory Layer for AI Agents
+  <a class="anchor" href="#mem0-%e6%ba%90%e7%a0%81%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90universal-memory-layer-for-ai-agents">#</a>
+</h1>
+<blockquote>
+<p><em>&ldquo;Any sufficiently advanced memory is indistinguishable from a living mind.&rdquo;</em></p>
+<p>Agent 的记忆不应该只是聊天记录的堆砌。它应该像人脑一样：自动提取、结构化存储、按需检索、随时间演化。</p>
+</blockquote>
+<hr>
+<h2 id="一引言agent-的记忆困境">
+  一、引言：Agent 的&quot;记忆困境&quot;
+  <a class="anchor" href="#%e4%b8%80%e5%bc%95%e8%a8%80agent-%e7%9a%84%e8%ae%b0%e5%bf%86%e5%9b%b0%e5%a2%83">#</a>
+</h2>
+<blockquote>
+<p>&ldquo;我昨天明明告诉过你我不吃香菜，为什么今天的推荐里还有？&rdquo;</p>
+<p>&ldquo;这个用户上次已经拒绝过这个方案了，别再提了。&rdquo;</p>
+</blockquote>
+<p>这是每一个开发过 AI Agent 的人都会遇到的痛点。Agent 很聪明，但它们有一个致命弱点：<strong>换 Session 就失忆</strong>。</p>
+<h3 id="11-为什么-rag-不够">
+  1.1 为什么 RAG 不够？
+  <a class="anchor" href="#11-%e4%b8%ba%e4%bb%80%e4%b9%88-rag-%e4%b8%8d%e5%a4%9f">#</a>
+</h3>
+<p>很多团队的第一反应是：&ldquo;上 RAG 不就行了？把聊天记录向量化，让 Agent 检索。&rdquo;</p>
+<p>但 RAG 解决的是 <strong>&ldquo;能查到什么&rdquo;</strong>，而不是：</p>
+<ul>
+<li>❌ &ldquo;哪些信息是事实，哪些是闲聊？&rdquo;</li>
+<li>❌ &ldquo;用户现在的偏好和三个月前一样吗？&rdquo;</li>
+<li>❌ &ldquo;这段记忆属于哪个用户、哪个 Agent？&rdquo;</li>
+</ul>
+<p>RAG 是&quot;图书馆&quot;——书在那里，但你需要自己找、自己判断。</p>
+<p><strong>Mem0 做的是&quot;记忆层&quot;</strong>——它自动从对话中提取事实，结构化存储，并在需要时精准注入。</p>
+<h3 id="12-项目概况">
+  1.2 项目概况
+  <a class="anchor" href="#12-%e9%a1%b9%e7%9b%ae%e6%a6%82%e5%86%b5">#</a>
+</h3>
+<p><a href="https://github.com/mem0ai/mem0">Mem0 (mem0ai)</a> 是一个开源的 AI 记忆层项目：</p>
+<table>
+	<thead>
+			<tr>
+					<th>指标</th>
+					<th>值</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><strong>Stars</strong></td>
+					<td>62,000+</td>
+			</tr>
+			<tr>
+					<td><strong>协议</strong></td>
+					<td>Apache-2.0</td>
+			</tr>
+			<tr>
+					<td><strong>语言</strong></td>
+					<td>Python</td>
+			</tr>
+			<tr>
+					<td><strong>定位</strong></td>
+					<td>Universal Memory Layer for AI Agents</td>
+			</tr>
+	</tbody>
+</table>
+<hr>
+<h2 id="二总体架构记忆层的三层模型">
+  二、总体架构：记忆层的三层模型
+  <a class="anchor" href="#%e4%ba%8c%e6%80%bb%e4%bd%93%e6%9e%b6%e6%9e%84%e8%ae%b0%e5%bf%86%e5%b1%82%e7%9a%84%e4%b8%89%e5%b1%82%e6%a8%a1%e5%9e%8b">#</a>
+</h2>
+<p>Mem0 的架构可以概括为 <strong>三层模型</strong>：</p>
+
+
+<script src="/www6vAIGC/mermaid.min.js"></script>
+
+  <script>mermaid.initialize({
+  "flowchart": {
+    "useMaxWidth":true
+  },
+  "theme": "default"
+}
+)</script>
+
+
+
+<pre class="mermaid">flowchart TB
+    subgraph AppLayer[&#34;应用层 (Agent/Framework)&#34;]
+        A1[LangChain Agent]
+        A2[LlamaIndex Agent]
+        A3[CrewAI / AutoGen]
+        A4[Custom Agent]
+    end
+
+    subgraph Mem0Layer[&#34;Mem0 记忆层&#34;]
+        direction TB
+        Memory[&#34;Memory 门面 (main.py)\nadd() / search() / get() / delete()&#34;]
+        
+        subgraph FactoryLayer[&#34;组件工厂&#34;]
+            EF[EmbedderFactory]
+            VF[VectorStoreFactory]
+            LF[LlmFactory]
+            RF[RerankerFactory]
+        end
+        
+        Memory --&gt; EF &amp; VF &amp; LF &amp; RF
+    end
+
+    subgraph BackendLayer[&#34;后端实现层&#34;]
+        direction TB
+        subgraph Embedders[&#34;15&#43; Embedders&#34;]
+            E1[OpenAI]
+            E2[AWS Bedrock]
+            E3[Ollama]
+            E4[...]
+        end
+        subgraph VectorStores[&#34;25&#43; Vector Stores&#34;]
+            V1[Qdrant]
+            V2[Pinecone]
+            V3[Chroma]
+            V4[Milvus]
+            V5[FAISS]
+            V6[PostgreSQL]
+            V7[Elasticsearch]
+            V8[...]
+        end
+        subgraph LLMs[&#34;20&#43; LLMs&#34;]
+            L1[OpenAI]
+            L2[Anthropic]
+            L3[Gemini]
+            L4[Groq]
+            L5[...]
+        end
+    end
+
+    EF --&gt; Embedders
+    VF --&gt; VectorStores
+    LF --&gt; LLMs
+
+    A1 &amp; A2 &amp; A3 &amp; A4 --&gt; Memory
+
+    style Mem0Layer fill:#e1f5fe
+    style FactoryLayer fill:#fff3e0
+    style BackendLayer fill:#e8f5e9</pre>
+<h3 id="数据流全景">
+  数据流全景
+  <a class="anchor" href="#%e6%95%b0%e6%8d%ae%e6%b5%81%e5%85%a8%e6%99%af">#</a>
+</h3>
+<pre tabindex="0"><code>对话消息 (messages)
+       ↓
+  Memory.add()
+       ↓
+┌─────────────────────────────────┐
+│  LLM 事实提取 (infer=True)       │
+│  FACT_RETRIEVAL_PROMPT          │
+│  提取事实、偏好、计划              │
+└─────────────────────────────────┘
+       ↓
+┌─────────────────────────────────┐
+│  对比已有记忆 (Diff)             │
+│  决策：ADD / UPDATE / DELETE     │
+└─────────────────────────────────┘
+       ↓
+┌─────────────────────────────────┐
+│  向量化 (Embedder)               │
+│  写入向量存储 (VectorStore)      │
+└─────────────────────────────────┘
+       ↓
+返回结果：{&#34;results&#34;: [{&#34;id&#34;: &#34;...&#34;, &#34;memory&#34;: &#34;...&#34;, &#34;event&#34;: &#34;ADD&#34;}]}
+</code></pre><h3 id="核心模块概览">
+  核心模块概览
+  <a class="anchor" href="#%e6%a0%b8%e5%bf%83%e6%a8%a1%e5%9d%97%e6%a6%82%e8%a7%88">#</a>
+</h3>
+<table>
+	<thead>
+			<tr>
+					<th>模块</th>
+					<th>源码路径</th>
+					<th>职责</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><strong>Memory 门面</strong></td>
+					<td><code>mem0/memory/main.py</code></td>
+					<td>统一的 add/search/get/delete 接口</td>
+			</tr>
+			<tr>
+					<td><strong>向量存储</strong></td>
+					<td><code>mem0/vector_stores/</code></td>
+					<td>25+ 种向量数据库适配</td>
+			</tr>
+			<tr>
+					<td><strong>嵌入模型</strong></td>
+					<td><code>mem0/embeddings/</code></td>
+					<td>15+ 种嵌入模型适配</td>
+			</tr>
+			<tr>
+					<td><strong>LLM 适配</strong></td>
+					<td><code>mem0/llms/</code></td>
+					<td>20+ 种 LLM 适配（事实提取）</td>
+			</tr>
+			<tr>
+					<td><strong>配置系统</strong></td>
+					<td><code>mem0/configs/</code></td>
+					<td>Pydantic 配置模型，热插拔</td>
+			</tr>
+	</tbody>
+</table>
+<hr>
+<h2 id="三memory-门面深度解析从对话到记忆的全链路">
+  三、Memory 门面深度解析：从对话到记忆的全链路
+  <a class="anchor" href="#%e4%b8%89memory-%e9%97%a8%e9%9d%a2%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90%e4%bb%8e%e5%af%b9%e8%af%9d%e5%88%b0%e8%ae%b0%e5%bf%86%e7%9a%84%e5%85%a8%e9%93%be%e8%b7%af">#</a>
+</h2>
+<p><code>Memory</code> 类（位于 <code>mem0/memory/main.py</code>）是整个系统的门面（Facade）。它隐藏了底层向量库、LLM、嵌入模型的复杂性，对外提供简洁的 API。</p>
+<h3 id="31-核心方法清单">
+  3.1 核心方法清单
+  <a class="anchor" href="#31-%e6%a0%b8%e5%bf%83%e6%96%b9%e6%b3%95%e6%b8%85%e5%8d%95">#</a>
+</h3>
+<table>
+	<thead>
+			<tr>
+					<th>方法</th>
+					<th>作用</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>add()</code> / <code>async add()</code></td>
+					<td>添加记忆（核心入口）</td>
+			</tr>
+			<tr>
+					<td><code>search()</code> / <code>async search()</code></td>
+					<td>语义检索记忆</td>
+			</tr>
+			<tr>
+					<td><code>get()</code></td>
+					<td>按 ID 获取单条记忆</td>
+			</tr>
+			<tr>
+					<td><code>get_all()</code> / <code>get_all_async()</code></td>
+					<td>列出所有记忆</td>
+			</tr>
+			<tr>
+					<td><code>update()</code></td>
+					<td>更新记忆内容</td>
+			</tr>
+			<tr>
+					<td><code>delete()</code> / <code>delete_all()</code></td>
+					<td>删除记忆</td>
+			</tr>
+			<tr>
+					<td><code>history()</code></td>
+					<td>获取记忆变更历史</td>
+			</tr>
+			<tr>
+					<td><code>chat()</code></td>
+					<td>基于记忆的对话接口</td>
+			</tr>
+			<tr>
+					<td><code>reset()</code></td>
+					<td>重置存储</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="32-add-方法全链路源码分析">
+  3.2 add() 方法全链路源码分析
+  <a class="anchor" href="#32-add-%e6%96%b9%e6%b3%95%e5%85%a8%e9%93%be%e8%b7%af%e6%ba%90%e7%a0%81%e5%88%86%e6%9e%90">#</a>
+</h3>
+<p>这是 Mem0 的核心。它接收原始对话，自动提取事实并存储。</p>
+<p><strong>方法签名</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">add</span>(
+</span></span><span style="display:flex;"><span>    self,
+</span></span><span style="display:flex;"><span>    messages,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">*</span>,
+</span></span><span style="display:flex;"><span>    user_id: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>    agent_id: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>    run_id: Optional[str] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>    metadata: Optional[Dict[str, Any]] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>    infer: bool <span style="color:#f92672">=</span> <span style="color:#66d9ef">True</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span>) <span style="color:#f92672">-&gt;</span> dict:
+</span></span></code></pre></div><p><strong>关键参数解析</strong>：</p>
+<table>
+	<thead>
+			<tr>
+					<th>参数</th>
+					<th>说明</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>messages</code></td>
+					<td>支持 <code>str</code> 或 <code>List[Dict]</code>（如 <code>[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hi&quot;}]</code>）</td>
+			</tr>
+			<tr>
+					<td><code>user_id</code> / <code>agent_id</code> / <code>run_id</code></td>
+					<td><strong>三元身份隔离</strong>，决定记忆归属</td>
+			</tr>
+			<tr>
+					<td><code>infer</code></td>
+					<td><code>True</code>：LLM 提取事实；<code>False</code>：直写原始消息</td>
+			</tr>
+	</tbody>
+</table>
+<p><strong>处理流程</strong>：</p>
+
+<pre class="mermaid">flowchart LR
+    A[&#34;add(messages)&#34;] --&gt; B{&#34;infer=True?&#34;}
+    B --&gt;|Yes| C[&#34;LLM 事实提取\nFACT_RETRIEVAL_PROMPT&#34;]
+    B --&gt;|No| D[&#34;直写原始消息&#34;]
+    C --&gt; E[&#34;对比已有记忆\nADD / UPDATE / DELETE&#34;]
+    E --&gt; F[&#34;向量化 &#43; 写入 VectorStore&#34;]
+    D --&gt; F
+    F --&gt; H[&#34;返回 {results: [...]}&#34;]
+    
+    style A fill:#ffebee
+    style C fill:#fff3e0
+    style E fill:#e8f5e9
+    style H fill:#e3f2fd</pre>
+<h4 id="事实提取逻辑infertrue">
+  事实提取逻辑（<code>infer=True</code>）
+  <a class="anchor" href="#%e4%ba%8b%e5%ae%9e%e6%8f%90%e5%8f%96%e9%80%bb%e8%be%91infertrue">#</a>
+</h4>
+<p>当 <code>infer=True</code>（默认）时，Mem0 会调用 LLM 提取事实。它使用 <code>FACT_RETRIEVAL_PROMPT</code>，要求 LLM 从对话中提取结构化信息：</p>
+<ol>
+<li><strong>个人偏好</strong>（喜欢吃香菜、偏好 Python 等）</li>
+<li><strong>重要个人信息</strong>（姓名、职业、关系等）</li>
+<li><strong>计划和意图</strong>（下周去北京、目标减肥等）</li>
+<li><strong>活动偏好</strong>（喜欢登山、常去星巴克等）</li>
+<li><strong>健康偏好</strong>（乳糖不耐、失眠等）</li>
+<li><strong>职业信息</strong>（职位、工作习惯等）</li>
+</ol>
+<p>LLM 返回 JSON 格式的事实列表，例如：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{<span style="color:#f92672">&#34;facts&#34;</span>: [<span style="color:#e6db74">&#34;用户不喜欢吃香菜&#34;</span>, <span style="color:#e6db74">&#34;用户计划下周去北京出差&#34;</span>]}
+</span></span></code></pre></div><h4 id="增量更新决策">
+  增量更新决策
+  <a class="anchor" href="#%e5%a2%9e%e9%87%8f%e6%9b%b4%e6%96%b0%e5%86%b3%e7%ad%96">#</a>
+</h4>
+<p>Mem0 不会简单追加所有事实。它会对比已有记忆，决定：</p>
+<ul>
+<li><strong>ADD</strong>：全新事实</li>
+<li><strong>UPDATE</strong>：已有事实的新版本（如&quot;计划去北京&quot; → &ldquo;计划下个月去上海&rdquo;）</li>
+<li><strong>DELETE</strong>：已失效的事实</li>
+</ul>
+<h3 id="33-search-方法源码分析">
+  3.3 search() 方法源码分析
+  <a class="anchor" href="#33-search-%e6%96%b9%e6%b3%95%e6%ba%90%e7%a0%81%e5%88%86%e6%9e%90">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">search</span>(
+</span></span><span style="display:flex;"><span>    self,
+</span></span><span style="display:flex;"><span>    query: str,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">*</span>,
+</span></span><span style="display:flex;"><span>    top_k: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">20</span>,
+</span></span><span style="display:flex;"><span>    filters: Optional[Dict[str, Any]] <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>    threshold: float <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.1</span>,
+</span></span><span style="display:flex;"><span>    rerank: bool <span style="color:#f92672">=</span> <span style="color:#66d9ef">False</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span>) <span style="color:#f92672">-&gt;</span> dict:
+</span></span></code></pre></div><p><strong>关键参数</strong>：</p>
+<table>
+	<thead>
+			<tr>
+					<th>参数</th>
+					<th>说明</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>query</code></td>
+					<td>检索查询（如&quot;我上次说了什么关于旅行的&quot;）</td>
+			</tr>
+			<tr>
+					<td><code>top_k</code></td>
+					<td>返回结果数量（默认 20）</td>
+			</tr>
+			<tr>
+					<td><code>filters</code></td>
+					<td>过滤条件（<code>{&quot;user_id&quot;: &quot;u1&quot;, &quot;agent_id&quot;: &quot;a1&quot;}</code>）</td>
+			</tr>
+			<tr>
+					<td><code>threshold</code></td>
+					<td>最低相似度阈值（默认 0.1）</td>
+			</tr>
+			<tr>
+					<td><code>rerank</code></td>
+					<td>是否启用重排序（默认 False）</td>
+			</tr>
+	</tbody>
+</table>
+<p><strong>检索流程</strong>：</p>
+<ol>
+<li>查询向量化（调用 Embedder）</li>
+<li>向量数据库检索（调用 VectorStore）</li>
+<li>应用 <code>filters</code> 和 <code>threshold</code> 过滤</li>
+<li>可选 Reranker 重排序</li>
+<li>返回格式化结果</li>
+</ol>
+<h3 id="34-实体身份隔离机制">
+  3.4 实体身份隔离机制
+  <a class="anchor" href="#34-%e5%ae%9e%e4%bd%93%e8%ba%ab%e4%bb%bd%e9%9a%94%e7%a6%bb%e6%9c%ba%e5%88%b6">#</a>
+</h3>
+<p>Mem0 设计了严格的身份隔离，防止元数据污染身份字段：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># mem0/memory/main.py</span>
+</span></span><span style="display:flex;"><span>_IDENTITY_KEYS <span style="color:#f92672">=</span> {<span style="color:#e6db74">&#34;user_id&#34;</span>, <span style="color:#e6db74">&#34;agent_id&#34;</span>, <span style="color:#e6db74">&#34;run_id&#34;</span>, <span style="color:#e6db74">&#34;actor_id&#34;</span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">_strip_identity_keys</span>(metadata, existing_payload, <span style="color:#f92672">...</span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;防止调用者通过 metadata 设置身份字段&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    clean <span style="color:#f92672">=</span> {}
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> key, value <span style="color:#f92672">in</span> metadata<span style="color:#f92672">.</span>items():
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> key <span style="color:#f92672">not</span> <span style="color:#f92672">in</span> _IDENTITY_KEYS:
+</span></span><span style="display:flex;"><span>            clean[key] <span style="color:#f92672">=</span> value
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">elif</span> value <span style="color:#f92672">!=</span> existing_payload<span style="color:#f92672">.</span>get(key):
+</span></span><span style="display:flex;"><span>            logger<span style="color:#f92672">.</span>warning(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;ignoring metadata[</span><span style="color:#e6db74">{</span>key<span style="color:#e6db74">}</span><span style="color:#e6db74">]...&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> clean
+</span></span></code></pre></div><p>这是<strong>应用层的安全约束</strong>，确保身份字段只能通过参数设置，不能通过元数据绕过。</p>
+<hr>
+<h2 id="四向量存储层25-种后端统一抽象">
+  四、向量存储层：25+ 种后端统一抽象
+  <a class="anchor" href="#%e5%9b%9b%e5%90%91%e9%87%8f%e5%ad%98%e5%82%a8%e5%b1%8225-%e7%a7%8d%e5%90%8e%e7%ab%af%e7%bb%9f%e4%b8%80%e6%8a%bd%e8%b1%a1">#</a>
+</h2>
+<p>Mem0 支持 <strong>25+ 种</strong>向量数据库后端，全部通过 <code>VectorStoreBase</code> 抽象接口统一。</p>
+<h3 id="41-vectorstorebase-抽象接口">
+  4.1 VectorStoreBase 抽象接口
+  <a class="anchor" href="#41-vectorstorebase-%e6%8a%bd%e8%b1%a1%e6%8e%a5%e5%8f%a3">#</a>
+</h3>
+<p>位于 <code>mem0/vector_stores/base.py</code>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">VectorStoreBase</span>(ABC):
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@abstractmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">create_col</span>(self, name, vector_size, distance):
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Create a new collection.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">pass</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@abstractmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">insert</span>(self, vectors, payloads<span style="color:#f92672">=</span><span style="color:#66d9ef">None</span>, ids<span style="color:#f92672">=</span><span style="color:#66d9ef">None</span>):
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Insert vectors into a collection.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">pass</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@abstractmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">search</span>(self, query, vectors, top_k<span style="color:#f92672">=</span><span style="color:#ae81ff">5</span>, filters<span style="color:#f92672">=</span><span style="color:#66d9ef">None</span>):
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Search for similar vectors.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        注意：所有实现必须返回相似度分数，分数越高表示越相似（范围 [0, 1]）。
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        使用距离度量的实现必须转换：
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        - Cosine distance: score = max(0.0, 1.0 - distance)
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        - L2 distance: score = 1.0 / (1.0 + distance)
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        &#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">pass</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@abstractmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">delete</span>(self, vector_id):
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Delete a vector by ID.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">pass</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@abstractmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">update</span>(self, vector_id, vector<span style="color:#f92672">=</span><span style="color:#66d9ef">None</span>, payload<span style="color:#f92672">=</span><span style="color:#66d9ef">None</span>):
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;Update a vector and its payload.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">pass</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@abstractmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">list</span>(self, filters<span style="color:#f92672">=</span><span style="color:#66d9ef">None</span>, top_k<span style="color:#f92672">=</span><span style="color:#66d9ef">None</span>):
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;&#34;List all memories.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">pass</span>
+</span></span></code></pre></div><p><strong>统一评分规范</strong>是 Mem0 设计的一大亮点：无论底层向量库用什么距离度量（Cosine、L2、Inner Product），上层看到的都是统一的 <code>score ∈ [0, 1]</code>。</p>
+<h3 id="42-后端矩阵对比">
+  4.2 后端矩阵对比
+  <a class="anchor" href="#42-%e5%90%8e%e7%ab%af%e7%9f%a9%e9%98%b5%e5%af%b9%e6%af%94">#</a>
+</h3>
+<table>
+	<thead>
+			<tr>
+					<th>后端</th>
+					<th>类型</th>
+					<th>源码文件</th>
+					<th>适用场景</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><strong>Qdrant</strong></td>
+					<td>向量数据库</td>
+					<td><code>qdrant.py</code></td>
+					<td>默认后端，过滤+向量混合检索</td>
+			</tr>
+			<tr>
+					<td><strong>Pinecone</strong></td>
+					<td>托管向量库</td>
+					<td><code>pinecone.py</code></td>
+					<td>Serverless，适合生产环境</td>
+			</tr>
+			<tr>
+					<td><strong>Chroma</strong></td>
+					<td>本地/嵌入式</td>
+					<td><code>chroma.py</code></td>
+					<td>开发友好，零配置</td>
+			</tr>
+			<tr>
+					<td><strong>Milvus</strong></td>
+					<td>分布式向量库</td>
+					<td><code>milvus.py</code></td>
+					<td>大规模生产场景</td>
+			</tr>
+			<tr>
+					<td><strong>FAISS</strong></td>
+					<td>本地内存</td>
+					<td><code>faiss.py</code></td>
+					<td>超快检索，无持久化</td>
+			</tr>
+			<tr>
+					<td><strong>Redis</strong></td>
+					<td>内存数据库</td>
+					<td><code>redis.py</code></td>
+					<td>缓存+向量一体化</td>
+			</tr>
+			<tr>
+					<td><strong>PostgreSQL</strong></td>
+					<td>关系数据库</td>
+					<td><code>pgvector.py</code></td>
+					<td>已有 PG 基础设施</td>
+			</tr>
+			<tr>
+					<td><strong>Elasticsearch</strong></td>
+					<td>搜索引擎</td>
+					<td><code>elasticsearch.py</code></td>
+					<td>全文+向量混合搜索</td>
+			</tr>
+			<tr>
+					<td><strong>Weaviate</strong></td>
+					<td>向量数据库</td>
+					<td><code>weaviate.py</code></td>
+					<td>知识图谱集成</td>
+			</tr>
+			<tr>
+					<td><strong>MongoDB</strong></td>
+					<td>文档数据库</td>
+					<td><code>mongodb.py</code></td>
+					<td>已有 Mongo 基础设施</td>
+			</tr>
+			<tr>
+					<td><strong>Azure AI Search</strong></td>
+					<td>云服务</td>
+					<td><code>azure_ai_search.py</code></td>
+					<td>Azure 生态</td>
+			</tr>
+			<tr>
+					<td><strong>OpenSearch</strong></td>
+					<td>搜索引擎</td>
+					<td><code>opensearch.py</code></td>
+					<td>AWS 生态</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="43-工厂模式源码">
+  4.3 工厂模式源码
+  <a class="anchor" href="#43-%e5%b7%a5%e5%8e%82%e6%a8%a1%e5%bc%8f%e6%ba%90%e7%a0%81">#</a>
+</h3>
+<p><code>VectorStoreFactory</code> 负责动态加载后端：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># mem0/utils/factory.py</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">VectorStoreFactory</span>:
+</span></span><span style="display:flex;"><span>    _providers <span style="color:#f92672">=</span> {}
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@classmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">register</span>(cls, name, provider_class):
+</span></span><span style="display:flex;"><span>        cls<span style="color:#f92672">.</span>_providers[name] <span style="color:#f92672">=</span> provider_class
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@classmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">create</span>(cls, provider, config):
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> provider <span style="color:#f92672">not</span> <span style="color:#f92672">in</span> cls<span style="color:#f92672">.</span>_providers:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">raise</span> <span style="color:#a6e22e">ValueError</span>(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Unknown vector store provider: </span><span style="color:#e6db74">{</span>provider<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> cls<span style="color:#f92672">.</span>_providers[provider](config)
+</span></span></code></pre></div><p>切换向量库只需改配置：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 从 Qdrant 切换到 Chroma</span>
+</span></span><span style="display:flex;"><span>config <span style="color:#f92672">=</span> {<span style="color:#e6db74">&#34;vector_store&#34;</span>: {<span style="color:#e6db74">&#34;provider&#34;</span>: <span style="color:#e6db74">&#34;chroma&#34;</span>, <span style="color:#e6db74">&#34;config&#34;</span>: {<span style="color:#e6db74">&#34;collection_name&#34;</span>: <span style="color:#e6db74">&#34;my_memories&#34;</span>}}}
+</span></span><span style="display:flex;"><span>m <span style="color:#f92672">=</span> Memory<span style="color:#f92672">.</span>from_config(config)
+</span></span></code></pre></div><hr>
+<h2 id="五llm-与-embedding-适配层插件化设计">
+  五、LLM 与 Embedding 适配层：插件化设计
+  <a class="anchor" href="#%e4%ba%94llm-%e4%b8%8e-embedding-%e9%80%82%e9%85%8d%e5%b1%82%e6%8f%92%e4%bb%b6%e5%8c%96%e8%ae%be%e8%ae%a1">#</a>
+</h2>
+<h3 id="51-embedding-适配矩阵15-种">
+  5.1 Embedding 适配矩阵（15+ 种）
+  <a class="anchor" href="#51-embedding-%e9%80%82%e9%85%8d%e7%9f%a9%e9%98%b515-%e7%a7%8d">#</a>
+</h3>
+<table>
+	<thead>
+			<tr>
+					<th>Embedder</th>
+					<th>源码文件</th>
+					<th>特点</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><strong>OpenAI</strong></td>
+					<td><code>openai.py</code></td>
+					<td>默认，text-embedding-3-small/large</td>
+			</tr>
+			<tr>
+					<td><strong>AWS Bedrock</strong></td>
+					<td><code>aws_bedrock.py</code></td>
+					<td>Titan 嵌入模型</td>
+			</tr>
+			<tr>
+					<td><strong>Ollama</strong></td>
+					<td><code>ollama.py</code></td>
+					<td>开源模型本地部署</td>
+			</tr>
+			<tr>
+					<td><strong>Gemini</strong></td>
+					<td><code>gemini.py</code></td>
+					<td>Google 嵌入</td>
+			</tr>
+			<tr>
+					<td><strong>HuggingFace</strong></td>
+					<td><code>huggingface.py</code></td>
+					<td>开源嵌入模型</td>
+			</tr>
+			<tr>
+					<td><strong>FastEmbed</strong></td>
+					<td><code>fastembed.py</code></td>
+					<td>超快轻量嵌入（Qdrant 出品）</td>
+			</tr>
+			<tr>
+					<td><strong>Azure OpenAI</strong></td>
+					<td><code>azure_openai.py</code></td>
+					<td>企业合规</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="52-llm-适配矩阵20-种事实提取引擎">
+  5.2 LLM 适配矩阵（20+ 种，事实提取引擎）
+  <a class="anchor" href="#52-llm-%e9%80%82%e9%85%8d%e7%9f%a9%e9%98%b520-%e7%a7%8d%e4%ba%8b%e5%ae%9e%e6%8f%90%e5%8f%96%e5%bc%95%e6%93%8e">#</a>
+</h3>
+<table>
+	<thead>
+			<tr>
+					<th>LLM</th>
+					<th>源码文件</th>
+					<th>特点</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><strong>OpenAI</strong></td>
+					<td><code>openai.py</code></td>
+					<td>默认事实提取，gpt-4o-mini/3.5</td>
+			</tr>
+			<tr>
+					<td><strong>Anthropic</strong></td>
+					<td><code>anthropic.py</code></td>
+					<td>Claude 事实提取</td>
+			</tr>
+			<tr>
+					<td><strong>Gemini</strong></td>
+					<td><code>gemini.py</code></td>
+					<td>Google 事实提取</td>
+			</tr>
+			<tr>
+					<td><strong>Groq</strong></td>
+					<td><code>groq.py</code></td>
+					<td>高速提取（Llama 等）</td>
+			</tr>
+			<tr>
+					<td><strong>Ollama</strong></td>
+					<td><code>ollama.py</code></td>
+					<td>本地开源模型</td>
+			</tr>
+			<tr>
+					<td><strong>LiteLLM</strong></td>
+					<td><code>litellm.py</code></td>
+					<td>统一多厂商接口</td>
+			</tr>
+			<tr>
+					<td><strong>vLLM</strong></td>
+					<td><code>vllm.py</code></td>
+					<td>本地高性能推理</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="53-插件化架构优势">
+  5.3 插件化架构优势
+  <a class="anchor" href="#53-%e6%8f%92%e4%bb%b6%e5%8c%96%e6%9e%b6%e6%9e%84%e4%bc%98%e5%8a%bf">#</a>
+</h3>
+<pre tabindex="0"><code>切换 LLM/Embedder 只需改配置，代码零修改
+</code></pre><p>这种设计让 Mem0 具备极强的<strong>环境适应性</strong>：</p>
+<ul>
+<li>企业内网：用 Ollama + Qdrant（全本地）</li>
+<li>云端生产：用 OpenAI + Pinecone（全托管）</li>
+<li>混合部署：用 Groq 提取 + Chroma 存储（性价比）</li>
+</ul>
+<hr>
+<h2 id="六核心-prompt-深度解析记忆提取的大脑">
+  六、核心 Prompt 深度解析：记忆提取的&quot;大脑&quot;
+  <a class="anchor" href="#%e5%85%ad%e6%a0%b8%e5%bf%83-prompt-%e6%b7%b1%e5%ba%a6%e8%a7%a3%e6%9e%90%e8%ae%b0%e5%bf%86%e6%8f%90%e5%8f%96%e7%9a%84%e5%a4%a7%e8%84%91">#</a>
+</h2>
+<p>Mem0 的&quot;智能&quot;很大程度上来自精心设计的 Prompt。位于 <code>mem0/configs/prompts.py</code>。</p>
+<h3 id="61-fact_retrieval_prompt事实提取">
+  6.1 FACT_RETRIEVAL_PROMPT（事实提取）
+  <a class="anchor" href="#61-fact_retrieval_prompt%e4%ba%8b%e5%ae%9e%e6%8f%90%e5%8f%96">#</a>
+</h3>
+<p>这是 Mem0 的核心 Prompt，指导 LLM 从对话中提取结构化事实：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>FACT_RETRIEVAL_PROMPT <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;&#34;&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">You are a Personal Information Organizer, specialized in accurately storing facts, 
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">user memories, and preferences...
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Types of Information to Remember:
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">1. Store Personal Preferences: Likes, dislikes, specific preferences...
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">2. Maintain Important Personal Details: Names, relationships, important dates...
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">3. Track Plans and Intentions: Upcoming events, trips, goals...
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">4. Remember Activity and Service Preferences: Dining, travel, hobbies...
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">5. Monitor Health and Wellness Preferences: Dietary restrictions, fitness...
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">6. Store Professional Details: Job titles, work habits, career goals...
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">7. Miscellaneous Information Management: Favorite books, movies, brands...
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Few-shot examples:
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Input: Hi, my name is John. I am a software engineer.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Output: {&#34;facts&#34; : [&#34;Name is John&#34;, &#34;Is a Software engineer&#34;]}
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Input: Me favourite movies are Inception and Interstellar.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Output: {&#34;facts&#34; : [&#34;Favourite movies are Inception and Interstellar&#34;]}
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;</span>
+</span></span></code></pre></div><p><strong>设计亮点</strong>：</p>
+<ol>
+<li><strong>七类记忆分类</strong>：确保 LLM 全面捕捉各类信息，不遗漏</li>
+<li><strong>Few-shot 示例</strong>：明确输出格式（JSON），过滤无关信息（如&quot;树有树枝&quot;这类常识不记录）</li>
+<li><strong>JSON 约束</strong>：强制结构化输出，方便后续处理</li>
+</ol>
+<h3 id="62-memory_answer_prompt记忆问答">
+  6.2 MEMORY_ANSWER_PROMPT（记忆问答）
+  <a class="anchor" href="#62-memory_answer_prompt%e8%ae%b0%e5%bf%86%e9%97%ae%e7%ad%94">#</a>
+</h3>
+<p>当 Agent 需要基于记忆回答问题时：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>MEMORY_ANSWER_PROMPT <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;&#34;&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">You are an expert at answering questions based on the provided memories...
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">- Extract relevant information from the memories based on the question.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">- If no relevant information is found, make sure you don&#39;t say no information is found. 
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  Instead, accept the question and provide a general response.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;</span>
+</span></span></code></pre></div><p><strong>降级策略</strong>：当记忆中没有答案时，不要说&quot;找不到信息&quot;，而是给出通用回答。这提升了用户体验。</p>
+<h3 id="63-procedural-memory程序记忆">
+  6.3 Procedural Memory（程序记忆）
+  <a class="anchor" href="#63-procedural-memory%e7%a8%8b%e5%ba%8f%e8%ae%b0%e5%bf%86">#</a>
+</h3>
+<p>与事实记忆不同，程序记忆是**&ldquo;如何做&rdquo;**的知识：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>PROCEDURAL_MEMORY_SYSTEM_PROMPT <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;&#34;&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">You are an expert at creating procedural memories - instructions for how to do things...
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;</span>
+</span></span></code></pre></div><p>例如：&ldquo;如何使用公司内部的 CLI 工具部署服务&rdquo;，这类知识更适合用程序记忆存储。</p>
+<hr>
+<h2 id="七配置系统pydantic-驱动的热插拔架构">
+  七、配置系统：Pydantic 驱动的热插拔架构
+  <a class="anchor" href="#%e4%b8%83%e9%85%8d%e7%bd%ae%e7%b3%bb%e7%bb%9fpydantic-%e9%a9%b1%e5%8a%a8%e7%9a%84%e7%83%ad%e6%8f%92%e6%8b%94%e6%9e%b6%e6%9e%84">#</a>
+</h2>
+<p>Mem0 的配置系统基于 Pydantic，类型安全且支持热插拔。</p>
+<h3 id="71-memoryconfig-配置模型">
+  7.1 MemoryConfig 配置模型
+  <a class="anchor" href="#71-memoryconfig-%e9%85%8d%e7%bd%ae%e6%a8%a1%e5%9e%8b">#</a>
+</h3>
+<p>位于 <code>mem0/configs/base.py</code>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">MemoryConfig</span>(BaseModel):
+</span></span><span style="display:flex;"><span>    vector_store: VectorStoreConfig <span style="color:#f92672">=</span> Field(
+</span></span><span style="display:flex;"><span>        description<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;Configuration for the vector store&#34;</span>,
+</span></span><span style="display:flex;"><span>        default_factory<span style="color:#f92672">=</span>VectorStoreConfig,
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>    llm: LlmConfig <span style="color:#f92672">=</span> Field(
+</span></span><span style="display:flex;"><span>        description<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;Configuration for the language model&#34;</span>,
+</span></span><span style="display:flex;"><span>        default_factory<span style="color:#f92672">=</span>LlmConfig,
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>    embedder: EmbedderConfig <span style="color:#f92672">=</span> Field(
+</span></span><span style="display:flex;"><span>        description<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;Configuration for the embedding model&#34;</span>,
+</span></span><span style="display:flex;"><span>        default_factory<span style="color:#f92672">=</span>EmbedderConfig,
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>    history_db_path: str <span style="color:#f92672">=</span> Field(
+</span></span><span style="display:flex;"><span>        description<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;Path to the history database&#34;</span>,
+</span></span><span style="display:flex;"><span>        default<span style="color:#f92672">=</span>os<span style="color:#f92672">.</span>path<span style="color:#f92672">.</span>join(mem0_dir, <span style="color:#e6db74">&#34;history.db&#34;</span>),
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>    reranker: Optional[RerankerConfig] <span style="color:#f92672">=</span> Field(
+</span></span><span style="display:flex;"><span>        description<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;Configuration for the reranker&#34;</span>,
+</span></span><span style="display:flex;"><span>        default<span style="color:#f92672">=</span><span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>    custom_instructions: Optional[str] <span style="color:#f92672">=</span> Field(
+</span></span><span style="display:flex;"><span>        description<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;Custom instructions for fact extraction&#34;</span>,
+</span></span><span style="display:flex;"><span>        default<span style="color:#f92672">=</span><span style="color:#66d9ef">None</span>,
+</span></span><span style="display:flex;"><span>    )
+</span></span></code></pre></div><h3 id="72-零配置-vs-生产配置">
+  7.2 零配置 vs 生产配置
+  <a class="anchor" href="#72-%e9%9b%b6%e9%85%8d%e7%bd%ae-vs-%e7%94%9f%e4%ba%a7%e9%85%8d%e7%bd%ae">#</a>
+</h3>
+<p><strong>最小配置（零配置启动）</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> mem0 <span style="color:#f92672">import</span> Memory
+</span></span><span style="display:flex;"><span>m <span style="color:#f92672">=</span> Memory()  <span style="color:#75715e"># 使用默认 Qdrant + OpenAI + OpenAI Embedding</span>
+</span></span></code></pre></div><p><strong>生产完整配置</strong>：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>config <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;vector_store&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;provider&#34;</span>: <span style="color:#e6db74">&#34;qdrant&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;config&#34;</span>: {
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;host&#34;</span>: <span style="color:#e6db74">&#34;localhost&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;port&#34;</span>: <span style="color:#ae81ff">6333</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;collection_name&#34;</span>: <span style="color:#e6db74">&#34;my_memories&#34;</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;llm&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;provider&#34;</span>: <span style="color:#e6db74">&#34;openai&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;config&#34;</span>: {
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;model&#34;</span>: <span style="color:#e6db74">&#34;gpt-4o-mini&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;temperature&#34;</span>: <span style="color:#ae81ff">0.1</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;embedder&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;provider&#34;</span>: <span style="color:#e6db74">&#34;openai&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;config&#34;</span>: {
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;model&#34;</span>: <span style="color:#e6db74">&#34;text-embedding-3-small&#34;</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;custom_instructions&#34;</span>: <span style="color:#e6db74">&#34;只记录与软件开发相关的偏好。&#34;</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>m <span style="color:#f92672">=</span> Memory<span style="color:#f92672">.</span>from_config(config)
+</span></span></code></pre></div><hr>
+<h2 id="八高级特性源码分析">
+  八、高级特性源码分析
+  <a class="anchor" href="#%e5%85%ab%e9%ab%98%e7%ba%a7%e7%89%b9%e6%80%a7%e6%ba%90%e7%a0%81%e5%88%86%e6%9e%90">#</a>
+</h2>
+<h3 id="81-reranker-重排序">
+  8.1 Reranker 重排序
+  <a class="anchor" href="#81-reranker-%e9%87%8d%e6%8e%92%e5%ba%8f">#</a>
+</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">search</span>(self, query, <span style="color:#f92672">...</span>, rerank: bool <span style="color:#f92672">=</span> <span style="color:#66d9ef">False</span>, <span style="color:#f92672">...</span>):
+</span></span></code></pre></div><p>当 <code>rerank=True</code> 时，Mem0 会调用 Reranker 对 top_k 结果进行精排。</p>
+<p><strong>RerankerFactory</strong> 位于 <code>mem0/utils/factory.py</code>，支持多种重排序模型。适用于对精度要求高的场景，但会增加延迟。</p>
+<h3 id="82-记忆版本与历史">
+  8.2 记忆版本与历史
+  <a class="anchor" href="#82-%e8%ae%b0%e5%bf%86%e7%89%88%e6%9c%ac%e4%b8%8e%e5%8e%86%e5%8f%b2">#</a>
+</h3>
+<p>Mem0 记录每次记忆的变更历史，通过 SQLite <code>history.db</code> 存储：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">history</span>(self, memory_id: str) <span style="color:#f92672">-&gt;</span> list:
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Get the history of changes for a memory by ID.&#34;&#34;&#34;</span>
+</span></span></code></pre></div><p>每次 <code>UPDATE</code> 或 <code>DELETE</code> 都会记录变更时间、旧值、新值。这对于<strong>审计和回溯</strong>非常有用。</p>
+<h3 id="83-安全设计">
+  8.3 安全设计
+  <a class="anchor" href="#83-%e5%ae%89%e5%85%a8%e8%ae%be%e8%ae%a1">#</a>
+</h3>
+<table>
+	<thead>
+			<tr>
+					<th>机制</th>
+					<th>源码位置</th>
+					<th>作用</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><strong>敏感字段脱敏</strong></td>
+					<td><code>_SENSITIVE_FIELDS_EXACT</code></td>
+					<td>自动过滤 <code>api_key</code>, <code>password</code> 等</td>
+			</tr>
+			<tr>
+					<td><strong>运行时对象保护</strong></td>
+					<td><code>_RUNTIME_FIELDS</code></td>
+					<td>保护 <code>auth</code>, <code>connection_class</code> 等非序列化对象</td>
+			</tr>
+			<tr>
+					<td><strong>身份隔离</strong></td>
+					<td><code>_IDENTITY_KEYS</code></td>
+					<td>防止元数据污染 <code>user_id</code> 等身份字段</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="84-telemetry-遥测">
+  8.4 Telemetry 遥测
+  <a class="anchor" href="#84-telemetry-%e9%81%a5%e6%b5%8b">#</a>
+</h3>
+<p><code>mem0.memory.telemetry</code> 模块捕获匿名使用统计：</p>
+<ul>
+<li><code>add</code> 调用次数</li>
+<li><code>search</code> 调用次数</li>
+<li><code>delete</code> 调用次数</li>
+</ul>
+<p>保护隐私：不上传具体记忆内容，仅统计操作频率。</p>
+<hr>
+<h2 id="九与其他记忆方案的对比分析">
+  九、与其他记忆方案的对比分析
+  <a class="anchor" href="#%e4%b9%9d%e4%b8%8e%e5%85%b6%e4%bb%96%e8%ae%b0%e5%bf%86%e6%96%b9%e6%a1%88%e7%9a%84%e5%af%b9%e6%af%94%e5%88%86%e6%9e%90">#</a>
+</h2>
+<table>
+	<thead>
+			<tr>
+					<th>维度</th>
+					<th>原生 Session History</th>
+					<th>RAG</th>
+					<th>Mem0</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><strong>自动提取</strong></td>
+					<td>—</td>
+					<td>—</td>
+					<td>✅ LLM 自动提取事实</td>
+			</tr>
+			<tr>
+					<td><strong>结构化存储</strong></td>
+					<td>线性堆叠</td>
+					<td>文档切片</td>
+					<td>✅ 结构化事实记忆</td>
+			</tr>
+			<tr>
+					<td><strong>增量更新</strong></td>
+					<td>—</td>
+					<td>重新索引</td>
+					<td>✅ ADD/UPDATE/DELETE 自动决策</td>
+			</tr>
+			<tr>
+					<td><strong>语义检索</strong></td>
+					<td>—</td>
+					<td>✅</td>
+					<td>✅</td>
+			</tr>
+			<tr>
+					<td><strong>身份隔离</strong></td>
+					<td>Session 级</td>
+					<td>元数据过滤</td>
+					<td>✅ user_id/agent_id/run_id 三元隔离</td>
+			</tr>
+			<tr>
+					<td><strong>记忆演化</strong></td>
+					<td>—</td>
+					<td>—</td>
+					<td>✅ 历史追踪</td>
+			</tr>
+			<tr>
+					<td><strong>多后端支持</strong></td>
+					<td>—</td>
+					<td>依赖 RAG 框架</td>
+					<td>✅ 25+ 向量库 + 15+ 嵌入 + 20+ LLM</td>
+			</tr>
+			<tr>
+					<td><strong>可执行记忆</strong></td>
+					<td>—</td>
+					<td>—</td>
+					<td>❌ （TencentDB Agent Memory 有 Skill）</td>
+			</tr>
+	</tbody>
+</table>
+<p><strong>Mem0 的核心优势</strong>在于：</p>
+<ol>
+<li><strong>自动事实提取</strong>：不需要手动整理记忆，LLM 自动从对话中提取</li>
+<li><strong>增量更新决策</strong>：自动判断 ADD/UPDATE/DELETE，保持记忆新鲜</li>
+<li><strong>插件化架构</strong>：几乎支持所有主流向量库和 LLM</li>
+</ol>
+<p><strong>Mem0 的不足</strong>在于：</p>
+<ol>
+<li>没有 Skill/SOP 记忆（不像 TencentDB Agent Memory 有可执行经验沉淀）</li>
+<li>没有代码影响分析（CodeGraph）</li>
+<li>依赖 LLM 提取，有成本和延迟开销</li>
+</ol>
+<hr>
+<h2 id="十源码中的关键设计模式总结">
+  十、源码中的关键设计模式总结
+  <a class="anchor" href="#%e5%8d%81%e6%ba%90%e7%a0%81%e4%b8%ad%e7%9a%84%e5%85%b3%e9%94%ae%e8%ae%be%e8%ae%a1%e6%a8%a1%e5%bc%8f%e6%80%bb%e7%bb%93">#</a>
+</h2>
+<h3 id="1-factory-模式">
+  1. Factory 模式
+  <a class="anchor" href="#1-factory-%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<p><code>EmbedderFactory</code> / <code>VectorStoreFactory</code> / <code>LlmFactory</code> 统一接口，插件化后端。切换后端只需改配置，不改代码。</p>
+<h3 id="2-facade-模式">
+  2. Facade 模式
+  <a class="anchor" href="#2-facade-%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<p><code>Memory</code> 类统一 <code>add/search/get/delete</code> 接口，隐藏底层向量库、LLM、嵌入模型的复杂性。</p>
+<h3 id="3-策略模式">
+  3. 策略模式
+  <a class="anchor" href="#3-%e7%ad%96%e7%95%a5%e6%a8%a1%e5%bc%8f">#</a>
+</h3>
+<p><code>infer=True</code>（LLM 提取事实）vs <code>infer=False</code>（直写原始消息），根据场景选择不同策略。</p>
+<h3 id="4-basemodel-配置驱动">
+  4. BaseModel 配置驱动
+  <a class="anchor" href="#4-basemodel-%e9%85%8d%e7%bd%ae%e9%a9%b1%e5%8a%a8">#</a>
+</h3>
+<p>Pydantic 模型热插拔，类型安全，支持零配置启动和生产调优。</p>
+<h3 id="5-安全脱敏">
+  5. 安全脱敏
+  <a class="anchor" href="#5-%e5%ae%89%e5%85%a8%e8%84%b1%e6%95%8f">#</a>
+</h3>
+<p>敏感字段自动过滤，身份隔离防污染，<code>_IDENTITY_KEYS</code> 硬约束。</p>
+<h3 id="6-统一评分规范">
+  6. 统一评分规范
+  <a class="anchor" href="#6-%e7%bb%9f%e4%b8%80%e8%af%84%e5%88%86%e8%a7%84%e8%8c%83">#</a>
+</h3>
+<p>所有向量库返回 <code>score ∈ [0, 1]</code>，距离度量自动转换，上层无感知。</p>
+<hr>
+<h2 id="总结">
+  总结
+  <a class="anchor" href="#%e6%80%bb%e7%bb%93">#</a>
+</h2>
+<blockquote>
+<p><em>&ldquo;Memory is not a log of conversations. It&rsquo;s a living, evolving representation of knowledge.&rdquo;</em></p>
+</blockquote>
+<p>Mem0 的核心理念是：<strong>记忆不是聊天记录，而是自动提取、结构化存储、按需检索的知识层</strong>。</p>
+<h3 id="架构亮点回顾">
+  架构亮点回顾
+  <a class="anchor" href="#%e6%9e%b6%e6%9e%84%e4%ba%ae%e7%82%b9%e5%9b%9e%e9%a1%be">#</a>
+</h3>
+<table>
+	<thead>
+			<tr>
+					<th>亮点</th>
+					<th>价值</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><strong>三层模型</strong></td>
+					<td>Memory → Factory → Backend，清晰解耦</td>
+			</tr>
+			<tr>
+					<td><strong>LLM 自动提取</strong></td>
+					<td>从对话中自动提取事实，不需要人工整理</td>
+			</tr>
+			<tr>
+					<td><strong>ADD/UPDATE/DELETE 决策</strong></td>
+					<td>自动维护记忆新鲜度，避免过期信息干扰</td>
+			</tr>
+			<tr>
+					<td><strong>25+ 向量库支持</strong></td>
+					<td>适配几乎所有主流向量数据库</td>
+			</tr>
+			<tr>
+					<td><strong>插件化架构</strong></td>
+					<td>切换 LLM/Embedder/VectorStore 只需改配置</td>
+			</tr>
+			<tr>
+					<td><strong>统一评分规范</strong></td>
+					<td>所有后端返回统一 score，上层无感知</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="最佳实践清单">
+  最佳实践清单
+  <a class="anchor" href="#%e6%9c%80%e4%bd%b3%e5%ae%9e%e8%b7%b5%e6%b8%85%e5%8d%95">#</a>
+</h3>
+<ol>
+<li><strong>选型建议</strong>：
+<ul>
+<li>开发测试：Chroma + Ollama（全本地，零成本）</li>
+<li>小规模生产：Qdrant + OpenAI（默认配置）</li>
+<li>大规模生产：Pinecone/Milvus + Groq（高性能）</li>
+</ul>
+</li>
+<li><strong>成本控制</strong>：事实提取用便宜模型（gpt-4o-mini / Claude Haiku）</li>
+<li><strong>自定义指令</strong>：通过 <code>custom_instructions</code> 限制提取范围（如&quot;只记录技术偏好&quot;）</li>
+<li><strong>身份隔离</strong>：严格使用 <code>user_id</code> / <code>agent_id</code> 隔离不同用户/Agent 的记忆</li>
+<li><strong>定期清理</strong>：使用 <code>delete_all()</code> 清理过期或无效记忆</li>
+</ol>
+<h3 id="未来展望">
+  未来展望
+  <a class="anchor" href="#%e6%9c%aa%e6%9d%a5%e5%b1%95%e6%9c%9b">#</a>
+</h3>
+<ul>
+<li><strong>Temporal Memory</strong>：时间维度记忆（如&quot;用户<strong>曾经</strong>喜欢 X，但现在喜欢 Y&quot;）</li>
+<li><strong>Entity Graph</strong>：实体关系图（人、地点、事件的关联）</li>
+<li><strong>Multi-Agent 记忆共享</strong>：跨 Agent 的记忆隔离与共享策略</li>
+<li><strong>Skill 记忆</strong>：可执行的 SOP 记忆（类似 TencentDB Agent Memory 的 Skill）</li>
+</ul>
+<hr>
+<h2 id="参考文章">
+  参考文章
+  <a class="anchor" href="#%e5%8f%82%e8%80%83%e6%96%87%e7%ab%a0">#</a>
+</h2>
+<ol>
+<li>
+<p><strong>Mem0 官方仓库</strong><br>
+<a href="https://github.com/mem0ai/mem0">https://github.com/mem0ai/mem0</a></p>
+</li>
+<li>
+<p><strong>Memory 门面源码</strong><br>
+<code>mem0/memory/main.py</code></p>
+</li>
+<li>
+<p><strong>向量存储抽象接口</strong><br>
+<code>mem0/vector_stores/base.py</code></p>
+</li>
+<li>
+<p><strong>核心 Prompt 定义</strong><br>
+<code>mem0/configs/prompts.py</code></p>
+</li>
+<li>
+<p><strong>配置系统定义</strong><br>
+<code>mem0/configs/base.py</code></p>
+</li>
+<li>
+<p><strong>组件工厂实现</strong><br>
+<code>mem0/utils/factory.py</code></p>
+</li>
+<li>
+<p><strong>安全脱敏机制</strong><br>
+<code>mem0/memory/main.py</code> (<code>_SENSITIVE_FIELDS_EXACT</code>, <code>_IDENTITY_KEYS</code>)</p>
+</li>
+<li>
+<p><strong>Embedder 适配层</strong><br>
+<code>mem0/embeddings/openai.py</code>, <code>mem0/embeddings/ollama.py</code></p>
+</li>
+<li>
+<p><strong>LLM 适配层</strong><br>
+<code>mem0/llms/openai.py</code>, <code>mem0/llms/anthropic.py</code></p>
+</li>
+<li>
+<p><strong>Telemetry 遥测模块</strong><br>
+<code>mem0/memory/telemetry.py</code></p>
+</li>
+</ol>
+<hr>
+<p><em>本文由小伟整理，源码基于 Mem0 (mem0ai/mem0) 公开仓库分析，截至 2026 年 8 月。</em></p>
+</article>
+ 
+      
+
+      <footer class="book-footer">
+        
+  <div class="flex flex-wrap justify-between">
+
+
+
+
+
+</div>
+
+
+
+  <script>(function(){function e(e){const t=window.getSelection(),n=document.createRange();n.selectNodeContents(e),t.removeAllRanges(),t.addRange(n)}document.querySelectorAll("pre code").forEach(t=>{t.addEventListener("click",function(){if(window.getSelection().toString())return;e(t.parentElement),navigator.clipboard&&navigator.clipboard.writeText(t.parentElement.textContent)})})})()</script>
+
+
+ 
+        
+      </footer>
+
+      
+  
+  <div class="book-comments">
+
+</div>
+  
+ 
+
+      <label for="menu-control" class="hidden book-menu-overlay"></label>
+    </div>
+
+    
+    <aside class="book-toc">
+      <div class="book-toc-content">
+        
+  
+<nav id="TableOfContents">
+  <ul>
+    <li><a href="#mem0-源码深度解析universal-memory-layer-for-ai-agents">Mem0 源码深度解析：Universal Memory Layer for AI Agents</a>
+      <ul>
+        <li><a href="#一引言agent-的记忆困境">一、引言：Agent 的&quot;记忆困境&quot;</a>
+          <ul>
+            <li><a href="#11-为什么-rag-不够">1.1 为什么 RAG 不够？</a></li>
+            <li><a href="#12-项目概况">1.2 项目概况</a></li>
+          </ul>
+        </li>
+        <li><a href="#二总体架构记忆层的三层模型">二、总体架构：记忆层的三层模型</a>
+          <ul>
+            <li><a href="#数据流全景">数据流全景</a></li>
+            <li><a href="#核心模块概览">核心模块概览</a></li>
+          </ul>
+        </li>
+        <li><a href="#三memory-门面深度解析从对话到记忆的全链路">三、Memory 门面深度解析：从对话到记忆的全链路</a>
+          <ul>
+            <li><a href="#31-核心方法清单">3.1 核心方法清单</a></li>
+            <li><a href="#32-add-方法全链路源码分析">3.2 add() 方法全链路源码分析</a></li>
+            <li><a href="#33-search-方法源码分析">3.3 search() 方法源码分析</a></li>
+            <li><a href="#34-实体身份隔离机制">3.4 实体身份隔离机制</a></li>
+          </ul>
+        </li>
+        <li><a href="#四向量存储层25-种后端统一抽象">四、向量存储层：25+ 种后端统一抽象</a>
+          <ul>
+            <li><a href="#41-vectorstorebase-抽象接口">4.1 VectorStoreBase 抽象接口</a></li>
+            <li><a href="#42-后端矩阵对比">4.2 后端矩阵对比</a></li>
+            <li><a href="#43-工厂模式源码">4.3 工厂模式源码</a></li>
+          </ul>
+        </li>
+        <li><a href="#五llm-与-embedding-适配层插件化设计">五、LLM 与 Embedding 适配层：插件化设计</a>
+          <ul>
+            <li><a href="#51-embedding-适配矩阵15-种">5.1 Embedding 适配矩阵（15+ 种）</a></li>
+            <li><a href="#52-llm-适配矩阵20-种事实提取引擎">5.2 LLM 适配矩阵（20+ 种，事实提取引擎）</a></li>
+            <li><a href="#53-插件化架构优势">5.3 插件化架构优势</a></li>
+          </ul>
+        </li>
+        <li><a href="#六核心-prompt-深度解析记忆提取的大脑">六、核心 Prompt 深度解析：记忆提取的&quot;大脑&quot;</a>
+          <ul>
+            <li><a href="#61-fact_retrieval_prompt事实提取">6.1 FACT_RETRIEVAL_PROMPT（事实提取）</a></li>
+            <li><a href="#62-memory_answer_prompt记忆问答">6.2 MEMORY_ANSWER_PROMPT（记忆问答）</a></li>
+            <li><a href="#63-procedural-memory程序记忆">6.3 Procedural Memory（程序记忆）</a></li>
+          </ul>
+        </li>
+        <li><a href="#七配置系统pydantic-驱动的热插拔架构">七、配置系统：Pydantic 驱动的热插拔架构</a>
+          <ul>
+            <li><a href="#71-memoryconfig-配置模型">7.1 MemoryConfig 配置模型</a></li>
+            <li><a href="#72-零配置-vs-生产配置">7.2 零配置 vs 生产配置</a></li>
+          </ul>
+        </li>
+        <li><a href="#八高级特性源码分析">八、高级特性源码分析</a>
+          <ul>
+            <li><a href="#81-reranker-重排序">8.1 Reranker 重排序</a></li>
+            <li><a href="#82-记忆版本与历史">8.2 记忆版本与历史</a></li>
+            <li><a href="#83-安全设计">8.3 安全设计</a></li>
+            <li><a href="#84-telemetry-遥测">8.4 Telemetry 遥测</a></li>
+          </ul>
+        </li>
+        <li><a href="#九与其他记忆方案的对比分析">九、与其他记忆方案的对比分析</a></li>
+        <li><a href="#十源码中的关键设计模式总结">十、源码中的关键设计模式总结</a>
+          <ul>
+            <li><a href="#1-factory-模式">1. Factory 模式</a></li>
+            <li><a href="#2-facade-模式">2. Facade 模式</a></li>
+            <li><a href="#3-策略模式">3. 策略模式</a></li>
+            <li><a href="#4-basemodel-配置驱动">4. BaseModel 配置驱动</a></li>
+            <li><a href="#5-安全脱敏">5. 安全脱敏</a></li>
+            <li><a href="#6-统一评分规范">6. 统一评分规范</a></li>
+          </ul>
+        </li>
+        <li><a href="#总结">总结</a>
+          <ul>
+            <li><a href="#架构亮点回顾">架构亮点回顾</a></li>
+            <li><a href="#最佳实践清单">最佳实践清单</a></li>
+            <li><a href="#未来展望">未来展望</a></li>
+          </ul>
+        </li>
+        <li><a href="#参考文章">参考文章</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+
+ 
+      </div>
+    </aside>
+    
+  </main>
+
+  
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
