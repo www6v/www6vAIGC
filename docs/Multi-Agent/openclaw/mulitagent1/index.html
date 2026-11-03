@@ -29,23 +29,23 @@ OpenClaw 是一个超大规模开源个人 AI 助手项目（GitHub ⭐372K&#43;
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
 <meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Multi-Agent/openclaw/mulitagent1/">
-	<meta property="og:site_name" content="Modern Agent">
-	<meta property="og:title" content="Modern Agent">
-	<meta property="og:description" content="OpenClaw 多 Agent 交互：原理、源码实现与应用配置#OpenClaw 是一个超大规模开源个人 AI 助手项目（GitHub ⭐372K&#43;），支持在一个 Gateway 进程中运行多个完全隔离的 Agent，并通过 Binding 路由、Session 通信、Sub-Agent 委派、Agent-to-Agent 对话等多层机制实现灵活的 Agent 间交互。本文从源码层面深度拆解其设计原理、核心实现与配置模式。
-一、引言#“The greatest value of a picture is when it forces us to notice what we never expected to see.” — John Tukey
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="OpenClaw 多 Agent 交互：原理、源码实现与应用配置 # OpenClaw 是一个超大规模开源个人 AI 助手项目（GitHub ⭐372K&#43;），支持在一个 Gateway 进程中运行多个完全隔离的 Agent，并通过 Binding 路由、Session 通信、Sub-Agent 委派、Agent-to-Agent 对话等多层机制实现灵活的 Agent 间交互。本文从源码层面深度拆解其设计原理、核心实现与配置模式。
+一、引言 # “The greatest value of a picture is when it forces us to notice what we never expected to see.” — John Tukey
 在 AI Agent 的发展轨迹中，我们经历了一个有趣的钟摆运动：从早期的单一体 Agent（“一个大脑做所有事”），到后来的多 Agent 协作（“一群大脑分工合作”），再到如今对隔离与协作平衡的重新审视。
-1.1 为什么需要多 Agent 交互#单一 Agent 模式在实践中暴露出三个核心问题：
+1.1 为什么需要多 Agent 交互 # 单一 Agent 模式在实践中暴露出三个核心问题：
 上下文污染：当一个 Agent 同时服务于家庭群聊和工作群聊时，家庭群的对话历史可能泄露到工作场景中，或者工作相关的敏感信息被意外带入家庭对话。这不是概率问题——LLM 的上下文窗口是一个线性序列，所有历史消息平等地参与注意力计算，没有任何内置的隔离边界。
 角色混淆：同一个 Agent 在面对不同受众时，需要切换语气、知识深度、工具权限。一个用于编程助手的 Agent 被要求写菜谱时，其系统提示中的专业术语和代码执行权限反而成为干扰。这类似于操作系统中 root 用户和普通用户的区别——权限混用是安全漏洞的温床。">
-	<meta property="og:locale" content="en">
-	<meta property="og:type" content="website">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
 <title>Mulitagent1 | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Multi-Agent/openclaw/mulitagent1/">
-<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+<link rel="stylesheet" href="/www6vAIGC/book.min.3257a7ce7c061eb5dfc72257c356229b1470dc77ce9b982ac220c02542f9f04f.css" integrity="sha256-MlenznwGHrXfxyJXw1YimxRw3HfOm5gqwiDAJUL58E8=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.b03d70a1a41ebd2598f66475385e5f3acbb00c4c00220e8b32e57e4ea027ff4e.js" integrity="sha256-sD1woaQevSWY9mR1OF5fOsuwDEwAIg6LMuV&#43;TqAn/04=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.9ac9103c9736d6d7fd88e6f79ca53fdabcb398fab716e8ab8092ebfee52b0415.js" integrity="sha256-mskQPJc21tf9iOb3nKU/2ryzmPq3FuirgJLr/uUrBBU=" crossorigin="anonymous"></script>
 <link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Multi-Agent/openclaw/mulitagent1/index.xml" title="Modern Agent" />
 <!--
 Made with Book Theme
@@ -98,8 +98,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="toggle"  />
-    <label for="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="flex justify-between">
+    <input type="checkbox" id="section-8eeae87632e610dbb7fc73d309f4a86d" class="toggle"  />
+    <label for="section-8eeae87632e610dbb7fc73d309f4a86d" class="flex justify-between">
       <a role="button" class="">RAG</a>
     </label>
   
@@ -114,8 +114,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c551263d461ebff83b9463dc3a94952c" class="toggle"  />
-    <label for="section-c551263d461ebff83b9463dc3a94952c" class="flex justify-between">
+    <input type="checkbox" id="section-098fde1b4be868f62390668d03d7d338" class="toggle"  />
+    <label for="section-098fde1b4be868f62390668d03d7d338" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -225,8 +225,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6d871616372a4994f42a7668d9af7715" class="toggle"  />
-    <label for="section-6d871616372a4994f42a7668d9af7715" class="flex justify-between">
+    <input type="checkbox" id="section-7c089cd98011270279a8c4693580483e" class="toggle"  />
+    <label for="section-7c089cd98011270279a8c4693580483e" class="flex justify-between">
       <a role="button" class="">实战 *</a>
     </label>
   
@@ -462,8 +462,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd42bffd52a5c198755daef56da179f9" class="toggle"  />
-    <label for="section-cd42bffd52a5c198755daef56da179f9" class="flex justify-between">
+    <input type="checkbox" id="section-00e0992ed3785617d99441f38424d443" class="toggle"  />
+    <label for="section-00e0992ed3785617d99441f38424d443" class="flex justify-between">
       <a role="button" class="">Pattern</a>
     </label>
   
@@ -663,8 +663,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-afec0c322e2a85b11a48111f0dba315c" class="toggle"  />
-    <label for="section-afec0c322e2a85b11a48111f0dba315c" class="flex justify-between">
+    <input type="checkbox" id="section-5e6438c77671b5eb480dd2c40a29deb4" class="toggle"  />
+    <label for="section-5e6438c77671b5eb480dd2c40a29deb4" class="flex justify-between">
       <a role="button" class="">phase *</a>
     </label>
   
@@ -864,8 +864,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="toggle"  />
-    <label for="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="flex justify-between">
+    <input type="checkbox" id="section-1205a3b6d7d0d892a149b0be18b55680" class="toggle"  />
+    <label for="section-1205a3b6d7d0d892a149b0be18b55680" class="flex justify-between">
       <a role="button" class="">案例</a>
     </label>
   
@@ -926,8 +926,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="toggle"  />
-    <label for="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="flex justify-between">
+    <input type="checkbox" id="section-2853751cf001bfb0dbbd0927de99f326" class="toggle"  />
+    <label for="section-2853751cf001bfb0dbbd0927de99f326" class="flex justify-between">
       <a role="button" class="">Agent Infra</a>
     </label>
   
@@ -942,8 +942,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="toggle"  />
-    <label for="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="flex justify-between">
+    <input type="checkbox" id="section-4277410225f2a82b8e3d740cbc19c27a" class="toggle"  />
+    <label for="section-4277410225f2a82b8e3d740cbc19c27a" class="flex justify-between">
       <a role="button" class="">Dify</a>
     </label>
   
@@ -1017,8 +1017,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d35a724145e4438b19d0128310151060" class="toggle"  />
-    <label for="section-d35a724145e4438b19d0128310151060" class="flex justify-between">
+    <input type="checkbox" id="section-21f3c925847a2d764db6eed92d3a72d8" class="toggle"  />
+    <label for="section-21f3c925847a2d764db6eed92d3a72d8" class="flex justify-between">
       <a role="button" class="">产品</a>
     </label>
   
@@ -1056,8 +1056,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d8fb1e2742348190fede849f378398c8" class="toggle"  />
-    <label for="section-d8fb1e2742348190fede849f378398c8" class="flex justify-between">
+    <input type="checkbox" id="section-781abe85b1b1e35a22f023c37cdc2d1e" class="toggle"  />
+    <label for="section-781abe85b1b1e35a22f023c37cdc2d1e" class="flex justify-between">
       <a role="button" class="">API</a>
     </label>
   
@@ -1113,8 +1113,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="toggle"  />
-    <label for="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="flex justify-between">
+    <input type="checkbox" id="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="toggle"  />
+    <label for="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="flex justify-between">
       <a role="button" class="">Sandbox</a>
     </label>
   
@@ -1170,8 +1170,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="toggle"  />
-    <label for="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="flex justify-between">
+    <input type="checkbox" id="section-c1654de4801752aac71344ec5dc9df88" class="toggle"  />
+    <label for="section-c1654de4801752aac71344ec5dc9df88" class="flex justify-between">
       <a role="button" class="">SDK</a>
     </label>
   
@@ -1232,8 +1232,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-465ebbe8c8eae209a571787ecebad2c0" class="toggle"  />
-    <label for="section-465ebbe8c8eae209a571787ecebad2c0" class="flex justify-between">
+    <input type="checkbox" id="section-0883be528cd603181ff8e3bbd53972c2" class="toggle"  />
+    <label for="section-0883be528cd603181ff8e3bbd53972c2" class="flex justify-between">
       <a role="button" class="">Agent</a>
     </label>
   
@@ -1248,8 +1248,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f76aa66a03b4f060262d5e206195edee" class="toggle"  />
-    <label for="section-f76aa66a03b4f060262d5e206195edee" class="flex justify-between">
+    <input type="checkbox" id="section-60cbe7eba0e55272c2f7e88142209eee" class="toggle"  />
+    <label for="section-60cbe7eba0e55272c2f7e88142209eee" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -1305,8 +1305,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d28aa4a73439b10799fd7621d99b09a8" class="toggle"  />
-    <label for="section-d28aa4a73439b10799fd7621d99b09a8" class="flex justify-between">
+    <input type="checkbox" id="section-34b90f1a802a08434ef79ad7e69c7bec" class="toggle"  />
+    <label for="section-34b90f1a802a08434ef79ad7e69c7bec" class="flex justify-between">
       <a role="button" class="">Practice</a>
     </label>
   
@@ -1398,8 +1398,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="toggle"  />
-    <label for="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="flex justify-between">
+    <input type="checkbox" id="section-d23f53c64147d40d7800ad362d50d826" class="toggle"  />
+    <label for="section-d23f53c64147d40d7800ad362d50d826" class="flex justify-between">
       <a role="button" class="">Reflection</a>
     </label>
   
@@ -1437,8 +1437,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c1c7bf1336ea4ad525ce468e5624159f" class="toggle"  />
-    <label for="section-c1c7bf1336ea4ad525ce468e5624159f" class="flex justify-between">
+    <input type="checkbox" id="section-071bdfde77f8dcb0258746094eb4b7ab" class="toggle"  />
+    <label for="section-071bdfde77f8dcb0258746094eb4b7ab" class="flex justify-between">
       <a role="button" class="">Planning</a>
     </label>
   
@@ -1530,8 +1530,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="toggle"  />
-    <label for="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="flex justify-between">
+    <input type="checkbox" id="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="toggle"  />
+    <label for="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1546,8 +1546,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e338773a0b87bd3d5520b81d5b88db62" class="toggle"  />
-    <label for="section-e338773a0b87bd3d5520b81d5b88db62" class="flex justify-between">
+    <input type="checkbox" id="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="toggle"  />
+    <label for="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1611,8 +1611,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9d0fe56670c342283f8f972214b72137" class="toggle"  />
-    <label for="section-9d0fe56670c342283f8f972214b72137" class="flex justify-between">
+    <input type="checkbox" id="section-fb50c7bc07294aad8ab163e5c05043d7" class="toggle"  />
+    <label for="section-fb50c7bc07294aad8ab163e5c05043d7" class="flex justify-between">
       <a role="button" class="">Hermes</a>
     </label>
   
@@ -1686,8 +1686,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a9773226cdddc85ff8f10cae8bdb49a2" class="toggle"  />
-    <label for="section-a9773226cdddc85ff8f10cae8bdb49a2" class="flex justify-between">
+    <input type="checkbox" id="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="toggle"  />
+    <label for="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="flex justify-between">
       <a role="button" class="">managed agents</a>
     </label>
   
@@ -1743,8 +1743,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-041a0b369c13985983a2e78e073f1143" class="toggle"  />
-    <label for="section-041a0b369c13985983a2e78e073f1143" class="flex justify-between">
+    <input type="checkbox" id="section-f0d84b83965f02340d4fc81e88ba04ab" class="toggle"  />
+    <label for="section-f0d84b83965f02340d4fc81e88ba04ab" class="flex justify-between">
       <a role="button" class="">Memory *</a>
     </label>
   
@@ -1901,8 +1901,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-360e9d19bffa35d5db5a46e0c0c05a65" class="toggle"  />
-    <label for="section-360e9d19bffa35d5db5a46e0c0c05a65" class="flex justify-between">
+    <input type="checkbox" id="section-66d86d5f38d04ef58ebb26728c026d4e" class="toggle"  />
+    <label for="section-66d86d5f38d04ef58ebb26728c026d4e" class="flex justify-between">
       <a role="button" class="">Openclaw</a>
     </label>
   
@@ -1940,8 +1940,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="toggle"  />
-    <label for="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="flex justify-between">
+    <input type="checkbox" id="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="toggle"  />
+    <label for="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
@@ -2020,8 +2020,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="toggle" checked />
-    <label for="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="flex justify-between">
+    <input type="checkbox" id="section-f9cf8c4489e32d49710bcbde19d88feb" class="toggle" checked />
+    <label for="section-f9cf8c4489e32d49710bcbde19d88feb" class="flex justify-between">
       <a role="button" class="">Multi Agent</a>
     </label>
   
@@ -2036,8 +2036,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e496587d113a69d69794ccf2791a9ec7" class="toggle"  />
-    <label for="section-e496587d113a69d69794ccf2791a9ec7" class="flex justify-between">
+    <input type="checkbox" id="section-7eb50204504aa47e2bb008fa842d839e" class="toggle"  />
+    <label for="section-7eb50204504aa47e2bb008fa842d839e" class="flex justify-between">
       <a role="button" class="">Agent编排</a>
     </label>
   
@@ -2093,8 +2093,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-386b9d0b04e254d93a6bcfe648c4dabb" class="toggle"  />
-    <label for="section-386b9d0b04e254d93a6bcfe648c4dabb" class="flex justify-between">
+    <input type="checkbox" id="section-f36497092f145d804086d65929bc2e21" class="toggle"  />
+    <label for="section-f36497092f145d804086d65929bc2e21" class="flex justify-between">
       <a role="button" class="">Multi-agent</a>
     </label>
   
@@ -2186,8 +2186,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3b952b230f5462315a195fb221f48926" class="toggle" checked />
-    <label for="section-3b952b230f5462315a195fb221f48926" class="flex justify-between">
+    <input type="checkbox" id="section-68da3356eb5814cf26b079259a3868f0" class="toggle" checked />
+    <label for="section-68da3356eb5814cf26b079259a3868f0" class="flex justify-between">
       <a role="button" class="">OpenClaw *</a>
     </label>
   
@@ -2261,8 +2261,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d1f7a2a771a519d5e8b989f2e775ff25" class="toggle"  />
-    <label for="section-d1f7a2a771a519d5e8b989f2e775ff25" class="flex justify-between">
+    <input type="checkbox" id="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="toggle"  />
+    <label for="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="flex justify-between">
       <a role="button" class="">subagent *</a>
     </label>
   
@@ -2318,8 +2318,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b8e7621552172a9013b3c0dae0dba198" class="toggle"  />
-    <label for="section-b8e7621552172a9013b3c0dae0dba198" class="flex justify-between">
+    <input type="checkbox" id="section-88a7a1de323948713dc3ef284015e786" class="toggle"  />
+    <label for="section-88a7a1de323948713dc3ef284015e786" class="flex justify-between">
       <a role="button" class="">Teams *</a>
     </label>
   
@@ -2380,8 +2380,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="toggle"  />
-    <label for="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="flex justify-between">
+    <input type="checkbox" id="section-32002b3a68174992b401de86ca7466b5" class="toggle"  />
+    <label for="section-32002b3a68174992b401de86ca7466b5" class="flex justify-between">
       <a role="button" class="">Tool &amp; Skill</a>
     </label>
   
@@ -2414,8 +2414,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5cca64c106a3667481dd63b47c86e87a" class="toggle"  />
-    <label for="section-5cca64c106a3667481dd63b47c86e87a" class="flex justify-between">
+    <input type="checkbox" id="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="toggle"  />
+    <label for="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="flex justify-between">
       <a role="button" class="">Survey &amp; SFT</a>
     </label>
   
@@ -2507,8 +2507,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c655fd9062845f96cffb72685b2fd696" class="toggle"  />
-    <label for="section-c655fd9062845f96cffb72685b2fd696" class="flex justify-between">
+    <input type="checkbox" id="section-80682025fb6883cc3c0dd48368b5f7e2" class="toggle"  />
+    <label for="section-80682025fb6883cc3c0dd48368b5f7e2" class="flex justify-between">
       <a role="button" class="">Tool 演进</a>
     </label>
   
@@ -2546,8 +2546,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-412785899ca57a1289f566e38e9ac427" class="toggle"  />
-    <label for="section-412785899ca57a1289f566e38e9ac427" class="flex justify-between">
+    <input type="checkbox" id="section-906763a3f2cf8396c71a61e320169919" class="toggle"  />
+    <label for="section-906763a3f2cf8396c71a61e320169919" class="flex justify-between">
       <a role="button" class="">tools</a>
     </label>
   
@@ -2585,8 +2585,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="toggle"  />
-    <label for="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="flex justify-between">
+    <input type="checkbox" id="section-92f9fae5d8ab88847e6e20bd4d125306" class="toggle"  />
+    <label for="section-92f9fae5d8ab88847e6e20bd4d125306" class="flex justify-between">
       <a role="button" class="">MCP *</a>
     </label>
   
@@ -2678,8 +2678,42 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-efd004ff6efd6d01576ed8f1a0e02adf" class="toggle"  />
-    <label for="section-efd004ff6efd6d01576ed8f1a0e02adf" class="flex justify-between">
+    <input type="checkbox" id="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="toggle"  />
+    <label for="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="flex justify-between">
+      <a role="button" class="">integrate *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/integrate/hermes/Agent-Harness-%E5%A6%82%E4%BD%95%E4%B8%8E%E4%BC%81%E4%B8%9A%E5%86%85%E9%83%A8%E7%B3%BB%E7%BB%9F%E9%9B%86%E6%88%90/" class="">Agent Harness 如何与企业内部系统集成</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-10c047fd3087cf2b29cccd85fa867912" class="toggle"  />
+    <label for="section-10c047fd3087cf2b29cccd85fa867912" class="flex justify-between">
       <a role="button" class="">skill *</a>
     </label>
   
@@ -2784,8 +2818,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="toggle"  />
-    <label for="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="flex justify-between">
+    <input type="checkbox" id="section-8f63915fcb39ad7378f7bc5015f45f65" class="toggle"  />
+    <label for="section-8f63915fcb39ad7378f7bc5015f45f65" class="flex justify-between">
       <a role="button" class="">Agent Eval</a>
     </label>
   
@@ -2818,8 +2852,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a89b3f08479487c94e6a45e37e72a862" class="toggle"  />
-    <label for="section-a89b3f08479487c94e6a45e37e72a862" class="flex justify-between">
+    <input type="checkbox" id="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="toggle"  />
+    <label for="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="flex justify-between">
       <a role="button" class="">Demystifying Evals for AI Agents</a>
     </label>
   
@@ -2870,8 +2904,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-83c0821b846e1dac2e8bfc2d8d45e825" class="toggle"  />
-    <label for="section-83c0821b846e1dac2e8bfc2d8d45e825" class="flex justify-between">
+    <input type="checkbox" id="section-6a8786ba009ef23a5dd033a252f02f8b" class="toggle"  />
+    <label for="section-6a8786ba009ef23a5dd033a252f02f8b" class="flex justify-between">
       <a role="button" class="">langfuse</a>
     </label>
   
@@ -2909,8 +2943,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9c20639ed9ed4feb764f4bac9cac218f" class="toggle"  />
-    <label for="section-9c20639ed9ed4feb764f4bac9cac218f" class="flex justify-between">
+    <input type="checkbox" id="section-159965614aff9bed370d992d243d0f28" class="toggle"  />
+    <label for="section-159965614aff9bed370d992d243d0f28" class="flex justify-between">
       <a role="button" class="">ragas</a>
     </label>
   
@@ -2948,8 +2982,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f0f5dda3ea316a50f6d522c3904406d7" class="toggle"  />
-    <label for="section-f0f5dda3ea316a50f6d522c3904406d7" class="flex justify-between">
+    <input type="checkbox" id="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="toggle"  />
+    <label for="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="flex justify-between">
       <a role="button" class="">llm-as-judge</a>
     </label>
   
@@ -3101,8 +3135,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="toggle"  />
-    <label for="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="flex justify-between">
+    <input type="checkbox" id="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="toggle"  />
+    <label for="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="flex justify-between">
       <a role="button" class="">Harness engineering</a>
     </label>
   
@@ -3117,8 +3151,212 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-fba0f3dbc923c98eb8930452d3ded9da" class="toggle"  />
-    <label for="section-fba0f3dbc923c98eb8930452d3ded9da" class="flex justify-between">
+    <input type="checkbox" id="section-104617d101dbf375f60fa698eeb5966a" class="toggle"  />
+    <label for="section-104617d101dbf375f60fa698eeb5966a" class="flex justify-between">
+      <a role="button" class="">Compress *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code/" class="">Claude /compact[A1] *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-compress/" class="">Claude Code - Compact summary</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/codex/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code2/" class="">Claude Code2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code3/" class="">Claude Code3</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f957c352b7370ac61b04758ecb52fade" class="toggle"  />
+    <label for="section-f957c352b7370ac61b04758ecb52fade" class="flex justify-between">
+      <a role="button" class="">可靠性 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/codex/" class="">Codex 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/dsh/" class="">Deepseek harness 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/pi-durable/" class="">Pi Durable</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="toggle"  />
+    <label for="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="flex justify-between">
       <a role="button" class="">Harness</a>
     </label>
   
@@ -3133,7 +3371,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/10-harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
   
 
           
@@ -3151,7 +3389,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/10-harness-enginering/harness/" class="">Harness</a>
   
 
           
@@ -3174,8 +3412,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="toggle"  />
-    <label for="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="flex justify-between">
+    <input type="checkbox" id="section-a0f0941605053d7b5666363df4970351" class="toggle"  />
+    <label for="section-a0f0941605053d7b5666363df4970351" class="flex justify-between">
       <a role="button" class="">OpenClaw</a>
     </label>
   
@@ -3321,8 +3559,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-946abd4062c933c072a8c623969add46" class="toggle"  />
-    <label for="section-946abd4062c933c072a8c623969add46" class="flex justify-between">
+    <input type="checkbox" id="section-7185e230a37938c1265b025f647037ad" class="toggle"  />
+    <label for="section-7185e230a37938c1265b025f647037ad" class="flex justify-between">
       <a role="button" class="">Hermes Agent</a>
     </label>
   
@@ -3432,47 +3670,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e7b0748ad48450dde76b72297d165429" class="toggle"  />
-    <label for="section-e7b0748ad48450dde76b72297d165429" class="flex justify-between">
-      <a role="button" class="">JEV</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/JEV/JEV/" class="">JEV</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-fcf812d87768431bb3ab86201a4222e2" class="toggle"  />
-    <label for="section-fcf812d87768431bb3ab86201a4222e2" class="flex justify-between">
+    <input type="checkbox" id="section-9d52e8079db1067f4a0c448c7b68b11b" class="toggle"  />
+    <label for="section-9d52e8079db1067f4a0c448c7b68b11b" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
@@ -3582,8 +3781,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-02af4685675e68e6f8179d748eeb6c5a" class="toggle"  />
-    <label for="section-02af4685675e68e6f8179d748eeb6c5a" class="flex justify-between">
+    <input type="checkbox" id="section-484bcac8c98a52dc9d58366512e4159a" class="toggle"  />
+    <label for="section-484bcac8c98a52dc9d58366512e4159a" class="flex justify-between">
       <a role="button" class="">Codex</a>
     </label>
   
@@ -3616,137 +3815,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ad440789e1a7ba07eb2b3918829c7257" class="toggle"  />
-    <label for="section-ad440789e1a7ba07eb2b3918829c7257" class="flex justify-between">
-      <a role="button" class="">Compress *</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code/" class="">Claude /compact[A1] *</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-compress/" class="">Claude Code - Compact summary</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/codex/" class="">CodeX 上下文</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code2/" class="">Claude Code2</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code3/" class="">Claude Code3</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-7b4eb57325a2b2a77e7753390fc7d915" class="toggle"  />
-    <label for="section-7b4eb57325a2b2a77e7753390fc7d915" class="flex justify-between">
+    <input type="checkbox" id="section-bb4ccb54455a606ed07ce1fdab4ac532" class="toggle"  />
+    <label for="section-bb4ccb54455a606ed07ce1fdab4ac532" class="flex justify-between">
       <a role="button" class="">Pi Agent</a>
     </label>
   
@@ -3828,83 +3898,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c47c9c73c26a489b07f412d8d4ee4f40" class="toggle"  />
-    <label for="section-c47c9c73c26a489b07f412d8d4ee4f40" class="flex justify-between">
-      <a role="button" class="">可靠性 *</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/codex/" class="">Codex 可靠性</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/dsh/" class="">Deepseek harness 可靠性</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/pi-durable/" class="">Pi Durable</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-eec787204d3e675b4351db6ec0be7bc8" class="toggle"  />
-    <label for="section-eec787204d3e675b4351db6ec0be7bc8" class="flex justify-between">
+    <input type="checkbox" id="section-27894a1d29427c9d52d1df6110020b8e" class="toggle"  />
+    <label for="section-27894a1d29427c9d52d1df6110020b8e" class="flex justify-between">
       <a role="button" class="">实战</a>
     </label>
   
@@ -3920,6 +3915,58 @@ https://github.com/alex-shpak/hugo-book
 
   
     <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8488d215ee4dde3fcb569ebf074c8d99" class="toggle"  />
+    <label for="section-8488d215ee4dde3fcb569ebf074c8d99" class="flex justify-between">
+      <a role="button" class="">JEV</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/100-JEV/hermes/Jev%E5%8E%9F%E7%90%86%E4%B8%8E%E5%BA%94%E7%94%A8/" class="">Jev原理与应用</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/100-JEV/JEV/" class="">JEV</a>
   
 
           
@@ -3965,8 +4012,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b41552d83299a260ffc5181fd5bf1177" class="toggle"  />
-    <label for="section-b41552d83299a260ffc5181fd5bf1177" class="flex justify-between">
+    <input type="checkbox" id="section-1f82435e89939f7232e02729b008213e" class="toggle"  />
+    <label for="section-1f82435e89939f7232e02729b008213e" class="flex justify-between">
       <a role="button" class="">Loops engineering</a>
     </label>
   
@@ -3981,8 +4028,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1a4757bdd1099e1149094c77f1470e5d" class="toggle"  />
-    <label for="section-1a4757bdd1099e1149094c77f1470e5d" class="flex justify-between">
+    <input type="checkbox" id="section-bf010a926485186e47c6ea2d2776a45f" class="toggle"  />
+    <label for="section-bf010a926485186e47c6ea2d2776a45f" class="flex justify-between">
       <a role="button" class="">goal</a>
     </label>
   
@@ -4038,8 +4085,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-eca2bd358c3e27c981a441ba4e158cb3" class="toggle"  />
-    <label for="section-eca2bd358c3e27c981a441ba4e158cb3" class="flex justify-between">
+    <input type="checkbox" id="section-013b791baed028e00c3cd685450d1255" class="toggle"  />
+    <label for="section-013b791baed028e00c3cd685450d1255" class="flex justify-between">
       <a role="button" class="">loop engineering</a>
     </label>
   
@@ -4095,8 +4142,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27d39407dbc0d87e956d19638a0f1da3" class="toggle"  />
-    <label for="section-27d39407dbc0d87e956d19638a0f1da3" class="flex justify-between">
+    <input type="checkbox" id="section-b284ec03b7c672cfde434851c4ea7377" class="toggle"  />
+    <label for="section-b284ec03b7c672cfde434851c4ea7377" class="flex justify-between">
       <a role="button" class="">长程任务</a>
     </label>
   
@@ -4165,8 +4212,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-689fa0c955be06dbb890852c4c2826e8" class="toggle"  />
-    <label for="section-689fa0c955be06dbb890852c4c2826e8" class="flex justify-between">
+    <input type="checkbox" id="section-4211c6654bc32161daa2abe28c73b06e" class="toggle"  />
+    <label for="section-4211c6654bc32161daa2abe28c73b06e" class="flex justify-between">
       <a role="button" class="">Meta Harness</a>
     </label>
   
@@ -4181,8 +4228,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-524d9cf59683da54d7ecc3c0ff6519ce" class="toggle"  />
-    <label for="section-524d9cf59683da54d7ecc3c0ff6519ce" class="flex justify-between">
+    <input type="checkbox" id="section-c81a15018d7ae452140c88ff216be77d" class="toggle"  />
+    <label for="section-c81a15018d7ae452140c88ff216be77d" class="flex justify-between">
       <a role="button" class="">Managed Agent</a>
     </label>
   
@@ -4310,8 +4357,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="toggle"  />
-    <label for="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="flex justify-between">
+    <input type="checkbox" id="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="toggle"  />
+    <label for="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="flex justify-between">
       <a role="button" class="">Omnigent</a>
     </label>
   
@@ -4354,8 +4401,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="toggle"  />
-    <label for="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="flex justify-between">
+    <input type="checkbox" id="section-920c2fa3546aca5261a01784a53ddff3" class="toggle"  />
+    <label for="section-920c2fa3546aca5261a01784a53ddff3" class="flex justify-between">
       <a role="button" class="">Context Engineering</a>
     </label>
   
@@ -4424,8 +4471,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="toggle"  />
-    <label for="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="flex justify-between">
+    <input type="checkbox" id="section-0563b2fd6005bd3ffd431bec1f81b423" class="toggle"  />
+    <label for="section-0563b2fd6005bd3ffd431bec1f81b423" class="flex justify-between">
       <a role="button" class="">Plan mode</a>
     </label>
   
@@ -4481,8 +4528,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-4a730712863635107d9ac9a5d3e3abd6" class="toggle"  />
-    <label for="section-4a730712863635107d9ac9a5d3e3abd6" class="flex justify-between">
+    <input type="checkbox" id="section-ceda1f30ce03531a336a1f1ebb026a63" class="toggle"  />
+    <label for="section-ceda1f30ce03531a336a1f1ebb026a63" class="flex justify-between">
       <a role="button" class="">Prompting caching *</a>
     </label>
   
@@ -4525,8 +4572,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-98dd33716c353fd55829a04c54d5e57e" class="toggle"  />
-    <label for="section-98dd33716c353fd55829a04c54d5e57e" class="flex justify-between">
+    <input type="checkbox" id="section-097abb2131971a92a13c1e53f850eb30" class="toggle"  />
+    <label for="section-097abb2131971a92a13c1e53f850eb30" class="flex justify-between">
       <a role="button" class="">Prompt Engineering</a>
     </label>
   
@@ -4690,8 +4737,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ad26e82e3d025c385444444a93d72502" class="toggle"  />
-    <label for="section-ad26e82e3d025c385444444a93d72502" class="flex justify-between">
+    <input type="checkbox" id="section-951bebaba4a0e7ffcc11ac548251e389" class="toggle"  />
+    <label for="section-951bebaba4a0e7ffcc11ac548251e389" class="flex justify-between">
       <a role="button" class="">DeepResearch</a>
     </label>
   
@@ -4873,8 +4920,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9cc3ec6d88705686bc94595daa8aa25e" class="toggle"  />
-    <label for="section-9cc3ec6d88705686bc94595daa8aa25e" class="flex justify-between">
+    <input type="checkbox" id="section-def011b742c3bb564ed84bad958a8bb9" class="toggle"  />
+    <label for="section-def011b742c3bb564ed84bad958a8bb9" class="flex justify-between">
       <a role="button" class="">FineTuning</a>
     </label>
   
@@ -4889,8 +4936,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-7b3c994f2c17601a215b6b57dc71b7ef" class="toggle"  />
-    <label for="section-7b3c994f2c17601a215b6b57dc71b7ef" class="flex justify-between">
+    <input type="checkbox" id="section-b1c6c40bb101131e4fe5a95225175846" class="toggle"  />
+    <label for="section-b1c6c40bb101131e4fe5a95225175846" class="flex justify-between">
       <a role="button" class="">Instruct Tuning</a>
     </label>
   
@@ -4946,8 +4993,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ebf0a5559cc09bbc171db379534a7dc9" class="toggle"  />
-    <label for="section-ebf0a5559cc09bbc171db379534a7dc9" class="flex justify-between">
+    <input type="checkbox" id="section-a5f257b0a67dc566e55c98245e32a9a3" class="toggle"  />
+    <label for="section-a5f257b0a67dc566e55c98245e32a9a3" class="flex justify-between">
       <a role="button" class="">实践 *</a>
     </label>
   
@@ -5021,8 +5068,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0082251d40c765323fa32be9b3686aa0" class="toggle"  />
-    <label for="section-0082251d40c765323fa32be9b3686aa0" class="flex justify-between">
+    <input type="checkbox" id="section-bc06fe507152e253f2b8fedc786f69f9" class="toggle"  />
+    <label for="section-bc06fe507152e253f2b8fedc786f69f9" class="flex justify-between">
       <a role="button" class="">PEFT *</a>
     </label>
   
@@ -5222,8 +5269,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d763501d6c35330245339b6c8531cf7c" class="toggle"  />
-    <label for="section-d763501d6c35330245339b6c8531cf7c" class="flex justify-between">
+    <input type="checkbox" id="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="toggle"  />
+    <label for="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="flex justify-between">
       <a role="button" class="">Data</a>
     </label>
   
@@ -5482,8 +5529,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-284de0efced75cd016672664a17456be" class="toggle"  />
-    <label for="section-284de0efced75cd016672664a17456be" class="flex justify-between">
+    <input type="checkbox" id="section-ec440fd30b4fccc02d2866bf269d3c1c" class="toggle"  />
+    <label for="section-ec440fd30b4fccc02d2866bf269d3c1c" class="flex justify-between">
       <a role="button" class="">AI Native</a>
     </label>
   
@@ -5593,8 +5640,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a67b63d6d594556c363a35d7d38cd355" class="toggle"  />
-    <label for="section-a67b63d6d594556c363a35d7d38cd355" class="flex justify-between">
+    <input type="checkbox" id="section-c4d50087126f44db07d7a7f0faa67711" class="toggle"  />
+    <label for="section-c4d50087126f44db07d7a7f0faa67711" class="flex justify-between">
       <a role="button" class="">Langchain</a>
     </label>
   
@@ -5686,8 +5733,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3926c431ee2abb31fef9cd9185588ed0" class="toggle"  />
-    <label for="section-3926c431ee2abb31fef9cd9185588ed0" class="flex justify-between">
+    <input type="checkbox" id="section-461a4404ae59395291876d9268139c73" class="toggle"  />
+    <label for="section-461a4404ae59395291876d9268139c73" class="flex justify-between">
       <a role="button" class="">Application</a>
     </label>
   
@@ -5833,8 +5880,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="toggle"  />
-    <label for="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="flex justify-between">
+    <input type="checkbox" id="section-3ce504245d1c08bb826d2f16a7a9180c" class="toggle"  />
+    <label for="section-3ce504245d1c08bb826d2f16a7a9180c" class="flex justify-between">
       <a role="button" class="">其他</a>
     </label>
   
@@ -6161,40 +6208,40 @@ https://github.com/alex-shpak/hugo-book
 <p><strong>2. 核心处理层（Gateway Process）</strong></p>
 <p>这是 OpenClaw 的&quot;中枢神经系统&quot;，包含五个核心组件：</p>
 <table>
-	<thead>
-			<tr>
-					<th>组件</th>
-					<th>职责</th>
-					<th>类比</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>Binding Router</strong></td>
-					<td>根据配置将消息匹配到目标 Agent</td>
-					<td>邮局分拣机</td>
-			</tr>
-			<tr>
-					<td><strong>Command Queue + Lanes</strong></td>
-					<td>按优先级和类型调度消息执行</td>
-					<td>机场跑道调度</td>
-			</tr>
-			<tr>
-					<td><strong>Subagent Orchestrator</strong></td>
-					<td>创建/管理子 Agent，处理完成回调</td>
-					<td>项目经理</td>
-			</tr>
-			<tr>
-					<td><strong>A2A Engine</strong></td>
-					<td>Agent 间双向通信（sessions_send + ping-pong）</td>
-					<td>内部通讯系统</td>
-			</tr>
-			<tr>
-					<td><strong>Agents</strong></td>
-					<td>每个 Agent 是独立的&quot;大脑&quot;，有自己的模型、工具、记忆</td>
-					<td>部门员工</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>组件</th>
+          <th>职责</th>
+          <th>类比</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Binding Router</strong></td>
+          <td>根据配置将消息匹配到目标 Agent</td>
+          <td>邮局分拣机</td>
+      </tr>
+      <tr>
+          <td><strong>Command Queue + Lanes</strong></td>
+          <td>按优先级和类型调度消息执行</td>
+          <td>机场跑道调度</td>
+      </tr>
+      <tr>
+          <td><strong>Subagent Orchestrator</strong></td>
+          <td>创建/管理子 Agent，处理完成回调</td>
+          <td>项目经理</td>
+      </tr>
+      <tr>
+          <td><strong>A2A Engine</strong></td>
+          <td>Agent 间双向通信（sessions_send + ping-pong）</td>
+          <td>内部通讯系统</td>
+      </tr>
+      <tr>
+          <td><strong>Agents</strong></td>
+          <td>每个 Agent 是独立的&quot;大脑&quot;，有自己的模型、工具、记忆</td>
+          <td>部门员工</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>Binding Router</strong> 根据 <code>bindings</code> 配置（channel、peer、guildId、accountId 等维度）将消息匹配到目标 Agent，实现&quot;最精确匹配优先&quot;的路由策略。</p>
 <p><strong>Command Queue + Lanes</strong> 确保同一 Session 的消息串行执行（避免并发导致的上下文竞争），但不同 Agent 的消息可以并行处理。这类似于数据库中的行级锁——同一行的写操作必须串行，但不同行可以并发。</p>
@@ -6202,30 +6249,30 @@ https://github.com/alex-shpak/hugo-book
 <p><strong>A2A Engine</strong> 处理 Agent 间的双向通信。与 Subagent 的&quot;一次性&quot;不同，A2A 支持持续的对话式交互——Agent A 发消息给 Agent B，Agent B 回复，Agent A 再回复，最多 N 轮（由 <code>maxPingPongTurns</code> 控制）。</p>
 <p><strong>3. 存储层（Storage）</strong></p>
 <table>
-	<thead>
-			<tr>
-					<th>存储</th>
-					<th>内容</th>
-					<th>隔离级别</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>Workspace</strong></td>
-					<td>每个 Agent 的独立文件目录，代码执行和文件读写都在此目录内</td>
-					<td>物理隔离（不同目录）</td>
-			</tr>
-			<tr>
-					<td><strong>Sessions SQLite</strong></td>
-					<td>会话历史、配置覆盖（modelOverride、authProfileOverride）</td>
-					<td>逻辑隔离（session key 前缀）</td>
-			</tr>
-			<tr>
-					<td><strong>Subagent Registry</strong></td>
-					<td>子 Agent 的创建时间、父 session、运行状态、完成结果</td>
-					<td>全局共享，按 runId 索引</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>存储</th>
+          <th>内容</th>
+          <th>隔离级别</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Workspace</strong></td>
+          <td>每个 Agent 的独立文件目录，代码执行和文件读写都在此目录内</td>
+          <td>物理隔离（不同目录）</td>
+      </tr>
+      <tr>
+          <td><strong>Sessions SQLite</strong></td>
+          <td>会话历史、配置覆盖（modelOverride、authProfileOverride）</td>
+          <td>逻辑隔离（session key 前缀）</td>
+      </tr>
+      <tr>
+          <td><strong>Subagent Registry</strong></td>
+          <td>子 Agent 的创建时间、父 session、运行状态、完成结果</td>
+          <td>全局共享，按 runId 索引</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>关键数据流：</strong></p>
 <pre tabindex="0"><code>外部消息 → Channels → Binding Router → Command Queue → Lane → Agent
@@ -6239,53 +6286,53 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 <p>理解 OpenClaw 多 Agent 机制的关键，在于理解<strong>一个 Agent 到底是什么</strong>。</p>
 <p>在 OpenClaw 的源码中（<code>src/agents/agent-scope.ts</code>），一个 Agent 不是一个简单的&quot;模型实例&quot;，而是一个<strong>完整的作用域（scope）</strong>，包含以下维度：</p>
 <table>
-	<thead>
-			<tr>
-					<th>维度</th>
-					<th>含义</th>
-					<th>隔离效果</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>workspace</code></td>
-					<td>文件系统的独立工作目录</td>
-					<td>文件操作互不干扰</td>
-			</tr>
-			<tr>
-					<td><code>agentDir</code></td>
-					<td>Agent 的专属配置目录</td>
-					<td>配置互不影响</td>
-			</tr>
-			<tr>
-					<td><code>sessionStore</code></td>
-					<td>会话历史的存储位置</td>
-					<td>记忆互不泄露</td>
-			</tr>
-			<tr>
-					<td><code>authProfiles</code></td>
-					<td>认证凭据（API keys、OAuth tokens）</td>
-					<td>安全边界</td>
-			</tr>
-			<tr>
-					<td><code>skills</code></td>
-					<td>技能/工作流定义</td>
-					<td>能力差异化</td>
-			</tr>
-			<tr>
-					<td><code>tools</code></td>
-					<td>可调用的工具集</td>
-					<td>操作权限隔离</td>
-			</tr>
-			<tr>
-					<td><code>model</code></td>
-					<td>使用的 LLM 模型和参数</td>
-					<td>成本/能力差异化</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>含义</th>
+          <th>隔离效果</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>workspace</code></td>
+          <td>文件系统的独立工作目录</td>
+          <td>文件操作互不干扰</td>
+      </tr>
+      <tr>
+          <td><code>agentDir</code></td>
+          <td>Agent 的专属配置目录</td>
+          <td>配置互不影响</td>
+      </tr>
+      <tr>
+          <td><code>sessionStore</code></td>
+          <td>会话历史的存储位置</td>
+          <td>记忆互不泄露</td>
+      </tr>
+      <tr>
+          <td><code>authProfiles</code></td>
+          <td>认证凭据（API keys、OAuth tokens）</td>
+          <td>安全边界</td>
+      </tr>
+      <tr>
+          <td><code>skills</code></td>
+          <td>技能/工作流定义</td>
+          <td>能力差异化</td>
+      </tr>
+      <tr>
+          <td><code>tools</code></td>
+          <td>可调用的工具集</td>
+          <td>操作权限隔离</td>
+      </tr>
+      <tr>
+          <td><code>model</code></td>
+          <td>使用的 LLM 模型和参数</td>
+          <td>成本/能力差异化</td>
+      </tr>
+  </tbody>
 </table>
 <p>源码入口 <code>resolveSessionAgentIds()</code> 函数从 session key 解析 agentId 的完整链路：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/agent-scope.ts
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// src/agents/agent-scope.ts
 </span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveSessionAgentIds</span>(<span style="color:#a6e22e">sessionKey</span>: <span style="color:#66d9ef">string</span>)<span style="color:#f92672">:</span> {
 </span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">agentId</span>: <span style="color:#66d9ef">string</span>;
 </span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">requestKey</span>: <span style="color:#66d9ef">string</span>;
@@ -6305,14 +6352,14 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
   <a class="anchor" href="#23-%e5%8d%95-agent-vs-%e5%a4%9a-agent-%e6%a8%a1%e5%bc%8f">#</a>
 </h3>
 <p>OpenClaw 默认运行在单 Agent 模式：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># 默认配置（隐式）</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># 默认配置（隐式）</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 等价于:</span>
 </span></span><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">list</span>:
 </span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;main&#34;</span>
 </span></span></code></pre></div><p>此时所有消息都由 <code>agentId = &quot;main&quot;</code> 的 Agent 处理，session key 格式为 <code>agent:main:&lt;mainKey&gt;</code>。</p>
 <p>当配置多个 Agent 时：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">list</span>:
 </span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;main&#34;</span>
 </span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4&#34;</span>
@@ -6375,46 +6422,46 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
     L1 -. A2A 队列 .-&gt; R4</pre>
 <p><strong>各层次解读：</strong></p>
 <table>
-	<thead>
-			<tr>
-					<th>层次</th>
-					<th>机制</th>
-					<th>交互方向</th>
-					<th>类比</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>① <strong>路由层</strong></td>
-					<td>Binding + resolve-route</td>
-					<td>Channel → Agent（单向）</td>
-					<td>前台接待员</td>
-			</tr>
-			<tr>
-					<td>② <strong>会话层</strong></td>
-					<td>Session key + 隔离存储</td>
-					<td>Agent 内部（自洽）</td>
-					<td>个人办公室</td>
-			</tr>
-			<tr>
-					<td>③ <strong>委派层</strong></td>
-					<td>sessions_spawn + subagent</td>
-					<td>父 Agent → 子 Agent（单向 + announce 回调）</td>
-					<td>经理分配任务给下属</td>
-			</tr>
-			<tr>
-					<td>④ <strong>对等层</strong></td>
-					<td>sessions_send + A2A flow</td>
-					<td>Agent ↔ Agent（双向 ping-pong）</td>
-					<td>同事间讨论</td>
-			</tr>
-			<tr>
-					<td>⑤ <strong>调度层</strong></td>
-					<td>Command queue + lanes</td>
-					<td>全局并发控制（正交）</td>
-					<td>交通信号灯</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>层次</th>
+          <th>机制</th>
+          <th>交互方向</th>
+          <th>类比</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>① <strong>路由层</strong></td>
+          <td>Binding + resolve-route</td>
+          <td>Channel → Agent（单向）</td>
+          <td>前台接待员</td>
+      </tr>
+      <tr>
+          <td>② <strong>会话层</strong></td>
+          <td>Session key + 隔离存储</td>
+          <td>Agent 内部（自洽）</td>
+          <td>个人办公室</td>
+      </tr>
+      <tr>
+          <td>③ <strong>委派层</strong></td>
+          <td>sessions_spawn + subagent</td>
+          <td>父 Agent → 子 Agent（单向 + announce 回调）</td>
+          <td>经理分配任务给下属</td>
+      </tr>
+      <tr>
+          <td>④ <strong>对等层</strong></td>
+          <td>sessions_send + A2A flow</td>
+          <td>Agent ↔ Agent（双向 ping-pong）</td>
+          <td>同事间讨论</td>
+      </tr>
+      <tr>
+          <td>⑤ <strong>调度层</strong></td>
+          <td>Command queue + lanes</td>
+          <td>全局并发控制（正交）</td>
+          <td>交通信号灯</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>关键设计洞察：</strong></p>
 <ol>
@@ -6445,7 +6492,7 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
   <a class="anchor" href="#31-binding-%e9%85%8d%e7%bd%ae%e6%a8%a1%e5%9e%8b">#</a>
 </h3>
 <p>Binding 是 OpenClaw 路由系统的核心抽象。它的本质是一张<strong>匹配规则表</strong>，将外部消息的特征映射到目标 Agent：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">bindings</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">bindings</span>:
 </span></span><span style="display:flex;"><span>  <span style="color:#75715e"># 精确匹配 peer（特定用户）</span>
 </span></span><span style="display:flex;"><span>  - <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;family&#34;</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>:
@@ -6467,48 +6514,48 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </span></span><span style="display:flex;"><span>    <span style="color:#f92672">match</span>: {}
 </span></span></code></pre></div><p><code>match</code> 字段支持以下维度的组合：</p>
 <table>
-	<thead>
-			<tr>
-					<th>维度</th>
-					<th>含义</th>
-					<th>示例</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>channel</code></td>
-					<td>消息来源平台</td>
-					<td><code>&quot;telegram&quot;</code>、<code>&quot;whatsapp&quot;</code>、<code>&quot;discord&quot;</code></td>
-			</tr>
-			<tr>
-					<td><code>accountId</code></td>
-					<td>特定账号</td>
-					<td>多账号场景下区分不同 Bot 账号</td>
-			</tr>
-			<tr>
-					<td><code>peer</code></td>
-					<td>发送者 ID</td>
-					<td>个人用户 ID、群聊 ID</td>
-			</tr>
-			<tr>
-					<td><code>guildId</code></td>
-					<td>Discord/Slack 服务器 ID</td>
-					<td>区分不同 workspace</td>
-			</tr>
-			<tr>
-					<td><code>teamId</code></td>
-					<td>Slack Team ID</td>
-					<td>多团队场景</td>
-			</tr>
-			<tr>
-					<td><code>roles</code></td>
-					<td>Discord 角色</td>
-					<td>按角色路由到不同 Agent</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>含义</th>
+          <th>示例</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>channel</code></td>
+          <td>消息来源平台</td>
+          <td><code>&quot;telegram&quot;</code>、<code>&quot;whatsapp&quot;</code>、<code>&quot;discord&quot;</code></td>
+      </tr>
+      <tr>
+          <td><code>accountId</code></td>
+          <td>特定账号</td>
+          <td>多账号场景下区分不同 Bot 账号</td>
+      </tr>
+      <tr>
+          <td><code>peer</code></td>
+          <td>发送者 ID</td>
+          <td>个人用户 ID、群聊 ID</td>
+      </tr>
+      <tr>
+          <td><code>guildId</code></td>
+          <td>Discord/Slack 服务器 ID</td>
+          <td>区分不同 workspace</td>
+      </tr>
+      <tr>
+          <td><code>teamId</code></td>
+          <td>Slack Team ID</td>
+          <td>多团队场景</td>
+      </tr>
+      <tr>
+          <td><code>roles</code></td>
+          <td>Discord 角色</td>
+          <td>按角色路由到不同 Agent</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>关键设计决策</strong>：<code>match</code> 字段使用 <strong>AND 语义</strong>——所有指定的条件必须同时满足。这意味着：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># 这条规则匹配：来自 Telegram + 特定群组的消息</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># 这条规则匹配：来自 Telegram + 特定群组的消息</span>
 </span></span><span style="display:flex;"><span>- <span style="color:#f92672">agentId</span>: <span style="color:#e6db74">&#34;work&#34;</span>
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">match</span>:
 </span></span><span style="display:flex;"><span>    <span style="color:#f92672">channel</span>: <span style="color:#e6db74">&#34;telegram&#34;</span>
@@ -6541,58 +6588,58 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
     P6 --&gt;|No| R7[Route to global default / main]</pre>
 <p><strong>优先级从高到低：</strong></p>
 <table>
-	<thead>
-			<tr>
-					<th>优先级</th>
-					<th>匹配维度</th>
-					<th>精确度</th>
-					<th>典型场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>1</td>
-					<td><code>peer</code></td>
-					<td>最高</td>
-					<td>特定用户专属 Agent</td>
-			</tr>
-			<tr>
-					<td>2</td>
-					<td><code>parentPeer</code></td>
-					<td>极高</td>
-					<td>Thread 继承父会话的 Agent</td>
-			</tr>
-			<tr>
-					<td>3</td>
-					<td><code>guildId + roles</code></td>
-					<td>很高</td>
-					<td>Discord 按角色路由</td>
-			</tr>
-			<tr>
-					<td>4</td>
-					<td><code>guildId / teamId</code></td>
-					<td>高</td>
-					<td>特定群组/服务器专属 Agent</td>
-			</tr>
-			<tr>
-					<td>5</td>
-					<td><code>accountId</code></td>
-					<td>中</td>
-					<td>多账号场景</td>
-			</tr>
-			<tr>
-					<td>6</td>
-					<td><code>channel</code></td>
-					<td>低</td>
-					<td>频道默认 Agent</td>
-			</tr>
-			<tr>
-					<td>7</td>
-					<td>全局默认</td>
-					<td>最低</td>
-					<td>兜底 Agent</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>优先级</th>
+          <th>匹配维度</th>
+          <th>精确度</th>
+          <th>典型场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td><code>peer</code></td>
+          <td>最高</td>
+          <td>特定用户专属 Agent</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td><code>parentPeer</code></td>
+          <td>极高</td>
+          <td>Thread 继承父会话的 Agent</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td><code>guildId + roles</code></td>
+          <td>很高</td>
+          <td>Discord 按角色路由</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td><code>guildId / teamId</code></td>
+          <td>高</td>
+          <td>特定群组/服务器专属 Agent</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td><code>accountId</code></td>
+          <td>中</td>
+          <td>多账号场景</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td><code>channel</code></td>
+          <td>低</td>
+          <td>频道默认 Agent</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td>全局默认</td>
+          <td>最低</td>
+          <td>兜底 Agent</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>Tie-breaking 规则</strong>：当两条规则精确度相同时，OpenClaw 使用配置中的<strong>声明顺序</strong>（先声明优先）作为决胜条件。这与 CSS 的选择器优先级规则类似——当特异性相同时，后声明的覆盖先声明的，但 OpenClaw 选择了相反的策略（先声明优先），理由是<strong>配置的显式性越高，越应该优先匹配</strong>。</p>
 <h3 id="33-session-key-的生成与解析">
@@ -6603,33 +6650,33 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 <pre tabindex="0"><code>agent:&lt;agentId&gt;:&lt;requestKey&gt;:&lt;mainKey&gt;
 </code></pre><p>各字段含义：</p>
 <table>
-	<thead>
-			<tr>
-					<th>字段</th>
-					<th>示例</th>
-					<th>含义</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>agentId</code></td>
-					<td><code>&quot;work&quot;</code></td>
-					<td>目标 Agent 的 ID</td>
-			</tr>
-			<tr>
-					<td><code>requestKey</code></td>
-					<td><code>&quot;telegram&quot;</code></td>
-					<td>请求来源的通道标识</td>
-			</tr>
-			<tr>
-					<td><code>mainKey</code></td>
-					<td><code>&quot;+15551234567:abc123&quot;</code></td>
-					<td>主会话标识（用户 + 会话 ID）</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>字段</th>
+          <th>示例</th>
+          <th>含义</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>agentId</code></td>
+          <td><code>&quot;work&quot;</code></td>
+          <td>目标 Agent 的 ID</td>
+      </tr>
+      <tr>
+          <td><code>requestKey</code></td>
+          <td><code>&quot;telegram&quot;</code></td>
+          <td>请求来源的通道标识</td>
+      </tr>
+      <tr>
+          <td><code>mainKey</code></td>
+          <td><code>&quot;+15551234567:abc123&quot;</code></td>
+          <td>主会话标识（用户 + 会话 ID）</td>
+      </tr>
+  </tbody>
 </table>
 <p>源码解析（<code>src/routing/session-key.ts</code>）：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// parseAgentSessionKey: 从 session key 中提取 agentId
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// parseAgentSessionKey: 从 session key 中提取 agentId
 </span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">parseAgentSessionKey</span>(<span style="color:#a6e22e">key</span>: <span style="color:#66d9ef">string</span>)<span style="color:#f92672">:</span> {
 </span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">agentId</span>: <span style="color:#66d9ef">string</span>;
 </span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">requestKey</span>: <span style="color:#66d9ef">string</span>;
@@ -6665,7 +6712,7 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 │   └── &lt;sessionId&gt;.jsonl
 └── sessions.db              # SQLite 数据库（元数据）
 </code></pre><p>Session Entry 的数据结构包含丰富的覆盖配置：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">interface</span> <span style="color:#a6e22e">SessionEntry</span> {
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">interface</span> <span style="color:#a6e22e">SessionEntry</span> {
 </span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">key</span>: <span style="color:#66d9ef">string</span>;                    <span style="color:#75715e">// session key
 </span></span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">agentId</span>: <span style="color:#66d9ef">string</span>;                <span style="color:#75715e">// 所属 Agent
 </span></span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">providerOverride?</span>: <span style="color:#66d9ef">string</span>;      <span style="color:#75715e">// 覆盖默认 provider
@@ -6676,7 +6723,7 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">lastActiveAt</span>: <span style="color:#66d9ef">Date</span>;
 </span></span><span style="display:flex;"><span>}
 </span></span></code></pre></div><p>这种设计允许在<strong>会话级别</strong>临时覆盖 Agent 的默认配置。例如：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># 场景：某个 Telegram 会话临时切换到更强的模型</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># 场景：某个 Telegram 会话临时切换到更强的模型</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 用户发送 /model opus 后，该会话的 modelOverride 被设置为 &#34;anthropic/claude-opus-4&#34;</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 其他会话仍然使用 Agent 默认的 &#34;anthropic/claude-sonnet-4&#34;</span>
 </span></span></code></pre></div><h3 id="42-会话隔离的安全边界">
@@ -6685,7 +6732,7 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </h3>
 <p>OpenClaw 的隔离是<strong>软隔离</strong>（soft isolation），而非硬沙箱（hard sandbox）。理解这一区别至关重要：</p>
 <p><strong>Workspace 隔离 ≠ 硬沙箱</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># 配置示例</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># 配置示例</span>
 </span></span><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
 </span></span><span style="display:flex;"><span>  - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;work&#34;</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#f92672">workspace</span>: <span style="color:#e6db74">&#34;~/work-workspace&#34;</span>
@@ -6697,30 +6744,30 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </span></span><span style="display:flex;"><span>      <span style="color:#f92672">mode</span>: <span style="color:#e6db74">&#34;off&#34;</span>        <span style="color:#75715e"># 不启用沙箱</span>
 </span></span></code></pre></div><p><code>sandbox.mode</code> 的三种模式：</p>
 <table>
-	<thead>
-			<tr>
-					<th>模式</th>
-					<th>含义</th>
-					<th>适用场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>off</code></td>
-					<td>不启用沙箱，Agent 可以访问整个文件系统</td>
-					<td>开发/测试环境</td>
-			</tr>
-			<tr>
-					<td><code>non-main</code></td>
-					<td>仅对非 main Agent 启用沙箱</td>
-					<td>生产环境（推荐）</td>
-			</tr>
-			<tr>
-					<td><code>all</code></td>
-					<td>对所有 Agent 启用沙箱</td>
-					<td>高安全要求场景</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>含义</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>off</code></td>
+          <td>不启用沙箱，Agent 可以访问整个文件系统</td>
+          <td>开发/测试环境</td>
+      </tr>
+      <tr>
+          <td><code>non-main</code></td>
+          <td>仅对非 main Agent 启用沙箱</td>
+          <td>生产环境（推荐）</td>
+      </tr>
+      <tr>
+          <td><code>all</code></td>
+          <td>对所有 Agent 启用沙箱</td>
+          <td>高安全要求场景</td>
+      </tr>
+  </tbody>
 </table>
 <p>源码中（<code>sandbox-agent-config.ts</code> + <code>sandbox-tool-policy.ts</code>）的隔离实现：</p>
 <pre tabindex="0"><code>1. 文件操作限制：Agent 只能在其 workspace 目录下读写文件
@@ -6728,40 +6775,40 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 3. 命令沙箱：通过 Docker/容器限制系统调用
 </code></pre><p><strong>安全边界分析</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>威胁模型</th>
-					<th>是否防护</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>Agent A 读取 Agent B 的文件</td>
-					<td>✅（当 workspace 不同时）</td>
-					<td>文件系统级隔离</td>
-			</tr>
-			<tr>
-					<td>Agent A 查看 Agent B 的会话历史</td>
-					<td>✅</td>
-					<td>Session key 前缀隔离</td>
-			</tr>
-			<tr>
-					<td>Agent A 使用 Agent B 的 API Key</td>
-					<td>✅</td>
-					<td>authProfile 隔离</td>
-			</tr>
-			<tr>
-					<td>Agent A 执行恶意系统命令</td>
-					<td>⚠️（取决于 sandbox 模式）</td>
-					<td>需要容器级沙箱</td>
-			</tr>
-			<tr>
-					<td>Agent A 耗尽系统资源</td>
-					<td>⚠️（取决于 Lane 配置）</td>
-					<td>需要 maxConcurrent 限制</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>威胁模型</th>
+          <th>是否防护</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Agent A 读取 Agent B 的文件</td>
+          <td>✅（当 workspace 不同时）</td>
+          <td>文件系统级隔离</td>
+      </tr>
+      <tr>
+          <td>Agent A 查看 Agent B 的会话历史</td>
+          <td>✅</td>
+          <td>Session key 前缀隔离</td>
+      </tr>
+      <tr>
+          <td>Agent A 使用 Agent B 的 API Key</td>
+          <td>✅</td>
+          <td>authProfile 隔离</td>
+      </tr>
+      <tr>
+          <td>Agent A 执行恶意系统命令</td>
+          <td>⚠️（取决于 sandbox 模式）</td>
+          <td>需要容器级沙箱</td>
+      </tr>
+      <tr>
+          <td>Agent A 耗尽系统资源</td>
+          <td>⚠️（取决于 Lane 配置）</td>
+          <td>需要 maxConcurrent 限制</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="43-跨-agent-记忆搜索qmd-机制">
   4.3 跨 Agent 记忆搜索（QMD 机制）
@@ -6769,7 +6816,7 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </h3>
 <p>在默认隔离策略下，Agent A 无法访问 Agent B 的记忆。但某些场景需要跨 Agent 的知识共享——例如 family Agent 需要知道 work Agent 记住的&quot;家人生日&quot;信息。</p>
 <p>OpenClaw 通过 <code>memorySearch.qmd.extraCollections</code> 提供了<strong>受控的跨 Agent 记忆搜索</strong>：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">memorySearch</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">memorySearch</span>:
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">qmd</span>:
 </span></span><span style="display:flex;"><span>    <span style="color:#f92672">extraCollections</span>:
 </span></span><span style="display:flex;"><span>      - <span style="color:#f92672">name</span>: <span style="color:#e6db74">&#34;family_shared&#34;</span>
@@ -6802,28 +6849,28 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </h3>
 <p>OpenClaw 提供了两种创建子 Agent 的方式，对应不同的使用场景：</p>
 <table>
-	<thead>
-			<tr>
-					<th>模式</th>
-					<th>触发方式</th>
-					<th>生命周期</th>
-					<th>适用场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>Run 模式</strong></td>
-					<td><code>/subagents spawn</code></td>
-					<td>一次性：完成任务后自动销毁</td>
-					<td>&ldquo;帮我调研 X 并返回结果&rdquo;</td>
-			</tr>
-			<tr>
-					<td><strong>Session 模式</strong></td>
-					<td><code>sessions_spawn</code> + <code>thread: true</code></td>
-					<td>持久：子 Agent 有独立会话，可多次交互</td>
-					<td>&ldquo;创建一个专门处理邮件的 Agent&rdquo;</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>触发方式</th>
+          <th>生命周期</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Run 模式</strong></td>
+          <td><code>/subagents spawn</code></td>
+          <td>一次性：完成任务后自动销毁</td>
+          <td>&ldquo;帮我调研 X 并返回结果&rdquo;</td>
+      </tr>
+      <tr>
+          <td><strong>Session 模式</strong></td>
+          <td><code>sessions_spawn</code> + <code>thread: true</code></td>
+          <td>持久：子 Agent 有独立会话，可多次交互</td>
+          <td>&ldquo;创建一个专门处理邮件的 Agent&rdquo;</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>Run 模式</strong>是最常用的方式。父 Agent 派发一个任务，子 Agent 在隔离环境中执行，完成后通过 Announce 机制将结果回传给父 Agent。</p>
 <p><strong>Session 模式</strong>更像创建了一个&quot;长期雇员&quot;——它有自己独立的会话历史，可以持续接收新任务并与父 Agent 交互。</p>
@@ -6832,7 +6879,7 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
   <a class="anchor" href="#52-%e6%ba%90%e7%a0%81%e6%8b%86%e8%a7%a3subagent-spawnts">#</a>
 </h3>
 <p><code>SpawnSubagentParams</code> 参数结构揭示了子 Agent 创建的所有可配置维度：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">interface</span> <span style="color:#a6e22e">SpawnSubagentParams</span> {
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">interface</span> <span style="color:#a6e22e">SpawnSubagentParams</span> {
 </span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">task</span>: <span style="color:#66d9ef">string</span>;              <span style="color:#75715e">// 任务描述
 </span></span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">context</span><span style="color:#f92672">?:</span> <span style="color:#e6db74">&#34;isolated&#34;</span> <span style="color:#f92672">|</span> <span style="color:#e6db74">&#34;fork&#34;</span>;  <span style="color:#75715e">// 上下文模式
 </span></span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">model?</span>: <span style="color:#66d9ef">string</span>;            <span style="color:#75715e">// 模型覆盖
@@ -6842,28 +6889,28 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </span></span></span><span style="display:flex;"><span>}
 </span></span></code></pre></div><p><strong>上下文模式对比</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>模式</th>
-					<th>行为</th>
-					<th>优点</th>
-					<th>缺点</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>isolated</code></td>
-					<td>子 Agent 从零开始，不继承父 Agent 的任何上下文</td>
-					<td>完全隔离，无上下文污染</td>
-					<td>需要完整描述任务背景</td>
-			</tr>
-			<tr>
-					<td><code>fork</code></td>
-					<td>子 Agent 继承父 Agent 的部分会话历史</td>
-					<td>任务描述更简洁</td>
-					<td>可能泄露不相关的上下文</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>行为</th>
+          <th>优点</th>
+          <th>缺点</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>isolated</code></td>
+          <td>子 Agent 从零开始，不继承父 Agent 的任何上下文</td>
+          <td>完全隔离，无上下文污染</td>
+          <td>需要完整描述任务背景</td>
+      </tr>
+      <tr>
+          <td><code>fork</code></td>
+          <td>子 Agent 继承父 Agent 的部分会话历史</td>
+          <td>任务描述更简洁</td>
+          <td>可能泄露不相关的上下文</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>模型继承链</strong>：</p>
 <pre tabindex="0"><code>1. 显式 override（SpawnSubagentParams.model）
@@ -6927,25 +6974,25 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </h3>
 <p>OpenClaw 通过两个参数控制子 Agent 的规模：</p>
 <table>
-	<thead>
-			<tr>
-					<th>参数</th>
-					<th>默认值</th>
-					<th>含义</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>maxSpawnDepth</code></td>
-					<td>2</td>
-					<td>最大嵌套深度（父→子→孙）</td>
-			</tr>
-			<tr>
-					<td><code>maxConcurrent</code></td>
-					<td>5</td>
-					<td>同时运行的子 Agent 最大数量</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>默认值</th>
+          <th>含义</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>maxSpawnDepth</code></td>
+          <td>2</td>
+          <td>最大嵌套深度（父→子→孙）</td>
+      </tr>
+      <tr>
+          <td><code>maxConcurrent</code></td>
+          <td>5</td>
+          <td>同时运行的子 Agent 最大数量</td>
+      </tr>
+  </tbody>
 </table>
 <p><code>maxSpawnDepth = 2</code> 意味着：</p>
 <pre tabindex="0"><code>Parent Agent (depth 0)
@@ -6954,7 +7001,7 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
               └── ❌ 不能再 spawn（超过 maxSpawnDepth）
 </code></pre><p>这个限制防止了<strong>无限递归 spawn</strong>——想象一个 Agent 被要求&quot;创建一个 Agent 来创建一个 Agent&hellip;&ldquo;的场景。没有深度限制，这可能导致资源耗尽。</p>
 <p>源码中（<code>subagent-registry.ts</code> + <code>subagent-depth.ts</code>）的深度追踪机制：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 每次 spawn 时，检查当前深度
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 每次 spawn 时，检查当前深度
 </span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">canSpawnSubagent</span>(<span style="color:#a6e22e">currentDepth</span>: <span style="color:#66d9ef">number</span>, <span style="color:#a6e22e">maxDepth</span>: <span style="color:#66d9ef">number</span>)<span style="color:#f92672">:</span> <span style="color:#66d9ef">boolean</span> {
 </span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">currentDepth</span> <span style="color:#f92672">&lt;</span> <span style="color:#a6e22e">maxDepth</span>;
 </span></span><span style="display:flex;"><span>}
@@ -6990,7 +7037,7 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </h3>
 <p><code>sessions_send</code> 是 Agent 间对等通信的核心工具。与 <code>spawnSubagent</code> 的&quot;派任务-等结果&quot;模式不同，<code>sessions_send</code> 支持<strong>双向、持续</strong>的对话式交互。</p>
 <p>工具定义（<code>src/agents/tools/sessions-send-tool.ts</code>）：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">interface</span> <span style="color:#a6e22e">SessionsSendParams</span> {
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">interface</span> <span style="color:#a6e22e">SessionsSendParams</span> {
 </span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">sessionKey?</span>: <span style="color:#66d9ef">string</span>;     <span style="color:#75715e">// 目标会话的 key
 </span></span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">agentId?</span>: <span style="color:#66d9ef">string</span>;        <span style="color:#75715e">// 目标 Agent 的 ID
 </span></span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">message</span>: <span style="color:#66d9ef">string</span>;         <span style="color:#75715e">// 要发送的消息
@@ -7003,30 +7050,30 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </ul>
 <p><strong>可见性策略</strong>（<code>tools.sessions.visibility</code>）：</p>
 <table>
-	<thead>
-			<tr>
-					<th>模式</th>
-					<th>Agent 能否看到其他 Agent 的 sessions？</th>
-					<th>适用场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>self</code></td>
-					<td>只能看到自己的 session</td>
-					<td>默认推荐</td>
-			</tr>
-			<tr>
-					<td><code>all</code></td>
-					<td>可以看到所有 session</td>
-					<td>调试/管理</td>
-			</tr>
-			<tr>
-					<td><code>none</code></td>
-					<td>看不到任何 session（但仍可通过 agentId 发送）</td>
-					<td>高安全</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>Agent 能否看到其他 Agent 的 sessions？</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>self</code></td>
+          <td>只能看到自己的 session</td>
+          <td>默认推荐</td>
+      </tr>
+      <tr>
+          <td><code>all</code></td>
+          <td>可以看到所有 session</td>
+          <td>调试/管理</td>
+      </tr>
+      <tr>
+          <td><code>none</code></td>
+          <td>看不到任何 session（但仍可通过 agentId 发送）</td>
+          <td>高安全</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="62-a2a-flowagent-to-agent-对话流">
   6.2 A2A Flow（Agent-to-Agent 对话流）
@@ -7066,33 +7113,33 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </ol>
 <p><strong>终止条件</strong>（三个条件满足任一即终止）：</p>
 <table>
-	<thead>
-			<tr>
-					<th>条件</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>isReplySkip()</code></td>
-					<td>回复内容为空或为特殊 skip 标记</td>
-			</tr>
-			<tr>
-					<td><code>isNonDeliverableSessionsReply()</code></td>
-					<td>回复为不可投递的系统消息</td>
-			</tr>
-			<tr>
-					<td>达到 <code>maxPingPongTurns</code></td>
-					<td>对话轮数达到上限</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>条件</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>isReplySkip()</code></td>
+          <td>回复内容为空或为特殊 skip 标记</td>
+      </tr>
+      <tr>
+          <td><code>isNonDeliverableSessionsReply()</code></td>
+          <td>回复为不可投递的系统消息</td>
+      </tr>
+      <tr>
+          <td>达到 <code>maxPingPongTurns</code></td>
+          <td>对话轮数达到上限</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="63-安全门控">
   6.3 安全门控
   <a class="anchor" href="#63-%e5%ae%89%e5%85%a8%e9%97%a8%e6%8e%a7">#</a>
 </h3>
 <p>A2A 通信默认<strong>关闭</strong>，必须显式开启并配置白名单：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">tools</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">tools</span>:
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">agentToAgent</span>:
 </span></span><span style="display:flex;"><span>    <span style="color:#f92672">enabled</span>: <span style="color:#66d9ef">true</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#f92672">allow</span>:
@@ -7103,30 +7150,30 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </span></span><span style="display:flex;"><span>      <span style="color:#75715e"># 注意：work → family 未被允许</span>
 </span></span></code></pre></div><p><strong>默认值的安全考虑</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>参数</th>
-					<th>默认值</th>
-					<th>安全考虑</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>enabled</code></td>
-					<td><code>false</code></td>
-					<td>默认不允许 Agent 间通信</td>
-			</tr>
-			<tr>
-					<td><code>allow</code></td>
-					<td><code>[]</code></td>
-					<td>即使 enabled，也需要显式白名单</td>
-			</tr>
-			<tr>
-					<td><code>maxPingPongTurns</code></td>
-					<td>2</td>
-					<td>防止无限递归对话消耗资源</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>默认值</th>
+          <th>安全考虑</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>enabled</code></td>
+          <td><code>false</code></td>
+          <td>默认不允许 Agent 间通信</td>
+      </tr>
+      <tr>
+          <td><code>allow</code></td>
+          <td><code>[]</code></td>
+          <td>即使 enabled，也需要显式白名单</td>
+      </tr>
+      <tr>
+          <td><code>maxPingPongTurns</code></td>
+          <td>2</td>
+          <td>防止无限递归对话消耗资源</td>
+      </tr>
+  </tbody>
 </table>
 <p>这个安全门控防止了<strong>Agent 间的意外对话循环</strong>——如果 Agent A 可以无条件地与 Agent B 通信，而 Agent B 也可以无条件地与 Agent A 通信，那么一条消息可能触发无限循环的对话。</p>
 <h3 id="64-announce-投递">
@@ -7134,7 +7181,7 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
   <a class="anchor" href="#64-announce-%e6%8a%95%e9%80%92">#</a>
 </h3>
 <p>Ping-Pong 对话结束后，最终结果通过 Announce 机制投递给请求者：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// buildAgentToAgentAnnounceContext 构建最终公告
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// buildAgentToAgentAnnounceContext 构建最终公告
 </span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">announceContext</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">buildAgentToAgentAnnounceContext</span>({
 </span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">requesterSessionKey</span>: <span style="color:#66d9ef">params.requesterSessionKey</span>,
 </span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">requesterChannel</span>: <span style="color:#66d9ef">params.requesterChannel</span>,
@@ -7162,49 +7209,49 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 <p>Lane 是 OpenClaw 中<strong>并发调度的基本单元</strong>。可以把 Lane 想象成机场的跑道——同一时刻，一条跑道上只能有一架飞机起降，但不同跑道可以并行操作。</p>
 <p>源码入口（<code>src/agents/lanes.ts</code>）定义了以下 Lane 类型：</p>
 <table>
-	<thead>
-			<tr>
-					<th>Lane 类型</th>
-					<th>格式</th>
-					<th>含义</th>
-					<th>并发度</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>main</code></td>
-					<td><code>main:&lt;mainKey&gt;</code></td>
-					<td>主会话 lane</td>
-					<td>同 session 串行</td>
-			</tr>
-			<tr>
-					<td><code>subagent</code></td>
-					<td><code>subagent:&lt;parentSessionKey&gt;</code></td>
-					<td>子 Agent lane</td>
-					<td>受 maxConcurrent 限制</td>
-			</tr>
-			<tr>
-					<td><code>cron</code></td>
-					<td><code>cron</code></td>
-					<td>定时任务 lane</td>
-					<td>受 cron.maxConcurrentRuns 限制</td>
-			</tr>
-			<tr>
-					<td><code>cron-nested</code></td>
-					<td><code>cron-nested:&lt;cronKey&gt;</code></td>
-					<td>嵌套定时任务 lane</td>
-					<td>独立槽位</td>
-			</tr>
-			<tr>
-					<td><code>nested:&lt;sessionKey&gt;</code></td>
-					<td><code>nested:&lt;key&gt;</code></td>
-					<td>嵌套会话 lane</td>
-					<td>独立串行</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>Lane 类型</th>
+          <th>格式</th>
+          <th>含义</th>
+          <th>并发度</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>main</code></td>
+          <td><code>main:&lt;mainKey&gt;</code></td>
+          <td>主会话 lane</td>
+          <td>同 session 串行</td>
+      </tr>
+      <tr>
+          <td><code>subagent</code></td>
+          <td><code>subagent:&lt;parentSessionKey&gt;</code></td>
+          <td>子 Agent lane</td>
+          <td>受 maxConcurrent 限制</td>
+      </tr>
+      <tr>
+          <td><code>cron</code></td>
+          <td><code>cron</code></td>
+          <td>定时任务 lane</td>
+          <td>受 cron.maxConcurrentRuns 限制</td>
+      </tr>
+      <tr>
+          <td><code>cron-nested</code></td>
+          <td><code>cron-nested:&lt;cronKey&gt;</code></td>
+          <td>嵌套定时任务 lane</td>
+          <td>独立槽位</td>
+      </tr>
+      <tr>
+          <td><code>nested:&lt;sessionKey&gt;</code></td>
+          <td><code>nested:&lt;key&gt;</code></td>
+          <td>嵌套会话 lane</td>
+          <td>独立串行</td>
+      </tr>
+  </tbody>
 </table>
 <p><code>resolveNestedAgentLaneForSession()</code> 和 <code>resolveCronAgentLane()</code> 的语义：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 根据 session key 解析对应的 lane
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 根据 session key 解析对应的 lane
 </span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolveNestedAgentLaneForSession</span>(<span style="color:#a6e22e">sessionKey</span>: <span style="color:#66d9ef">string</span>)<span style="color:#f92672">:</span> <span style="color:#66d9ef">string</span> {
 </span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">isSubagentSessionKey</span>(<span style="color:#a6e22e">sessionKey</span>)) {
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#e6db74">`subagent:</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">getParentSessionKey</span>(<span style="color:#a6e22e">sessionKey</span>)<span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>;
@@ -7226,35 +7273,35 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </h3>
 <p>当消息到达时，如果目标 Lane 正在忙，OpenClaw 根据 <strong>Queue 模式</strong> 决定如何处理：</p>
 <table>
-	<thead>
-			<tr>
-					<th>模式</th>
-					<th>行为</th>
-					<th>适用场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>steer</code></td>
-					<td>注入 active runtime，中断当前操作并处理新消息</td>
-					<td>默认推荐，适合交互式对话</td>
-			</tr>
-			<tr>
-					<td><code>followup</code></td>
-					<td>排队等待，等当前操作完成后处理</td>
-					<td>批量任务处理</td>
-			</tr>
-			<tr>
-					<td><code>collect</code></td>
-					<td>合并为一次 followup，多条消息合并为一条</td>
-					<td>群聊场景，避免刷屏</td>
-			</tr>
-			<tr>
-					<td><code>interrupt</code></td>
-					<td>强制中断当前 run，丢弃未完成的输出</td>
-					<td>紧急场景</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>行为</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>steer</code></td>
+          <td>注入 active runtime，中断当前操作并处理新消息</td>
+          <td>默认推荐，适合交互式对话</td>
+      </tr>
+      <tr>
+          <td><code>followup</code></td>
+          <td>排队等待，等当前操作完成后处理</td>
+          <td>批量任务处理</td>
+      </tr>
+      <tr>
+          <td><code>collect</code></td>
+          <td>合并为一次 followup，多条消息合并为一条</td>
+          <td>群聊场景，避免刷屏</td>
+      </tr>
+      <tr>
+          <td><code>interrupt</code></td>
+          <td>强制中断当前 run，丢弃未完成的输出</td>
+          <td>紧急场景</td>
+      </tr>
+  </tbody>
 </table>
 <p>源码中的 <code>run-wait.ts</code> 与 <code>waitForAgentRun()</code> 实现了队列的等待和唤醒机制：</p>
 <pre tabindex="0"><code>消息到达 → 检查 lane 状态
@@ -7269,34 +7316,34 @@ Agent A 通过 sessions_send → A2A Engine → Agent B → 可选 ping-pong →
 </h3>
 <p>OpenClaw 在三个层级控制并发度：</p>
 <table>
-	<thead>
-			<tr>
-					<th>层级</th>
-					<th>参数</th>
-					<th>默认值</th>
-					<th>作用范围</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>Agent 级</td>
-					<td><code>agents.defaults.maxConcurrent</code></td>
-					<td>1</td>
-					<td>单个 Agent 的最大并发 run 数</td>
-			</tr>
-			<tr>
-					<td>Subagent 级</td>
-					<td><code>subagents.maxConcurrent</code></td>
-					<td>5</td>
-					<td>全局子 Agent 并发数</td>
-			</tr>
-			<tr>
-					<td>Cron 级</td>
-					<td><code>cron.maxConcurrentRuns</code></td>
-					<td>3</td>
-					<td>全局定时任务并发数</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>参数</th>
+          <th>默认值</th>
+          <th>作用范围</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Agent 级</td>
+          <td><code>agents.defaults.maxConcurrent</code></td>
+          <td>1</td>
+          <td>单个 Agent 的最大并发 run 数</td>
+      </tr>
+      <tr>
+          <td>Subagent 级</td>
+          <td><code>subagents.maxConcurrent</code></td>
+          <td>5</td>
+          <td>全局子 Agent 并发数</td>
+      </tr>
+      <tr>
+          <td>Cron 级</td>
+          <td><code>cron.maxConcurrentRuns</code></td>
+          <td>3</td>
+          <td>全局定时任务并发数</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>Session-level 串行保证</strong>：同一 session 在任何时刻只有一个 active run。这是通过 Lane 机制保证的——同一个 session key 映射到同一个 lane，而 lane 内部是串行执行的。</p>
 <p><strong>并发控制的现实意义</strong>：</p>
@@ -7334,7 +7381,7 @@ Agent: family  → Lane: main:family   → 职责：家庭相关
 <li>两个 Agent 可以共享日历信息</li>
 </ul>
 <p><strong>完整配置</strong>：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">list</span>:
 </span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;main&#34;</span>
 </span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4&#34;</span>
@@ -7411,7 +7458,7 @@ family Agent 需要查工作日程 → sessions_send → work Agent → 返回�
 <li>结果汇聚后返回给用户</li>
 </ul>
 <p><strong>完整配置</strong>：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">list</span>:
 </span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;coordinator&#34;</span>
 </span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-opus-4&#34;</span>
@@ -7489,7 +7536,7 @@ coordinator 等待两个子 Agent 完成 → spawnSubagent({ task: &#34;写作..
 <li>Telegram 使用强模型（Opus），注重推理质量</li>
 <li>特定用户的 DM 绑定到专属 Agent</li>
 </ul>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">list</span>:
 </span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;fast&#34;</span>
 </span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-sonnet-4&#34;</span>
@@ -7546,7 +7593,7 @@ coordinator 等待两个子 Agent 完成 → spawnSubagent({ task: &#34;写作..
 <li>Data Agent 通过 <code>sessions_send</code> 将数据交给 Analysis Agent 分析</li>
 <li>Analysis Agent 通过 announce 投递最终报告到 Telegram 群</li>
 </ul>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">agents</span>:
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">list</span>:
 </span></span><span style="display:flex;"><span>    - <span style="color:#f92672">id</span>: <span style="color:#e6db74">&#34;data-collector&#34;</span>
 </span></span><span style="display:flex;"><span>      <span style="color:#f92672">model</span>: <span style="color:#e6db74">&#34;anthropic/claude-haiku&#34;</span>
@@ -7596,115 +7643,115 @@ coordinator 等待两个子 Agent 完成 → spawnSubagent({ task: &#34;写作..
 </h2>
 <p>本节提供 OpenClaw 多 Agent 机制核心源码文件的速查表。基于 v1.x 源码结构，文件路径均相对于项目根目录。</p>
 <table>
-	<thead>
-			<tr>
-					<th>文件路径</th>
-					<th>职责</th>
-					<th>关键函数/类型</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>src/agents/agent-scope.ts</code></td>
-					<td>Agent 配置解析，从 session key 到 agentId 的映射</td>
-					<td><code>resolveSessionAgentIds()</code>, <code>listAgentIds()</code>, <code>resolveDefaultAgentId()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/agents/agent-scope-config.ts</code></td>
-					<td>Agent 磁盘布局，路径解析逻辑</td>
-					<td><code>resolveAgentDir()</code>, <code>resolveWorkspacePath()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/agents/lanes.ts</code></td>
-					<td>Lane 模型，并发调度基本单元</td>
-					<td><code>resolveNestedAgentLaneForSession()</code>, <code>resolveCronAgentLane()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/agents/subagent-spawn.ts</code></td>
-					<td>Sub-Agent 创建，参数解析与会话分配</td>
-					<td><code>spawnSubagent()</code>, <code>SpawnSubagentParams</code>, <code>forkSessionFromParent()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/agents/subagent-announce.ts</code></td>
-					<td>子 Agent 完成通知，steer/wake 机制</td>
-					<td><code>announceSubagentCompletion()</code>, <code>SILENT_REPLY_TOKEN</code></td>
-			</tr>
-			<tr>
-					<td><code>src/agents/subagent-registry.ts</code></td>
-					<td>子 Agent 生命周期管理，深度追踪</td>
-					<td><code>registerSubagentRun()</code>, <code>lookupSubagentRun()</code>, <code>canSpawnSubagent()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/agents/subagent-depth.ts</code></td>
-					<td>递归深度追踪</td>
-					<td><code>getSpawnDepth()</code>, <code>checkMaxSpawnDepth()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/agents/tools/sessions-send-tool.ts</code></td>
-					<td>A2A 发送工具定义</td>
-					<td><code>createSessionsSendTool()</code>, <code>SessionsSendParams</code></td>
-			</tr>
-			<tr>
-					<td><code>src/agents/tools/sessions-send-tool.a2a.ts</code></td>
-					<td>A2A 对话流引擎（Ping-Pong 机制）</td>
-					<td><code>runSessionsSendA2AFlow()</code>, <code>buildAgentToAgentReplyContext()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/agents/tools/sessions-send-helpers.ts</code></td>
-					<td>A2A 辅助函数</td>
-					<td><code>buildAgentToAgentAnnounceContext()</code>, <code>isReplySkip()</code>, <code>isAnnounceSkip()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/agents/tools/sessions-helpers.ts</code></td>
-					<td>Session 可见性策略</td>
-					<td><code>createSessionVisibilityGuard()</code>, <code>resolveVisibleSessionReference()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/agents/run-wait.ts</code></td>
-					<td>Agent 运行等待，队列机制</td>
-					<td><code>waitForAgentRun()</code>, <code>readLatestAssistantReplySnapshot()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/agents/agent-step.ts</code></td>
-					<td>单步 Agent 执行</td>
-					<td><code>runAgentStep()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/routing/resolve-route.ts</code></td>
-					<td>路由决策，Binding 匹配</td>
-					<td><code>resolveRoute()</code>, <code>matchBinding()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/routing/session-key.ts</code></td>
-					<td>Session Key 格式与解析</td>
-					<td><code>parseAgentSessionKey()</code>, <code>resolveAgentIdFromSessionKey()</code>, <code>toAgentStoreSessionKey()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/routing/bindings.ts</code></td>
-					<td>Binding 配置模型</td>
-					<td><code>resolveBindingMatch()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/bindings/records.ts</code></td>
-					<td>绑定记录持久化</td>
-					<td><code>createConversationBindingRecord()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/sandbox/sandbox-agent-config.ts</code></td>
-					<td>沙箱 Agent 配置</td>
-					<td><code>resolveSandboxMode()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/sandbox/sandbox-tool-policy.ts</code></td>
-					<td>沙箱工具策略</td>
-					<td><code>resolveToolPolicy()</code></td>
-			</tr>
-			<tr>
-					<td><code>src/gateway/call.ts</code></td>
-					<td>Gateway 内部通信</td>
-					<td><code>callGateway()</code></td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>文件路径</th>
+          <th>职责</th>
+          <th>关键函数/类型</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>src/agents/agent-scope.ts</code></td>
+          <td>Agent 配置解析，从 session key 到 agentId 的映射</td>
+          <td><code>resolveSessionAgentIds()</code>, <code>listAgentIds()</code>, <code>resolveDefaultAgentId()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/agent-scope-config.ts</code></td>
+          <td>Agent 磁盘布局，路径解析逻辑</td>
+          <td><code>resolveAgentDir()</code>, <code>resolveWorkspacePath()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/lanes.ts</code></td>
+          <td>Lane 模型，并发调度基本单元</td>
+          <td><code>resolveNestedAgentLaneForSession()</code>, <code>resolveCronAgentLane()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/subagent-spawn.ts</code></td>
+          <td>Sub-Agent 创建，参数解析与会话分配</td>
+          <td><code>spawnSubagent()</code>, <code>SpawnSubagentParams</code>, <code>forkSessionFromParent()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/subagent-announce.ts</code></td>
+          <td>子 Agent 完成通知，steer/wake 机制</td>
+          <td><code>announceSubagentCompletion()</code>, <code>SILENT_REPLY_TOKEN</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/subagent-registry.ts</code></td>
+          <td>子 Agent 生命周期管理，深度追踪</td>
+          <td><code>registerSubagentRun()</code>, <code>lookupSubagentRun()</code>, <code>canSpawnSubagent()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/subagent-depth.ts</code></td>
+          <td>递归深度追踪</td>
+          <td><code>getSpawnDepth()</code>, <code>checkMaxSpawnDepth()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/tools/sessions-send-tool.ts</code></td>
+          <td>A2A 发送工具定义</td>
+          <td><code>createSessionsSendTool()</code>, <code>SessionsSendParams</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/tools/sessions-send-tool.a2a.ts</code></td>
+          <td>A2A 对话流引擎（Ping-Pong 机制）</td>
+          <td><code>runSessionsSendA2AFlow()</code>, <code>buildAgentToAgentReplyContext()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/tools/sessions-send-helpers.ts</code></td>
+          <td>A2A 辅助函数</td>
+          <td><code>buildAgentToAgentAnnounceContext()</code>, <code>isReplySkip()</code>, <code>isAnnounceSkip()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/tools/sessions-helpers.ts</code></td>
+          <td>Session 可见性策略</td>
+          <td><code>createSessionVisibilityGuard()</code>, <code>resolveVisibleSessionReference()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/run-wait.ts</code></td>
+          <td>Agent 运行等待，队列机制</td>
+          <td><code>waitForAgentRun()</code>, <code>readLatestAssistantReplySnapshot()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/agents/agent-step.ts</code></td>
+          <td>单步 Agent 执行</td>
+          <td><code>runAgentStep()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/routing/resolve-route.ts</code></td>
+          <td>路由决策，Binding 匹配</td>
+          <td><code>resolveRoute()</code>, <code>matchBinding()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/routing/session-key.ts</code></td>
+          <td>Session Key 格式与解析</td>
+          <td><code>parseAgentSessionKey()</code>, <code>resolveAgentIdFromSessionKey()</code>, <code>toAgentStoreSessionKey()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/routing/bindings.ts</code></td>
+          <td>Binding 配置模型</td>
+          <td><code>resolveBindingMatch()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/bindings/records.ts</code></td>
+          <td>绑定记录持久化</td>
+          <td><code>createConversationBindingRecord()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/sandbox/sandbox-agent-config.ts</code></td>
+          <td>沙箱 Agent 配置</td>
+          <td><code>resolveSandboxMode()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/sandbox/sandbox-tool-policy.ts</code></td>
+          <td>沙箱工具策略</td>
+          <td><code>resolveToolPolicy()</code></td>
+      </tr>
+      <tr>
+          <td><code>src/gateway/call.ts</code></td>
+          <td>Gateway 内部通信</td>
+          <td><code>callGateway()</code></td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>源码阅读建议路径</strong>：</p>
 <pre tabindex="0"><code>1. agent-scope.ts     → 理解 Agent 是什么
@@ -7736,50 +7783,50 @@ coordinator 等待两个子 Agent 完成 → spawnSubagent({ task: &#34;写作..
 </h3>
 <p>OpenClaw 和 Hermes Agent 都支持多 Agent 机制，但设计理念有所不同：</p>
 <table>
-	<thead>
-			<tr>
-					<th>维度</th>
-					<th>OpenClaw</th>
-					<th>Hermes Agent</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>隔离粒度</strong></td>
-					<td>Agent 级（workspace + session + model）</td>
-					<td>Agent 级（类似）</td>
-			</tr>
-			<tr>
-					<td><strong>路由方式</strong></td>
-					<td>Binding 配置（声明式 YAML）</td>
-					<td>内置路由（配置驱动）</td>
-			</tr>
-			<tr>
-					<td><strong>子 Agent</strong></td>
-					<td>spawnSubagent（run/session 两种模式）</td>
-					<td>delegate_task（goal/context 模式）</td>
-			</tr>
-			<tr>
-					<td><strong>Agent 间通信</strong></td>
-					<td>sessions_send + A2A ping-pong</td>
-					<td>send_message + cronjob</td>
-			</tr>
-			<tr>
-					<td><strong>并发控制</strong></td>
-					<td>Lane + Queue + maxConcurrent</td>
-					<td>session 串行 + cron 调度</td>
-			</tr>
-			<tr>
-					<td><strong>安全模型</strong></td>
-					<td>sandbox + visibility + allowlist</td>
-					<td>profile 隔离 + 跨 profile guard</td>
-			</tr>
-			<tr>
-					<td><strong>调度</strong></td>
-					<td>Command Queue + Lanes + steer/followup</td>
-					<td>Cron 定时任务 + 后台进程</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>OpenClaw</th>
+          <th>Hermes Agent</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>隔离粒度</strong></td>
+          <td>Agent 级（workspace + session + model）</td>
+          <td>Agent 级（类似）</td>
+      </tr>
+      <tr>
+          <td><strong>路由方式</strong></td>
+          <td>Binding 配置（声明式 YAML）</td>
+          <td>内置路由（配置驱动）</td>
+      </tr>
+      <tr>
+          <td><strong>子 Agent</strong></td>
+          <td>spawnSubagent（run/session 两种模式）</td>
+          <td>delegate_task（goal/context 模式）</td>
+      </tr>
+      <tr>
+          <td><strong>Agent 间通信</strong></td>
+          <td>sessions_send + A2A ping-pong</td>
+          <td>send_message + cronjob</td>
+      </tr>
+      <tr>
+          <td><strong>并发控制</strong></td>
+          <td>Lane + Queue + maxConcurrent</td>
+          <td>session 串行 + cron 调度</td>
+      </tr>
+      <tr>
+          <td><strong>安全模型</strong></td>
+          <td>sandbox + visibility + allowlist</td>
+          <td>profile 隔离 + 跨 profile guard</td>
+      </tr>
+      <tr>
+          <td><strong>调度</strong></td>
+          <td>Command Queue + Lanes + steer/followup</td>
+          <td>Cron 定时任务 + 后台进程</td>
+      </tr>
+  </tbody>
 </table>
 <p>两者的共同点是都选择了&quot;隔离优先、显式交互&quot;的架构。不同点在于 OpenClaw 更侧重于<strong>实时消息路由和会话隔离</strong>（适合聊天机器人场景），而 Hermes Agent 更侧重于<strong>任务委派和定时调度</strong>（适合自动化工作流）。</p>
 <h3 id="103-未来趋势">
@@ -7795,65 +7842,65 @@ coordinator 等待两个子 Agent 完成 → spawnSubagent({ task: &#34;写作..
 </h3>
 <p>基于全文分析，以下是 OpenClaw 多 Agent 配置的最佳实践：</p>
 <table>
-	<thead>
-			<tr>
-					<th>#</th>
-					<th>实践</th>
-					<th>理由</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>1</td>
-					<td><strong>每个 Agent 一个 workspace</strong></td>
-					<td>文件系统隔离是最基本的安全边界</td>
-			</tr>
-			<tr>
-					<td>2</td>
-					<td><strong>启用 sandbox mode = &ldquo;non-main&rdquo;</strong></td>
-					<td>生产环境中保护 main Agent 不受非预期操作影响</td>
-			</tr>
-			<tr>
-					<td>3</td>
-					<td><strong>Binding 规则从精确到宽泛排列</strong></td>
-					<td>利用最精确匹配优先策略，避免宽泛规则覆盖精确规则</td>
-			</tr>
-			<tr>
-					<td>4</td>
-					<td><strong>设置合理的 maxSpawnDepth</strong></td>
-					<td>防止无限递归 spawn，默认值 2 适用于大多数场景</td>
-			</tr>
-			<tr>
-					<td>5</td>
-					<td><strong>A2A 通信默认关闭，显式白名单</strong></td>
-					<td>防止意外对话循环，遵循最小权限原则</td>
-			</tr>
-			<tr>
-					<td>6</td>
-					<td><strong>使用 steer 模式用于交互式对话</strong></td>
-					<td>确保用户消息被及时处理，而不是排队等待</td>
-			</tr>
-			<tr>
-					<td>7</td>
-					<td><strong>使用 collect 模式用于群聊</strong></td>
-					<td>避免多条消息触发多个独立 run，导致刷屏</td>
-			</tr>
-			<tr>
-					<td>8</td>
-					<td><strong>定期清理不活跃的 session</strong></td>
-					<td>避免 session 历史无限增长，影响性能和 token 消耗</td>
-			</tr>
-			<tr>
-					<td>9</td>
-					<td><strong>为关键 Agent 配置 model override</strong></td>
-					<td>在特定会话中临时切换到更强/更便宜的模型</td>
-			</tr>
-			<tr>
-					<td>10</td>
-					<td><strong>使用 shared QMD collections 管理共享知识</strong></td>
-					<td>在保持 Agent 隔离的同时，实现可控的知识共享</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>实践</th>
+          <th>理由</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td><strong>每个 Agent 一个 workspace</strong></td>
+          <td>文件系统隔离是最基本的安全边界</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td><strong>启用 sandbox mode = &ldquo;non-main&rdquo;</strong></td>
+          <td>生产环境中保护 main Agent 不受非预期操作影响</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td><strong>Binding 规则从精确到宽泛排列</strong></td>
+          <td>利用最精确匹配优先策略，避免宽泛规则覆盖精确规则</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td><strong>设置合理的 maxSpawnDepth</strong></td>
+          <td>防止无限递归 spawn，默认值 2 适用于大多数场景</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td><strong>A2A 通信默认关闭，显式白名单</strong></td>
+          <td>防止意外对话循环，遵循最小权限原则</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td><strong>使用 steer 模式用于交互式对话</strong></td>
+          <td>确保用户消息被及时处理，而不是排队等待</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td><strong>使用 collect 模式用于群聊</strong></td>
+          <td>避免多条消息触发多个独立 run，导致刷屏</td>
+      </tr>
+      <tr>
+          <td>8</td>
+          <td><strong>定期清理不活跃的 session</strong></td>
+          <td>避免 session 历史无限增长，影响性能和 token 消耗</td>
+      </tr>
+      <tr>
+          <td>9</td>
+          <td><strong>为关键 Agent 配置 model override</strong></td>
+          <td>在特定会话中临时切换到更强/更便宜的模型</td>
+      </tr>
+      <tr>
+          <td>10</td>
+          <td><strong>使用 shared QMD collections 管理共享知识</strong></td>
+          <td>在保持 Agent 隔离的同时，实现可控的知识共享</td>
+      </tr>
+  </tbody>
 </table>
 <hr>
 <p><em>本文基于 OpenClaw v1.x 源码编写。源码结构和 API 可能随版本更新而变化，建议阅读时参考最新源码。</em></p>

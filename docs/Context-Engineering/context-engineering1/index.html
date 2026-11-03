@@ -31,30 +31,30 @@ Part 1：定义、约束与核心维度
 **上下文工程（Context Engineering）**是一门系统性学科，研究如何在大型语言模型（LLM）的有限上下文窗口内，对信息的筛选、组织、注入与生命周期进行全链路管理。
 它不是 Prompt Engineering 的简单扩展，也不是 RAG 的重新包装。它的核心问题可以归结为四个：
 
-	
-			
-					问题
-					内涵
-			
-	
-	
-			
-					放什么
-					从海量候选信息中选择真正影响模型输出的子集
-			
-			
-					不放什么
-					排除噪声、冗余、过时信息，避免注意力污染
-			
-			
-					怎么放
-					利用注意力分布规律，优化信息在上下文窗口中的组织顺序与层次结构
-			
-			
-					何时放
-					在任务执行的生命周期中，动态决定何时注入、何时撤回、何时压缩
-			
-	
+  
+      
+          问题
+          内涵
+      
+  
+  
+      
+          放什么
+          从海量候选信息中选择真正影响模型输出的子集
+      
+      
+          不放什么
+          排除噪声、冗余、过时信息，避免注意力污染
+      
+      
+          怎么放
+          利用注意力分布规律，优化信息在上下文窗口中的组织顺序与层次结构
+      
+      
+          何时放
+          在任务执行的生命周期中，动态决定何时注入、何时撤回、何时压缩
+      
+  
 
 范式转变：从&quot;写好提示词&quot;到&quot;设计上下文系统&quot;。
 在单轮问答时代，Prompt Engineering 足够——你写一段提示词，模型返回一个答案。但在 Agent 时代，模型不再是&quot;回答者&quot;而是&quot;执行者&quot;：它需要理解系统指令、调用工具、读取检索结果、记住历史对话、协调子任务。上下文不再是一段文字，而是一个动态演化的数据结构。
@@ -83,24 +83,24 @@ Part 1：定义、约束与核心维度
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
 <meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Context-Engineering/context-engineering1/">
-	<meta property="og:site_name" content="Modern Agent">
-	<meta property="og:title" content="context engineering">
-	<meta property="og:description" content="上下文工程（Context Engineering）指南#版本: v1.0 | 状态: 初稿 风格: DDIA 式技术深度 — 每项主张均有论文/官方文档/GitHub 依据
-上下文工程（Context Engineering）#Part 1：定义、约束与核心维度
-一、什么是上下文工程#1.1 定义与内涵#**上下文工程（Context Engineering）**是一门系统性学科，研究如何在大型语言模型（LLM）的有限上下文窗口内，对信息的筛选、组织、注入与生命周期进行全链路管理。
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="context engineering">
+  <meta property="og:description" content="上下文工程（Context Engineering）指南 # 版本: v1.0 | 状态: 初稿 风格: DDIA 式技术深度 — 每项主张均有论文/官方文档/GitHub 依据
+上下文工程（Context Engineering） # Part 1：定义、约束与核心维度
+一、什么是上下文工程 # 1.1 定义与内涵 # **上下文工程（Context Engineering）**是一门系统性学科，研究如何在大型语言模型（LLM）的有限上下文窗口内，对信息的筛选、组织、注入与生命周期进行全链路管理。
 它不是 Prompt Engineering 的简单扩展，也不是 RAG 的重新包装。它的核心问题可以归结为四个：
 问题 内涵 放什么 从海量候选信息中选择真正影响模型输出的子集 不放什么 排除噪声、冗余、过时信息，避免注意力污染 怎么放 利用注意力分布规律，优化信息在上下文窗口中的组织顺序与层次结构 何时放 在任务执行的生命周期中，动态决定何时注入、何时撤回、何时压缩 范式转变：从&#34;写好提示词&#34;到&#34;设计上下文系统&#34;。
 在单轮问答时代，Prompt Engineering 足够——你写一段提示词，模型返回一个答案。但在 Agent 时代，模型不再是&#34;回答者&#34;而是&#34;执行者&#34;：它需要理解系统指令、调用工具、读取检索结果、记住历史对话、协调子任务。上下文不再是一段文字，而是一个动态演化的数据结构。
-┌─────────────────────────────────────────────────┐│ Prompt Engineering ││ ││ human: &#34;翻译这段文字&#34; → AI: &#34;好的...&#34; ││ ││ 单次交互，静态提示词 │└─────────────────────────────────────────────────┘┌─────────────────────────────────────────────────┐│ Context Engineering ││ ││ system: [系统指令 &#43; 能力定义] ││ memory: [历史对话摘要 &#43; 关键事实] ││ tools: [可用工具列表 &#43; schema] ││ RAG: [检索到的相关文档片段] ││ task: [当前用户请求] ││ state: [当前执行步骤 &#43; 中间结果] ││ → 模型决策 → 调用工具 → 更新状态 → 循环 ││ ││ 多轮交互，动态演化的上下文系统 │└─────────────────────────────────────────────────┘ 定义：上下文工程是设计与实现上下文信息在 LLM 推理全链路中的生命周期管理，包括信息的选取、排序、压缩、注入、更新与撤回，以在有限窗口约束下最大化模型输出的质量与成本效率。">
-	<meta property="og:locale" content="en">
-	<meta property="og:type" content="website">
+┌─────────────────────────────────────────────────┐ │ Prompt Engineering │ │ │ │ human: &#34;翻译这段文字&#34; → AI: &#34;好的...&#34; │ │ │ │ 单次交互，静态提示词 │ └─────────────────────────────────────────────────┘ ┌─────────────────────────────────────────────────┐ │ Context Engineering │ │ │ │ system: [系统指令 &#43; 能力定义] │ │ memory: [历史对话摘要 &#43; 关键事实] │ │ tools: [可用工具列表 &#43; schema] │ │ RAG: [检索到的相关文档片段] │ │ task: [当前用户请求] │ │ state: [当前执行步骤 &#43; 中间结果] │ │ → 模型决策 → 调用工具 → 更新状态 → 循环 │ │ │ │ 多轮交互，动态演化的上下文系统 │ └─────────────────────────────────────────────────┘ 定义：上下文工程是设计与实现上下文信息在 LLM 推理全链路中的生命周期管理，包括信息的选取、排序、压缩、注入、更新与撤回，以在有限窗口约束下最大化模型输出的质量与成本效率。">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
 <title>context engineering | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Context-Engineering/context-engineering1/">
-<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+<link rel="stylesheet" href="/www6vAIGC/book.min.3257a7ce7c061eb5dfc72257c356229b1470dc77ce9b982ac220c02542f9f04f.css" integrity="sha256-MlenznwGHrXfxyJXw1YimxRw3HfOm5gqwiDAJUL58E8=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.b03d70a1a41ebd2598f66475385e5f3acbb00c4c00220e8b32e57e4ea027ff4e.js" integrity="sha256-sD1woaQevSWY9mR1OF5fOsuwDEwAIg6LMuV&#43;TqAn/04=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.9ac9103c9736d6d7fd88e6f79ca53fdabcb398fab716e8ab8092ebfee52b0415.js" integrity="sha256-mskQPJc21tf9iOb3nKU/2ryzmPq3FuirgJLr/uUrBBU=" crossorigin="anonymous"></script>
 <link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Context-Engineering/context-engineering1/index.xml" title="Modern Agent" />
 <!--
 Made with Book Theme
@@ -153,8 +153,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="toggle"  />
-    <label for="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="flex justify-between">
+    <input type="checkbox" id="section-8eeae87632e610dbb7fc73d309f4a86d" class="toggle"  />
+    <label for="section-8eeae87632e610dbb7fc73d309f4a86d" class="flex justify-between">
       <a role="button" class="">RAG</a>
     </label>
   
@@ -169,8 +169,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c551263d461ebff83b9463dc3a94952c" class="toggle"  />
-    <label for="section-c551263d461ebff83b9463dc3a94952c" class="flex justify-between">
+    <input type="checkbox" id="section-098fde1b4be868f62390668d03d7d338" class="toggle"  />
+    <label for="section-098fde1b4be868f62390668d03d7d338" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -280,8 +280,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6d871616372a4994f42a7668d9af7715" class="toggle"  />
-    <label for="section-6d871616372a4994f42a7668d9af7715" class="flex justify-between">
+    <input type="checkbox" id="section-7c089cd98011270279a8c4693580483e" class="toggle"  />
+    <label for="section-7c089cd98011270279a8c4693580483e" class="flex justify-between">
       <a role="button" class="">实战 *</a>
     </label>
   
@@ -517,8 +517,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd42bffd52a5c198755daef56da179f9" class="toggle"  />
-    <label for="section-cd42bffd52a5c198755daef56da179f9" class="flex justify-between">
+    <input type="checkbox" id="section-00e0992ed3785617d99441f38424d443" class="toggle"  />
+    <label for="section-00e0992ed3785617d99441f38424d443" class="flex justify-between">
       <a role="button" class="">Pattern</a>
     </label>
   
@@ -718,8 +718,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-afec0c322e2a85b11a48111f0dba315c" class="toggle"  />
-    <label for="section-afec0c322e2a85b11a48111f0dba315c" class="flex justify-between">
+    <input type="checkbox" id="section-5e6438c77671b5eb480dd2c40a29deb4" class="toggle"  />
+    <label for="section-5e6438c77671b5eb480dd2c40a29deb4" class="flex justify-between">
       <a role="button" class="">phase *</a>
     </label>
   
@@ -919,8 +919,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="toggle"  />
-    <label for="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="flex justify-between">
+    <input type="checkbox" id="section-1205a3b6d7d0d892a149b0be18b55680" class="toggle"  />
+    <label for="section-1205a3b6d7d0d892a149b0be18b55680" class="flex justify-between">
       <a role="button" class="">案例</a>
     </label>
   
@@ -981,8 +981,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="toggle"  />
-    <label for="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="flex justify-between">
+    <input type="checkbox" id="section-2853751cf001bfb0dbbd0927de99f326" class="toggle"  />
+    <label for="section-2853751cf001bfb0dbbd0927de99f326" class="flex justify-between">
       <a role="button" class="">Agent Infra</a>
     </label>
   
@@ -997,8 +997,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="toggle"  />
-    <label for="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="flex justify-between">
+    <input type="checkbox" id="section-4277410225f2a82b8e3d740cbc19c27a" class="toggle"  />
+    <label for="section-4277410225f2a82b8e3d740cbc19c27a" class="flex justify-between">
       <a role="button" class="">Dify</a>
     </label>
   
@@ -1072,8 +1072,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d35a724145e4438b19d0128310151060" class="toggle"  />
-    <label for="section-d35a724145e4438b19d0128310151060" class="flex justify-between">
+    <input type="checkbox" id="section-21f3c925847a2d764db6eed92d3a72d8" class="toggle"  />
+    <label for="section-21f3c925847a2d764db6eed92d3a72d8" class="flex justify-between">
       <a role="button" class="">产品</a>
     </label>
   
@@ -1111,8 +1111,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d8fb1e2742348190fede849f378398c8" class="toggle"  />
-    <label for="section-d8fb1e2742348190fede849f378398c8" class="flex justify-between">
+    <input type="checkbox" id="section-781abe85b1b1e35a22f023c37cdc2d1e" class="toggle"  />
+    <label for="section-781abe85b1b1e35a22f023c37cdc2d1e" class="flex justify-between">
       <a role="button" class="">API</a>
     </label>
   
@@ -1168,8 +1168,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="toggle"  />
-    <label for="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="flex justify-between">
+    <input type="checkbox" id="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="toggle"  />
+    <label for="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="flex justify-between">
       <a role="button" class="">Sandbox</a>
     </label>
   
@@ -1225,8 +1225,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="toggle"  />
-    <label for="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="flex justify-between">
+    <input type="checkbox" id="section-c1654de4801752aac71344ec5dc9df88" class="toggle"  />
+    <label for="section-c1654de4801752aac71344ec5dc9df88" class="flex justify-between">
       <a role="button" class="">SDK</a>
     </label>
   
@@ -1287,8 +1287,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-465ebbe8c8eae209a571787ecebad2c0" class="toggle"  />
-    <label for="section-465ebbe8c8eae209a571787ecebad2c0" class="flex justify-between">
+    <input type="checkbox" id="section-0883be528cd603181ff8e3bbd53972c2" class="toggle"  />
+    <label for="section-0883be528cd603181ff8e3bbd53972c2" class="flex justify-between">
       <a role="button" class="">Agent</a>
     </label>
   
@@ -1303,8 +1303,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f76aa66a03b4f060262d5e206195edee" class="toggle"  />
-    <label for="section-f76aa66a03b4f060262d5e206195edee" class="flex justify-between">
+    <input type="checkbox" id="section-60cbe7eba0e55272c2f7e88142209eee" class="toggle"  />
+    <label for="section-60cbe7eba0e55272c2f7e88142209eee" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -1360,8 +1360,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d28aa4a73439b10799fd7621d99b09a8" class="toggle"  />
-    <label for="section-d28aa4a73439b10799fd7621d99b09a8" class="flex justify-between">
+    <input type="checkbox" id="section-34b90f1a802a08434ef79ad7e69c7bec" class="toggle"  />
+    <label for="section-34b90f1a802a08434ef79ad7e69c7bec" class="flex justify-between">
       <a role="button" class="">Practice</a>
     </label>
   
@@ -1453,8 +1453,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="toggle"  />
-    <label for="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="flex justify-between">
+    <input type="checkbox" id="section-d23f53c64147d40d7800ad362d50d826" class="toggle"  />
+    <label for="section-d23f53c64147d40d7800ad362d50d826" class="flex justify-between">
       <a role="button" class="">Reflection</a>
     </label>
   
@@ -1492,8 +1492,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c1c7bf1336ea4ad525ce468e5624159f" class="toggle"  />
-    <label for="section-c1c7bf1336ea4ad525ce468e5624159f" class="flex justify-between">
+    <input type="checkbox" id="section-071bdfde77f8dcb0258746094eb4b7ab" class="toggle"  />
+    <label for="section-071bdfde77f8dcb0258746094eb4b7ab" class="flex justify-between">
       <a role="button" class="">Planning</a>
     </label>
   
@@ -1585,8 +1585,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="toggle"  />
-    <label for="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="flex justify-between">
+    <input type="checkbox" id="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="toggle"  />
+    <label for="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1601,8 +1601,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e338773a0b87bd3d5520b81d5b88db62" class="toggle"  />
-    <label for="section-e338773a0b87bd3d5520b81d5b88db62" class="flex justify-between">
+    <input type="checkbox" id="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="toggle"  />
+    <label for="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1666,8 +1666,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9d0fe56670c342283f8f972214b72137" class="toggle"  />
-    <label for="section-9d0fe56670c342283f8f972214b72137" class="flex justify-between">
+    <input type="checkbox" id="section-fb50c7bc07294aad8ab163e5c05043d7" class="toggle"  />
+    <label for="section-fb50c7bc07294aad8ab163e5c05043d7" class="flex justify-between">
       <a role="button" class="">Hermes</a>
     </label>
   
@@ -1741,8 +1741,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a9773226cdddc85ff8f10cae8bdb49a2" class="toggle"  />
-    <label for="section-a9773226cdddc85ff8f10cae8bdb49a2" class="flex justify-between">
+    <input type="checkbox" id="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="toggle"  />
+    <label for="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="flex justify-between">
       <a role="button" class="">managed agents</a>
     </label>
   
@@ -1798,8 +1798,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-041a0b369c13985983a2e78e073f1143" class="toggle"  />
-    <label for="section-041a0b369c13985983a2e78e073f1143" class="flex justify-between">
+    <input type="checkbox" id="section-f0d84b83965f02340d4fc81e88ba04ab" class="toggle"  />
+    <label for="section-f0d84b83965f02340d4fc81e88ba04ab" class="flex justify-between">
       <a role="button" class="">Memory *</a>
     </label>
   
@@ -1956,8 +1956,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-360e9d19bffa35d5db5a46e0c0c05a65" class="toggle"  />
-    <label for="section-360e9d19bffa35d5db5a46e0c0c05a65" class="flex justify-between">
+    <input type="checkbox" id="section-66d86d5f38d04ef58ebb26728c026d4e" class="toggle"  />
+    <label for="section-66d86d5f38d04ef58ebb26728c026d4e" class="flex justify-between">
       <a role="button" class="">Openclaw</a>
     </label>
   
@@ -1995,8 +1995,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="toggle"  />
-    <label for="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="flex justify-between">
+    <input type="checkbox" id="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="toggle"  />
+    <label for="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
@@ -2075,8 +2075,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="toggle"  />
-    <label for="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="flex justify-between">
+    <input type="checkbox" id="section-f9cf8c4489e32d49710bcbde19d88feb" class="toggle"  />
+    <label for="section-f9cf8c4489e32d49710bcbde19d88feb" class="flex justify-between">
       <a role="button" class="">Multi Agent</a>
     </label>
   
@@ -2091,8 +2091,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e496587d113a69d69794ccf2791a9ec7" class="toggle"  />
-    <label for="section-e496587d113a69d69794ccf2791a9ec7" class="flex justify-between">
+    <input type="checkbox" id="section-7eb50204504aa47e2bb008fa842d839e" class="toggle"  />
+    <label for="section-7eb50204504aa47e2bb008fa842d839e" class="flex justify-between">
       <a role="button" class="">Agent编排</a>
     </label>
   
@@ -2148,8 +2148,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-386b9d0b04e254d93a6bcfe648c4dabb" class="toggle"  />
-    <label for="section-386b9d0b04e254d93a6bcfe648c4dabb" class="flex justify-between">
+    <input type="checkbox" id="section-f36497092f145d804086d65929bc2e21" class="toggle"  />
+    <label for="section-f36497092f145d804086d65929bc2e21" class="flex justify-between">
       <a role="button" class="">Multi-agent</a>
     </label>
   
@@ -2241,8 +2241,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3b952b230f5462315a195fb221f48926" class="toggle"  />
-    <label for="section-3b952b230f5462315a195fb221f48926" class="flex justify-between">
+    <input type="checkbox" id="section-68da3356eb5814cf26b079259a3868f0" class="toggle"  />
+    <label for="section-68da3356eb5814cf26b079259a3868f0" class="flex justify-between">
       <a role="button" class="">OpenClaw *</a>
     </label>
   
@@ -2316,8 +2316,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d1f7a2a771a519d5e8b989f2e775ff25" class="toggle"  />
-    <label for="section-d1f7a2a771a519d5e8b989f2e775ff25" class="flex justify-between">
+    <input type="checkbox" id="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="toggle"  />
+    <label for="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="flex justify-between">
       <a role="button" class="">subagent *</a>
     </label>
   
@@ -2373,8 +2373,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b8e7621552172a9013b3c0dae0dba198" class="toggle"  />
-    <label for="section-b8e7621552172a9013b3c0dae0dba198" class="flex justify-between">
+    <input type="checkbox" id="section-88a7a1de323948713dc3ef284015e786" class="toggle"  />
+    <label for="section-88a7a1de323948713dc3ef284015e786" class="flex justify-between">
       <a role="button" class="">Teams *</a>
     </label>
   
@@ -2435,8 +2435,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="toggle"  />
-    <label for="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="flex justify-between">
+    <input type="checkbox" id="section-32002b3a68174992b401de86ca7466b5" class="toggle"  />
+    <label for="section-32002b3a68174992b401de86ca7466b5" class="flex justify-between">
       <a role="button" class="">Tool &amp; Skill</a>
     </label>
   
@@ -2469,8 +2469,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5cca64c106a3667481dd63b47c86e87a" class="toggle"  />
-    <label for="section-5cca64c106a3667481dd63b47c86e87a" class="flex justify-between">
+    <input type="checkbox" id="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="toggle"  />
+    <label for="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="flex justify-between">
       <a role="button" class="">Survey &amp; SFT</a>
     </label>
   
@@ -2562,8 +2562,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c655fd9062845f96cffb72685b2fd696" class="toggle"  />
-    <label for="section-c655fd9062845f96cffb72685b2fd696" class="flex justify-between">
+    <input type="checkbox" id="section-80682025fb6883cc3c0dd48368b5f7e2" class="toggle"  />
+    <label for="section-80682025fb6883cc3c0dd48368b5f7e2" class="flex justify-between">
       <a role="button" class="">Tool 演进</a>
     </label>
   
@@ -2601,8 +2601,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-412785899ca57a1289f566e38e9ac427" class="toggle"  />
-    <label for="section-412785899ca57a1289f566e38e9ac427" class="flex justify-between">
+    <input type="checkbox" id="section-906763a3f2cf8396c71a61e320169919" class="toggle"  />
+    <label for="section-906763a3f2cf8396c71a61e320169919" class="flex justify-between">
       <a role="button" class="">tools</a>
     </label>
   
@@ -2640,8 +2640,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="toggle"  />
-    <label for="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="flex justify-between">
+    <input type="checkbox" id="section-92f9fae5d8ab88847e6e20bd4d125306" class="toggle"  />
+    <label for="section-92f9fae5d8ab88847e6e20bd4d125306" class="flex justify-between">
       <a role="button" class="">MCP *</a>
     </label>
   
@@ -2733,8 +2733,42 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-efd004ff6efd6d01576ed8f1a0e02adf" class="toggle"  />
-    <label for="section-efd004ff6efd6d01576ed8f1a0e02adf" class="flex justify-between">
+    <input type="checkbox" id="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="toggle"  />
+    <label for="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="flex justify-between">
+      <a role="button" class="">integrate *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/integrate/hermes/Agent-Harness-%E5%A6%82%E4%BD%95%E4%B8%8E%E4%BC%81%E4%B8%9A%E5%86%85%E9%83%A8%E7%B3%BB%E7%BB%9F%E9%9B%86%E6%88%90/" class="">Agent Harness 如何与企业内部系统集成</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-10c047fd3087cf2b29cccd85fa867912" class="toggle"  />
+    <label for="section-10c047fd3087cf2b29cccd85fa867912" class="flex justify-between">
       <a role="button" class="">skill *</a>
     </label>
   
@@ -2839,8 +2873,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="toggle"  />
-    <label for="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="flex justify-between">
+    <input type="checkbox" id="section-8f63915fcb39ad7378f7bc5015f45f65" class="toggle"  />
+    <label for="section-8f63915fcb39ad7378f7bc5015f45f65" class="flex justify-between">
       <a role="button" class="">Agent Eval</a>
     </label>
   
@@ -2873,8 +2907,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a89b3f08479487c94e6a45e37e72a862" class="toggle"  />
-    <label for="section-a89b3f08479487c94e6a45e37e72a862" class="flex justify-between">
+    <input type="checkbox" id="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="toggle"  />
+    <label for="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="flex justify-between">
       <a role="button" class="">Demystifying Evals for AI Agents</a>
     </label>
   
@@ -2925,8 +2959,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-83c0821b846e1dac2e8bfc2d8d45e825" class="toggle"  />
-    <label for="section-83c0821b846e1dac2e8bfc2d8d45e825" class="flex justify-between">
+    <input type="checkbox" id="section-6a8786ba009ef23a5dd033a252f02f8b" class="toggle"  />
+    <label for="section-6a8786ba009ef23a5dd033a252f02f8b" class="flex justify-between">
       <a role="button" class="">langfuse</a>
     </label>
   
@@ -2964,8 +2998,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9c20639ed9ed4feb764f4bac9cac218f" class="toggle"  />
-    <label for="section-9c20639ed9ed4feb764f4bac9cac218f" class="flex justify-between">
+    <input type="checkbox" id="section-159965614aff9bed370d992d243d0f28" class="toggle"  />
+    <label for="section-159965614aff9bed370d992d243d0f28" class="flex justify-between">
       <a role="button" class="">ragas</a>
     </label>
   
@@ -3003,8 +3037,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f0f5dda3ea316a50f6d522c3904406d7" class="toggle"  />
-    <label for="section-f0f5dda3ea316a50f6d522c3904406d7" class="flex justify-between">
+    <input type="checkbox" id="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="toggle"  />
+    <label for="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="flex justify-between">
       <a role="button" class="">llm-as-judge</a>
     </label>
   
@@ -3156,8 +3190,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="toggle"  />
-    <label for="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="flex justify-between">
+    <input type="checkbox" id="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="toggle"  />
+    <label for="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="flex justify-between">
       <a role="button" class="">Harness engineering</a>
     </label>
   
@@ -3172,8 +3206,212 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-fba0f3dbc923c98eb8930452d3ded9da" class="toggle"  />
-    <label for="section-fba0f3dbc923c98eb8930452d3ded9da" class="flex justify-between">
+    <input type="checkbox" id="section-104617d101dbf375f60fa698eeb5966a" class="toggle"  />
+    <label for="section-104617d101dbf375f60fa698eeb5966a" class="flex justify-between">
+      <a role="button" class="">Compress *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code/" class="">Claude /compact[A1] *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-compress/" class="">Claude Code - Compact summary</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/codex/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code2/" class="">Claude Code2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code3/" class="">Claude Code3</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f957c352b7370ac61b04758ecb52fade" class="toggle"  />
+    <label for="section-f957c352b7370ac61b04758ecb52fade" class="flex justify-between">
+      <a role="button" class="">可靠性 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/codex/" class="">Codex 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/dsh/" class="">Deepseek harness 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/pi-durable/" class="">Pi Durable</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="toggle"  />
+    <label for="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="flex justify-between">
       <a role="button" class="">Harness</a>
     </label>
   
@@ -3188,7 +3426,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/10-harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
   
 
           
@@ -3206,7 +3444,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/10-harness-enginering/harness/" class="">Harness</a>
   
 
           
@@ -3229,8 +3467,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="toggle"  />
-    <label for="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="flex justify-between">
+    <input type="checkbox" id="section-a0f0941605053d7b5666363df4970351" class="toggle"  />
+    <label for="section-a0f0941605053d7b5666363df4970351" class="flex justify-between">
       <a role="button" class="">OpenClaw</a>
     </label>
   
@@ -3376,8 +3614,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-946abd4062c933c072a8c623969add46" class="toggle"  />
-    <label for="section-946abd4062c933c072a8c623969add46" class="flex justify-between">
+    <input type="checkbox" id="section-7185e230a37938c1265b025f647037ad" class="toggle"  />
+    <label for="section-7185e230a37938c1265b025f647037ad" class="flex justify-between">
       <a role="button" class="">Hermes Agent</a>
     </label>
   
@@ -3487,47 +3725,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e7b0748ad48450dde76b72297d165429" class="toggle"  />
-    <label for="section-e7b0748ad48450dde76b72297d165429" class="flex justify-between">
-      <a role="button" class="">JEV</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/JEV/JEV/" class="">JEV</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-fcf812d87768431bb3ab86201a4222e2" class="toggle"  />
-    <label for="section-fcf812d87768431bb3ab86201a4222e2" class="flex justify-between">
+    <input type="checkbox" id="section-9d52e8079db1067f4a0c448c7b68b11b" class="toggle"  />
+    <label for="section-9d52e8079db1067f4a0c448c7b68b11b" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
@@ -3637,8 +3836,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-02af4685675e68e6f8179d748eeb6c5a" class="toggle"  />
-    <label for="section-02af4685675e68e6f8179d748eeb6c5a" class="flex justify-between">
+    <input type="checkbox" id="section-484bcac8c98a52dc9d58366512e4159a" class="toggle"  />
+    <label for="section-484bcac8c98a52dc9d58366512e4159a" class="flex justify-between">
       <a role="button" class="">Codex</a>
     </label>
   
@@ -3671,137 +3870,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ad440789e1a7ba07eb2b3918829c7257" class="toggle"  />
-    <label for="section-ad440789e1a7ba07eb2b3918829c7257" class="flex justify-between">
-      <a role="button" class="">Compress *</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code/" class="">Claude /compact[A1] *</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-compress/" class="">Claude Code - Compact summary</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/codex/" class="">CodeX 上下文</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code2/" class="">Claude Code2</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code3/" class="">Claude Code3</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-7b4eb57325a2b2a77e7753390fc7d915" class="toggle"  />
-    <label for="section-7b4eb57325a2b2a77e7753390fc7d915" class="flex justify-between">
+    <input type="checkbox" id="section-bb4ccb54455a606ed07ce1fdab4ac532" class="toggle"  />
+    <label for="section-bb4ccb54455a606ed07ce1fdab4ac532" class="flex justify-between">
       <a role="button" class="">Pi Agent</a>
     </label>
   
@@ -3883,83 +3953,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c47c9c73c26a489b07f412d8d4ee4f40" class="toggle"  />
-    <label for="section-c47c9c73c26a489b07f412d8d4ee4f40" class="flex justify-between">
-      <a role="button" class="">可靠性 *</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/codex/" class="">Codex 可靠性</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/dsh/" class="">Deepseek harness 可靠性</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/pi-durable/" class="">Pi Durable</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-eec787204d3e675b4351db6ec0be7bc8" class="toggle"  />
-    <label for="section-eec787204d3e675b4351db6ec0be7bc8" class="flex justify-between">
+    <input type="checkbox" id="section-27894a1d29427c9d52d1df6110020b8e" class="toggle"  />
+    <label for="section-27894a1d29427c9d52d1df6110020b8e" class="flex justify-between">
       <a role="button" class="">实战</a>
     </label>
   
@@ -3975,6 +3970,58 @@ https://github.com/alex-shpak/hugo-book
 
   
     <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8488d215ee4dde3fcb569ebf074c8d99" class="toggle"  />
+    <label for="section-8488d215ee4dde3fcb569ebf074c8d99" class="flex justify-between">
+      <a role="button" class="">JEV</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/100-JEV/hermes/Jev%E5%8E%9F%E7%90%86%E4%B8%8E%E5%BA%94%E7%94%A8/" class="">Jev原理与应用</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/100-JEV/JEV/" class="">JEV</a>
   
 
           
@@ -4020,8 +4067,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b41552d83299a260ffc5181fd5bf1177" class="toggle"  />
-    <label for="section-b41552d83299a260ffc5181fd5bf1177" class="flex justify-between">
+    <input type="checkbox" id="section-1f82435e89939f7232e02729b008213e" class="toggle"  />
+    <label for="section-1f82435e89939f7232e02729b008213e" class="flex justify-between">
       <a role="button" class="">Loops engineering</a>
     </label>
   
@@ -4036,8 +4083,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1a4757bdd1099e1149094c77f1470e5d" class="toggle"  />
-    <label for="section-1a4757bdd1099e1149094c77f1470e5d" class="flex justify-between">
+    <input type="checkbox" id="section-bf010a926485186e47c6ea2d2776a45f" class="toggle"  />
+    <label for="section-bf010a926485186e47c6ea2d2776a45f" class="flex justify-between">
       <a role="button" class="">goal</a>
     </label>
   
@@ -4093,8 +4140,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-eca2bd358c3e27c981a441ba4e158cb3" class="toggle"  />
-    <label for="section-eca2bd358c3e27c981a441ba4e158cb3" class="flex justify-between">
+    <input type="checkbox" id="section-013b791baed028e00c3cd685450d1255" class="toggle"  />
+    <label for="section-013b791baed028e00c3cd685450d1255" class="flex justify-between">
       <a role="button" class="">loop engineering</a>
     </label>
   
@@ -4150,8 +4197,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27d39407dbc0d87e956d19638a0f1da3" class="toggle"  />
-    <label for="section-27d39407dbc0d87e956d19638a0f1da3" class="flex justify-between">
+    <input type="checkbox" id="section-b284ec03b7c672cfde434851c4ea7377" class="toggle"  />
+    <label for="section-b284ec03b7c672cfde434851c4ea7377" class="flex justify-between">
       <a role="button" class="">长程任务</a>
     </label>
   
@@ -4220,8 +4267,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-689fa0c955be06dbb890852c4c2826e8" class="toggle"  />
-    <label for="section-689fa0c955be06dbb890852c4c2826e8" class="flex justify-between">
+    <input type="checkbox" id="section-4211c6654bc32161daa2abe28c73b06e" class="toggle"  />
+    <label for="section-4211c6654bc32161daa2abe28c73b06e" class="flex justify-between">
       <a role="button" class="">Meta Harness</a>
     </label>
   
@@ -4236,8 +4283,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-524d9cf59683da54d7ecc3c0ff6519ce" class="toggle"  />
-    <label for="section-524d9cf59683da54d7ecc3c0ff6519ce" class="flex justify-between">
+    <input type="checkbox" id="section-c81a15018d7ae452140c88ff216be77d" class="toggle"  />
+    <label for="section-c81a15018d7ae452140c88ff216be77d" class="flex justify-between">
       <a role="button" class="">Managed Agent</a>
     </label>
   
@@ -4365,8 +4412,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="toggle"  />
-    <label for="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="flex justify-between">
+    <input type="checkbox" id="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="toggle"  />
+    <label for="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="flex justify-between">
       <a role="button" class="">Omnigent</a>
     </label>
   
@@ -4409,8 +4456,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="toggle" checked />
-    <label for="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="flex justify-between">
+    <input type="checkbox" id="section-920c2fa3546aca5261a01784a53ddff3" class="toggle" checked />
+    <label for="section-920c2fa3546aca5261a01784a53ddff3" class="flex justify-between">
       <a role="button" class="">Context Engineering</a>
     </label>
   
@@ -4479,8 +4526,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="toggle"  />
-    <label for="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="flex justify-between">
+    <input type="checkbox" id="section-0563b2fd6005bd3ffd431bec1f81b423" class="toggle"  />
+    <label for="section-0563b2fd6005bd3ffd431bec1f81b423" class="flex justify-between">
       <a role="button" class="">Plan mode</a>
     </label>
   
@@ -4536,8 +4583,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-4a730712863635107d9ac9a5d3e3abd6" class="toggle"  />
-    <label for="section-4a730712863635107d9ac9a5d3e3abd6" class="flex justify-between">
+    <input type="checkbox" id="section-ceda1f30ce03531a336a1f1ebb026a63" class="toggle"  />
+    <label for="section-ceda1f30ce03531a336a1f1ebb026a63" class="flex justify-between">
       <a role="button" class="">Prompting caching *</a>
     </label>
   
@@ -4580,8 +4627,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-98dd33716c353fd55829a04c54d5e57e" class="toggle"  />
-    <label for="section-98dd33716c353fd55829a04c54d5e57e" class="flex justify-between">
+    <input type="checkbox" id="section-097abb2131971a92a13c1e53f850eb30" class="toggle"  />
+    <label for="section-097abb2131971a92a13c1e53f850eb30" class="flex justify-between">
       <a role="button" class="">Prompt Engineering</a>
     </label>
   
@@ -4745,8 +4792,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ad26e82e3d025c385444444a93d72502" class="toggle"  />
-    <label for="section-ad26e82e3d025c385444444a93d72502" class="flex justify-between">
+    <input type="checkbox" id="section-951bebaba4a0e7ffcc11ac548251e389" class="toggle"  />
+    <label for="section-951bebaba4a0e7ffcc11ac548251e389" class="flex justify-between">
       <a role="button" class="">DeepResearch</a>
     </label>
   
@@ -4928,8 +4975,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9cc3ec6d88705686bc94595daa8aa25e" class="toggle"  />
-    <label for="section-9cc3ec6d88705686bc94595daa8aa25e" class="flex justify-between">
+    <input type="checkbox" id="section-def011b742c3bb564ed84bad958a8bb9" class="toggle"  />
+    <label for="section-def011b742c3bb564ed84bad958a8bb9" class="flex justify-between">
       <a role="button" class="">FineTuning</a>
     </label>
   
@@ -4944,8 +4991,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-7b3c994f2c17601a215b6b57dc71b7ef" class="toggle"  />
-    <label for="section-7b3c994f2c17601a215b6b57dc71b7ef" class="flex justify-between">
+    <input type="checkbox" id="section-b1c6c40bb101131e4fe5a95225175846" class="toggle"  />
+    <label for="section-b1c6c40bb101131e4fe5a95225175846" class="flex justify-between">
       <a role="button" class="">Instruct Tuning</a>
     </label>
   
@@ -5001,8 +5048,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ebf0a5559cc09bbc171db379534a7dc9" class="toggle"  />
-    <label for="section-ebf0a5559cc09bbc171db379534a7dc9" class="flex justify-between">
+    <input type="checkbox" id="section-a5f257b0a67dc566e55c98245e32a9a3" class="toggle"  />
+    <label for="section-a5f257b0a67dc566e55c98245e32a9a3" class="flex justify-between">
       <a role="button" class="">实践 *</a>
     </label>
   
@@ -5076,8 +5123,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0082251d40c765323fa32be9b3686aa0" class="toggle"  />
-    <label for="section-0082251d40c765323fa32be9b3686aa0" class="flex justify-between">
+    <input type="checkbox" id="section-bc06fe507152e253f2b8fedc786f69f9" class="toggle"  />
+    <label for="section-bc06fe507152e253f2b8fedc786f69f9" class="flex justify-between">
       <a role="button" class="">PEFT *</a>
     </label>
   
@@ -5277,8 +5324,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d763501d6c35330245339b6c8531cf7c" class="toggle"  />
-    <label for="section-d763501d6c35330245339b6c8531cf7c" class="flex justify-between">
+    <input type="checkbox" id="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="toggle"  />
+    <label for="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="flex justify-between">
       <a role="button" class="">Data</a>
     </label>
   
@@ -5537,8 +5584,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-284de0efced75cd016672664a17456be" class="toggle"  />
-    <label for="section-284de0efced75cd016672664a17456be" class="flex justify-between">
+    <input type="checkbox" id="section-ec440fd30b4fccc02d2866bf269d3c1c" class="toggle"  />
+    <label for="section-ec440fd30b4fccc02d2866bf269d3c1c" class="flex justify-between">
       <a role="button" class="">AI Native</a>
     </label>
   
@@ -5648,8 +5695,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a67b63d6d594556c363a35d7d38cd355" class="toggle"  />
-    <label for="section-a67b63d6d594556c363a35d7d38cd355" class="flex justify-between">
+    <input type="checkbox" id="section-c4d50087126f44db07d7a7f0faa67711" class="toggle"  />
+    <label for="section-c4d50087126f44db07d7a7f0faa67711" class="flex justify-between">
       <a role="button" class="">Langchain</a>
     </label>
   
@@ -5741,8 +5788,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3926c431ee2abb31fef9cd9185588ed0" class="toggle"  />
-    <label for="section-3926c431ee2abb31fef9cd9185588ed0" class="flex justify-between">
+    <input type="checkbox" id="section-461a4404ae59395291876d9268139c73" class="toggle"  />
+    <label for="section-461a4404ae59395291876d9268139c73" class="flex justify-between">
       <a role="button" class="">Application</a>
     </label>
   
@@ -5888,8 +5935,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="toggle"  />
-    <label for="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="flex justify-between">
+    <input type="checkbox" id="section-3ce504245d1c08bb826d2f16a7a9180c" class="toggle"  />
+    <label for="section-3ce504245d1c08bb826d2f16a7a9180c" class="flex justify-between">
       <a role="button" class="">其他</a>
     </label>
   
@@ -6148,30 +6195,30 @@ https://github.com/alex-shpak/hugo-book
 <p>**上下文工程（Context Engineering）**是一门系统性学科，研究如何在大型语言模型（LLM）的有限上下文窗口内，对信息的筛选、组织、注入与生命周期进行全链路管理。</p>
 <p>它不是 Prompt Engineering 的简单扩展，也不是 RAG 的重新包装。它的核心问题可以归结为四个：</p>
 <table>
-	<thead>
-			<tr>
-					<th>问题</th>
-					<th>内涵</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>放什么</strong></td>
-					<td>从海量候选信息中选择真正影响模型输出的子集</td>
-			</tr>
-			<tr>
-					<td><strong>不放什么</strong></td>
-					<td>排除噪声、冗余、过时信息，避免注意力污染</td>
-			</tr>
-			<tr>
-					<td><strong>怎么放</strong></td>
-					<td>利用注意力分布规律，优化信息在上下文窗口中的组织顺序与层次结构</td>
-			</tr>
-			<tr>
-					<td><strong>何时放</strong></td>
-					<td>在任务执行的生命周期中，动态决定何时注入、何时撤回、何时压缩</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>问题</th>
+          <th>内涵</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>放什么</strong></td>
+          <td>从海量候选信息中选择真正影响模型输出的子集</td>
+      </tr>
+      <tr>
+          <td><strong>不放什么</strong></td>
+          <td>排除噪声、冗余、过时信息，避免注意力污染</td>
+      </tr>
+      <tr>
+          <td><strong>怎么放</strong></td>
+          <td>利用注意力分布规律，优化信息在上下文窗口中的组织顺序与层次结构</td>
+      </tr>
+      <tr>
+          <td><strong>何时放</strong></td>
+          <td>在任务执行的生命周期中，动态决定何时注入、何时撤回、何时压缩</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>范式转变</strong>：从&quot;写好提示词&quot;到&quot;设计上下文系统&quot;。</p>
 <p>在单轮问答时代，Prompt Engineering 足够——你写一段提示词，模型返回一个答案。但在 Agent 时代，模型不再是&quot;回答者&quot;而是&quot;执行者&quot;：它需要理解系统指令、调用工具、读取检索结果、记住历史对话、协调子任务。上下文不再是一段文字，而是一个<strong>动态演化的数据结构</strong>。</p>
@@ -6288,64 +6335,64 @@ https://github.com/alex-shpak/hugo-book
     style PE fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style RAG fill:#e3f2fd,stroke:#1565c0,stroke-width:2px</pre>
 <table>
-	<thead>
-			<tr>
-					<th>维度</th>
-					<th>Prompt Engineering</th>
-					<th>RAG</th>
-					<th>Context Engineering</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>核心问题</strong></td>
-					<td>如何写好单次提示词</td>
-					<td>如何检索并注入外部知识</td>
-					<td>如何管理上下文的全生命周期</td>
-			</tr>
-			<tr>
-					<td><strong>作用范围</strong></td>
-					<td>单次交互</td>
-					<td>知识检索 + 注入</td>
-					<td>全链路：系统启动 → 多轮对话 → 工具调用 → 结果汇总</td>
-			</tr>
-			<tr>
-					<td><strong>时间维度</strong></td>
-					<td>静态（一次编写）</td>
-					<td>准静态（检索后注入）</td>
-					<td>动态（运行时持续演进）</td>
-			</tr>
-			<tr>
-					<td><strong>空间维度</strong></td>
-					<td>提示词文本</td>
-					<td>检索到的文档片段</td>
-					<td>系统指令 + 记忆 + 工具 + RAG + 状态</td>
-			</tr>
-			<tr>
-					<td><strong>关注点</strong></td>
-					<td>提示词的表达质量</td>
-					<td>检索的召回率与精度</td>
-					<td>注意力效率、token 预算、上下文一致性</td>
-			</tr>
-			<tr>
-					<td><strong>适用场景</strong></td>
-					<td>单轮问答、简单指令</td>
-					<td>知识密集型问答</td>
-					<td>Agent、多步推理、复杂工作流</td>
-			</tr>
-			<tr>
-					<td><strong>技术栈</strong></td>
-					<td>提示词模板、思维链</td>
-					<td>向量数据库、重排序</td>
-					<td>上下文编排器、注意力分析、压缩策略</td>
-			</tr>
-			<tr>
-					<td><strong>失败模式</strong></td>
-					<td>指令模糊、歧义</td>
-					<td>检索偏差、过时知识</td>
-					<td>注意力污染、上下文膨胀、预算失控</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>Prompt Engineering</th>
+          <th>RAG</th>
+          <th>Context Engineering</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>核心问题</strong></td>
+          <td>如何写好单次提示词</td>
+          <td>如何检索并注入外部知识</td>
+          <td>如何管理上下文的全生命周期</td>
+      </tr>
+      <tr>
+          <td><strong>作用范围</strong></td>
+          <td>单次交互</td>
+          <td>知识检索 + 注入</td>
+          <td>全链路：系统启动 → 多轮对话 → 工具调用 → 结果汇总</td>
+      </tr>
+      <tr>
+          <td><strong>时间维度</strong></td>
+          <td>静态（一次编写）</td>
+          <td>准静态（检索后注入）</td>
+          <td>动态（运行时持续演进）</td>
+      </tr>
+      <tr>
+          <td><strong>空间维度</strong></td>
+          <td>提示词文本</td>
+          <td>检索到的文档片段</td>
+          <td>系统指令 + 记忆 + 工具 + RAG + 状态</td>
+      </tr>
+      <tr>
+          <td><strong>关注点</strong></td>
+          <td>提示词的表达质量</td>
+          <td>检索的召回率与精度</td>
+          <td>注意力效率、token 预算、上下文一致性</td>
+      </tr>
+      <tr>
+          <td><strong>适用场景</strong></td>
+          <td>单轮问答、简单指令</td>
+          <td>知识密集型问答</td>
+          <td>Agent、多步推理、复杂工作流</td>
+      </tr>
+      <tr>
+          <td><strong>技术栈</strong></td>
+          <td>提示词模板、思维链</td>
+          <td>向量数据库、重排序</td>
+          <td>上下文编排器、注意力分析、压缩策略</td>
+      </tr>
+      <tr>
+          <td><strong>失败模式</strong></td>
+          <td>指令模糊、歧义</td>
+          <td>检索偏差、过时知识</td>
+          <td>注意力污染、上下文膨胀、预算失控</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>关键洞察</strong>：Context Engineering 是 Prompt Engineering 和 RAG 的<strong>超集</strong>。它回答的是一个更根本的问题：在模型推理的每一步，应该让模型&quot;看到&quot;什么？</p>
 <h3 id="14-为什么现在需要上下文工程">
@@ -6424,82 +6471,82 @@ Agent 工作流（2024-）：
 </h3>
 <p>上下文系统需要管理的内容类型远不止&quot;提示词&rdquo;。每种内容类型有不同的语义角色、更新频率和 token 消耗特征。</p>
 <table>
-	<thead>
-			<tr>
-					<th>内容类型</th>
-					<th>语义角色</th>
-					<th>更新频率</th>
-					<th>典型 Token 量</th>
-					<th>建议占比</th>
-					<th>优先级</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>系统指令</strong></td>
-					<td>定义模型身份、行为边界、输出格式</td>
-					<td>启动时</td>
-					<td>200-2000</td>
-					<td>5-15%</td>
-					<td>🔴 最高</td>
-			</tr>
-			<tr>
-					<td><strong>用户输入</strong></td>
-					<td>当前轮次的任务请求</td>
-					<td>每轮</td>
-					<td>50-500</td>
-					<td>1-5%</td>
-					<td>🔴 最高</td>
-			</tr>
-			<tr>
-					<td><strong>工具定义</strong></td>
-					<td>可用工具的 schema 与描述</td>
-					<td>启动/变更时</td>
-					<td>100-3000</td>
-					<td>3-20%</td>
-					<td>🟡 高</td>
-			</tr>
-			<tr>
-					<td><strong>Few-shot 示例</strong></td>
-					<td>示范期望的输出格式与风格</td>
-					<td>启动/按需</td>
-					<td>200-2000</td>
-					<td>5-15%</td>
-					<td>🟡 高</td>
-			</tr>
-			<tr>
-					<td><strong>历史记忆</strong></td>
-					<td>相关对话历史、用户偏好</td>
-					<td>每轮更新</td>
-					<td>0-5000</td>
-					<td>0-30%</td>
-					<td>🟢 中</td>
-			</tr>
-			<tr>
-					<td><strong>检索结果（RAG）</strong></td>
-					<td>外部知识库的相关片段</td>
-					<td>按需</td>
-					<td>0-5000</td>
-					<td>0-25%</td>
-					<td>🟢 中</td>
-			</tr>
-			<tr>
-					<td><strong>中间状态</strong></td>
-					<td>工具调用结果、规划步骤</td>
-					<td>每步更新</td>
-					<td>0-3000</td>
-					<td>0-20%</td>
-					<td>🔵 动态</td>
-			</tr>
-			<tr>
-					<td><strong>元数据</strong></td>
-					<td>对话 ID、时间戳、token 计数</td>
-					<td>系统维护</td>
-					<td>20-100</td>
-					<td>&lt;1%</td>
-					<td>⚪ 低</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>内容类型</th>
+          <th>语义角色</th>
+          <th>更新频率</th>
+          <th>典型 Token 量</th>
+          <th>建议占比</th>
+          <th>优先级</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>系统指令</strong></td>
+          <td>定义模型身份、行为边界、输出格式</td>
+          <td>启动时</td>
+          <td>200-2000</td>
+          <td>5-15%</td>
+          <td>🔴 最高</td>
+      </tr>
+      <tr>
+          <td><strong>用户输入</strong></td>
+          <td>当前轮次的任务请求</td>
+          <td>每轮</td>
+          <td>50-500</td>
+          <td>1-5%</td>
+          <td>🔴 最高</td>
+      </tr>
+      <tr>
+          <td><strong>工具定义</strong></td>
+          <td>可用工具的 schema 与描述</td>
+          <td>启动/变更时</td>
+          <td>100-3000</td>
+          <td>3-20%</td>
+          <td>🟡 高</td>
+      </tr>
+      <tr>
+          <td><strong>Few-shot 示例</strong></td>
+          <td>示范期望的输出格式与风格</td>
+          <td>启动/按需</td>
+          <td>200-2000</td>
+          <td>5-15%</td>
+          <td>🟡 高</td>
+      </tr>
+      <tr>
+          <td><strong>历史记忆</strong></td>
+          <td>相关对话历史、用户偏好</td>
+          <td>每轮更新</td>
+          <td>0-5000</td>
+          <td>0-30%</td>
+          <td>🟢 中</td>
+      </tr>
+      <tr>
+          <td><strong>检索结果（RAG）</strong></td>
+          <td>外部知识库的相关片段</td>
+          <td>按需</td>
+          <td>0-5000</td>
+          <td>0-25%</td>
+          <td>🟢 中</td>
+      </tr>
+      <tr>
+          <td><strong>中间状态</strong></td>
+          <td>工具调用结果、规划步骤</td>
+          <td>每步更新</td>
+          <td>0-3000</td>
+          <td>0-20%</td>
+          <td>🔵 动态</td>
+      </tr>
+      <tr>
+          <td><strong>元数据</strong></td>
+          <td>对话 ID、时间戳、token 计数</td>
+          <td>系统维护</td>
+          <td>20-100</td>
+          <td>&lt;1%</td>
+          <td>⚪ 低</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>设计原则</strong>：</p>
 <ol>
@@ -6511,7 +6558,7 @@ Agent 工作流（2024-）：
   内容选择的启发式规则
   <a class="anchor" href="#%e5%86%85%e5%ae%b9%e9%80%89%e6%8b%a9%e7%9a%84%e5%90%af%e5%8f%91%e5%bc%8f%e8%a7%84%e5%88%99">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ContextBudget</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ContextBudget</span>:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;上下文预算管理器&#34;&#34;&#34;</span>
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, total_budget: int):
@@ -6579,30 +6626,30 @@ Agent 工作流（2024-）：
 └──────────────────────────────────────────────────────────────┘
 </code></pre><p><strong>排序原则</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>位置</th>
-					<th>放置内容</th>
-					<th>原因</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>首部（0-15%）</td>
-					<td>系统指令、核心约束、身份定义</td>
-					<td>模型最稳定的注意力区域，确保基础行为不被覆盖</td>
-			</tr>
-			<tr>
-					<td>中部（15-85%）</td>
-					<td>历史记忆、检索结果、背景知识</td>
-					<td>注意力较低，但容量大；适合&quot;可查但非必需&quot;的信息</td>
-			</tr>
-			<tr>
-					<td>尾部（85-100%）</td>
-					<td>用户输入、输出格式、Few-shot 示例</td>
-					<td>临近生成位置，注意力集中；模型对最近信息的服从度最高</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>位置</th>
+          <th>放置内容</th>
+          <th>原因</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>首部（0-15%）</td>
+          <td>系统指令、核心约束、身份定义</td>
+          <td>模型最稳定的注意力区域，确保基础行为不被覆盖</td>
+      </tr>
+      <tr>
+          <td>中部（15-85%）</td>
+          <td>历史记忆、检索结果、背景知识</td>
+          <td>注意力较低，但容量大；适合&quot;可查但非必需&quot;的信息</td>
+      </tr>
+      <tr>
+          <td>尾部（85-100%）</td>
+          <td>用户输入、输出格式、Few-shot 示例</td>
+          <td>临近生成位置，注意力集中；模型对最近信息的服从度最高</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="222-层次化上下文">
   2.2.2 层次化上下文
@@ -6654,7 +6701,7 @@ Agent 工作流（2024-）：
   <a class="anchor" href="#223-%e4%b8%8a%e4%b8%8b%e6%96%87%e5%8e%8b%e7%bc%a9%e7%ad%96%e7%95%a5">#</a>
 </h4>
 <p>当上下文接近窗口上限时，需要压缩策略：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ContextCompressor</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ContextCompressor</span>:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;上下文压缩器&#34;&#34;&#34;</span>
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>    COMPRESSION_STRATEGIES <span style="color:#f92672">=</span> {
@@ -6719,38 +6766,38 @@ Agent 工作流（2024-）：
   <a class="anchor" href="#231-%e4%b8%89%e7%a7%8d%e6%b3%a8%e5%85%a5%e6%97%b6%e6%9c%ba">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>注入时机</th>
-					<th>定义</th>
-					<th>典型内容</th>
-					<th>更新频率</th>
-					<th>示例</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>静态注入</strong></td>
-					<td>系统/会话启动时注入，生命周期内基本不变</td>
-					<td>系统指令、工具定义、Few-shot</td>
-					<td>一次</td>
-					<td>启动时注入所有可用工具的 schema</td>
-			</tr>
-			<tr>
-					<td><strong>动态注入</strong></td>
-					<td>运行时根据当前状态按需注入</td>
-					<td>检索结果、用户偏好记忆</td>
-					<td>每轮/按需</td>
-					<td>用户问&quot;北京天气&quot;时检索天气 API</td>
-			</tr>
-			<tr>
-					<td><strong>延迟注入</strong></td>
-					<td>中间步骤需要时才注入的信息</td>
-					<td>上一步工具输出、验证结果</td>
-					<td>每步</td>
-					<td>代码生成后注入 lint 错误信息</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>注入时机</th>
+          <th>定义</th>
+          <th>典型内容</th>
+          <th>更新频率</th>
+          <th>示例</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>静态注入</strong></td>
+          <td>系统/会话启动时注入，生命周期内基本不变</td>
+          <td>系统指令、工具定义、Few-shot</td>
+          <td>一次</td>
+          <td>启动时注入所有可用工具的 schema</td>
+      </tr>
+      <tr>
+          <td><strong>动态注入</strong></td>
+          <td>运行时根据当前状态按需注入</td>
+          <td>检索结果、用户偏好记忆</td>
+          <td>每轮/按需</td>
+          <td>用户问&quot;北京天气&quot;时检索天气 API</td>
+      </tr>
+      <tr>
+          <td><strong>延迟注入</strong></td>
+          <td>中间步骤需要时才注入的信息</td>
+          <td>上一步工具输出、验证结果</td>
+          <td>每步</td>
+          <td>代码生成后注入 lint 错误信息</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="232-上下文注入时序图">
   2.3.2 上下文注入时序图
@@ -6845,7 +6892,7 @@ Tₙ [持续演化...]
   2.4.2 预算感知的上下文裁剪
   <a class="anchor" href="#242-%e9%a2%84%e7%ae%97%e6%84%9f%e7%9f%a5%e7%9a%84%e4%b8%8a%e4%b8%8b%e6%96%87%e8%a3%81%e5%89%aa">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">BudgetAwareContext</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">BudgetAwareContext</span>:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;预算感知的上下文管理器&#34;&#34;&#34;</span>
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, model_max_tokens: int, safety_margin: float <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.10</span>):
@@ -6933,7 +6980,7 @@ Tₙ [持续演化...]
   3.1 反模式：糟糕的上下文设计
   <a class="anchor" href="#31-%e5%8f%8d%e6%a8%a1%e5%bc%8f%e7%b3%9f%e7%b3%95%e7%9a%84%e4%b8%8a%e4%b8%8b%e6%96%87%e8%ae%be%e8%ae%a1">#</a>
 </h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># ❌ 反模式：扁平、冗余、无结构的上下文</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># ❌ 反模式：扁平、冗余、无结构的上下文</span>
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">build_bad_context</span>(user_query: str, chat_history: list, docs: list) <span style="color:#f92672">-&gt;</span> str:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
@@ -6969,40 +7016,40 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 总大小可能达到 50K+ tokens，但有效密度 &lt; 10%</span>
 </span></span></code></pre></div><p><strong>问题分析</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>问题</th>
-					<th>后果</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>无结构标记</td>
-					<td>模型无法区分系统指令、历史、检索结果，容易产生角色混淆</td>
-			</tr>
-			<tr>
-					<td>全量历史注入</td>
-					<td>大量不相关对话淹没关键信息，触发&quot;Lost in the Middle&quot;效应</td>
-			</tr>
-			<tr>
-					<td>检索结果无序</td>
-					<td>低相关性片段占据宝贵的注意力资源</td>
-			</tr>
-			<tr>
-					<td>指令混在文本中</td>
-					<td>关键约束被覆盖或忽略</td>
-			</tr>
-			<tr>
-					<td>无预算控制</td>
-					<td>可能超出窗口限制，导致截断或报错</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>问题</th>
+          <th>后果</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>无结构标记</td>
+          <td>模型无法区分系统指令、历史、检索结果，容易产生角色混淆</td>
+      </tr>
+      <tr>
+          <td>全量历史注入</td>
+          <td>大量不相关对话淹没关键信息，触发&quot;Lost in the Middle&quot;效应</td>
+      </tr>
+      <tr>
+          <td>检索结果无序</td>
+          <td>低相关性片段占据宝贵的注意力资源</td>
+      </tr>
+      <tr>
+          <td>指令混在文本中</td>
+          <td>关键约束被覆盖或忽略</td>
+      </tr>
+      <tr>
+          <td>无预算控制</td>
+          <td>可能超出窗口限制，导致截断或报错</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="32-正模式良好的上下文设计">
   3.2 正模式：良好的上下文设计
   <a class="anchor" href="#32-%e6%ad%a3%e6%a8%a1%e5%bc%8f%e8%89%af%e5%a5%bd%e7%9a%84%e4%b8%8a%e4%b8%8b%e6%96%87%e8%ae%be%e8%ae%a1">#</a>
 </h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># ✅ 正模式：层次化、结构化、预算感知的上下文</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># ✅ 正模式：层次化、结构化、预算感知的上下文</span>
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> dataclasses <span style="color:#f92672">import</span> dataclass
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> typing <span style="color:#f92672">import</span> Optional
@@ -7123,38 +7170,38 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> context[:char_budget] <span style="color:#f92672">+</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n\n</span><span style="color:#e6db74">[... 中间内容已压缩以适配上下文窗口 ...]&#34;</span>
 </span></span></code></pre></div><p><strong>设计亮点</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>特性</th>
-					<th>效果</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>XML 结构标记</td>
-					<td>模型能清晰区分不同层级的内容，减少角色混淆</td>
-			</tr>
-			<tr>
-					<td>层次化组织</td>
-					<td>系统层 → 会话层 → 任务层，符合注意力分布规律</td>
-			</tr>
-			<tr>
-					<td>历史相关性筛选</td>
-					<td>只注入最近的或语义相关的历史，避免噪声</td>
-			</tr>
-			<tr>
-					<td>检索结果去重+排序</td>
-					<td>高质量、低冗余的检索内容</td>
-			</tr>
-			<tr>
-					<td>预算感知</td>
-					<td>始终在窗口限制内，安全缓冲防止截断</td>
-			</tr>
-			<tr>
-					<td>首尾保护</td>
-					<td>系统指令和查询始终完整保留，压缩只作用于中间层</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>特性</th>
+          <th>效果</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>XML 结构标记</td>
+          <td>模型能清晰区分不同层级的内容，减少角色混淆</td>
+      </tr>
+      <tr>
+          <td>层次化组织</td>
+          <td>系统层 → 会话层 → 任务层，符合注意力分布规律</td>
+      </tr>
+      <tr>
+          <td>历史相关性筛选</td>
+          <td>只注入最近的或语义相关的历史，避免噪声</td>
+      </tr>
+      <tr>
+          <td>检索结果去重+排序</td>
+          <td>高质量、低冗余的检索内容</td>
+      </tr>
+      <tr>
+          <td>预算感知</td>
+          <td>始终在窗口限制内，安全缓冲防止截断</td>
+      </tr>
+      <tr>
+          <td>首尾保护</td>
+          <td>系统指令和查询始终完整保留，压缩只作用于中间层</td>
+      </tr>
+  </tbody>
 </table>
 <hr>
 <h2 id="四上下文质量度量">
@@ -7167,46 +7214,46 @@ Tₙ [持续演化...]
   <a class="anchor" href="#41-%e6%a0%b8%e5%bf%83%e6%8c%87%e6%a0%87">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>指标</th>
-					<th>定义</th>
-					<th>目标值</th>
-					<th>测量方法</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>有效密度</strong></td>
-					<td>有用信息 token / 总上下文 token</td>
-					<td>&gt; 0.3</td>
-					<td>人工标注 + 自动化评估</td>
-			</tr>
-			<tr>
-					<td><strong>注意力利用率</strong></td>
-					<td>被模型实际关注的 token / 上下文总 token</td>
-					<td>&gt; 0.5</td>
-					<td>注意力权重分析</td>
-			</tr>
-			<tr>
-					<td><strong>预算利用率</strong></td>
-					<td>实际使用 token / 可用预算</td>
-					<td>0.7-0.9</td>
-					<td>直接计算</td>
-			</tr>
-			<tr>
-					<td><strong>上下文命中率</strong></td>
-					<td>上下文中被模型引用的信息 / 总信息</td>
-					<td>&gt; 0.6</td>
-					<td>输出追溯分析</td>
-			</tr>
-			<tr>
-					<td><strong>压缩保真度</strong></td>
-					<td>压缩后上下文的信息保留率</td>
-					<td>&gt; 0.8</td>
-					<td>信息论度量（KL 散度）</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>指标</th>
+          <th>定义</th>
+          <th>目标值</th>
+          <th>测量方法</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>有效密度</strong></td>
+          <td>有用信息 token / 总上下文 token</td>
+          <td>&gt; 0.3</td>
+          <td>人工标注 + 自动化评估</td>
+      </tr>
+      <tr>
+          <td><strong>注意力利用率</strong></td>
+          <td>被模型实际关注的 token / 上下文总 token</td>
+          <td>&gt; 0.5</td>
+          <td>注意力权重分析</td>
+      </tr>
+      <tr>
+          <td><strong>预算利用率</strong></td>
+          <td>实际使用 token / 可用预算</td>
+          <td>0.7-0.9</td>
+          <td>直接计算</td>
+      </tr>
+      <tr>
+          <td><strong>上下文命中率</strong></td>
+          <td>上下文中被模型引用的信息 / 总信息</td>
+          <td>&gt; 0.6</td>
+          <td>输出追溯分析</td>
+      </tr>
+      <tr>
+          <td><strong>压缩保真度</strong></td>
+          <td>压缩后上下文的信息保留率</td>
+          <td>&gt; 0.8</td>
+          <td>信息论度量（KL 散度）</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="42-上下文工程的评估框架">
   4.2 上下文工程的评估框架
@@ -7298,65 +7345,65 @@ Tₙ [持续演化...]
   <a class="anchor" href="#%e5%90%84%e9%98%b6%e6%ae%b5%e8%81%8c%e8%b4%a3">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>阶段</th>
-					<th>输入</th>
-					<th>输出</th>
-					<th>核心算子</th>
-					<th>质量控制指标</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>信息收集</strong></td>
-					<td>查询、用户画像、历史</td>
-					<td>原始信息集（去重前）</td>
-					<td>多源检索、缓存查找、状态读取</td>
-					<td>召回率、源覆盖率</td>
-			</tr>
-			<tr>
-					<td><strong>过滤</strong></td>
-					<td>原始信息集</td>
-					<td>候选信息集</td>
-					<td>关键词匹配、语义过滤、时间衰减</td>
-					<td>过滤率 ∈ [30%, 70%]</td>
-			</tr>
-			<tr>
-					<td><strong>压缩</strong></td>
-					<td>候选信息集</td>
-					<td>紧凑信息集</td>
-					<td>LLMLingua、摘要、关键事件提取</td>
-					<td>压缩比 ≤ 0.6，信息损失率 ≤ 5%</td>
-			</tr>
-			<tr>
-					<td><strong>排序</strong></td>
-					<td>紧凑信息集</td>
-					<td>排序后的信息列表</td>
-					<td>相关性评分、多样性重排、位置加权</td>
-					<td>Top-K 平均相关性 ≥ 0.7</td>
-			</tr>
-			<tr>
-					<td><strong>注入</strong></td>
-					<td>排序列表 + 模板</td>
-					<td>完整上下文窗口</td>
-					<td>模板渲染、token 计数、预算裁剪</td>
-					<td>总 token 数 ≤ 模型预算</td>
-			</tr>
-			<tr>
-					<td><strong>验证</strong></td>
-					<td>完整上下文</td>
-					<td>通过/拒绝 + 诊断</td>
-					<td>一致性检查、token 预算验证、安全审计</td>
-					<td>token 预算、敏感信息检测</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>阶段</th>
+          <th>输入</th>
+          <th>输出</th>
+          <th>核心算子</th>
+          <th>质量控制指标</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>信息收集</strong></td>
+          <td>查询、用户画像、历史</td>
+          <td>原始信息集（去重前）</td>
+          <td>多源检索、缓存查找、状态读取</td>
+          <td>召回率、源覆盖率</td>
+      </tr>
+      <tr>
+          <td><strong>过滤</strong></td>
+          <td>原始信息集</td>
+          <td>候选信息集</td>
+          <td>关键词匹配、语义过滤、时间衰减</td>
+          <td>过滤率 ∈ [30%, 70%]</td>
+      </tr>
+      <tr>
+          <td><strong>压缩</strong></td>
+          <td>候选信息集</td>
+          <td>紧凑信息集</td>
+          <td>LLMLingua、摘要、关键事件提取</td>
+          <td>压缩比 ≤ 0.6，信息损失率 ≤ 5%</td>
+      </tr>
+      <tr>
+          <td><strong>排序</strong></td>
+          <td>紧凑信息集</td>
+          <td>排序后的信息列表</td>
+          <td>相关性评分、多样性重排、位置加权</td>
+          <td>Top-K 平均相关性 ≥ 0.7</td>
+      </tr>
+      <tr>
+          <td><strong>注入</strong></td>
+          <td>排序列表 + 模板</td>
+          <td>完整上下文窗口</td>
+          <td>模板渲染、token 计数、预算裁剪</td>
+          <td>总 token 数 ≤ 模型预算</td>
+      </tr>
+      <tr>
+          <td><strong>验证</strong></td>
+          <td>完整上下文</td>
+          <td>通过/拒绝 + 诊断</td>
+          <td>一致性检查、token 预算验证、安全审计</td>
+          <td>token 预算、敏感信息检测</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="完整管线代码实现">
   完整管线代码实现
   <a class="anchor" href="#%e5%ae%8c%e6%95%b4%e7%ae%a1%e7%ba%bf%e4%bb%a3%e7%a0%81%e5%ae%9e%e7%8e%b0">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Context Building Pipeline — 上下文构建管线实现
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">每条数据流经 6 个阶段，每个阶段有独立的算子和质量门控。
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;</span>
@@ -7814,7 +7861,7 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>            )
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span><span style="color:#f92672">.</span>join(lines)
 </span></span></code></pre></div><p><strong>管线使用示例：</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 构建管线</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 构建管线</span>
 </span></span><span style="display:flex;"><span>pipeline <span style="color:#f92672">=</span> ContextPipeline(
 </span></span><span style="display:flex;"><span>    stages<span style="color:#f92672">=</span>{
 </span></span><span style="display:flex;"><span>        ContextStage<span style="color:#f92672">.</span>COLLECT:   Collector(sources<span style="color:#f92672">=</span>[rag_retriever, memory_store]),
@@ -7903,64 +7950,64 @@ Tₙ [持续演化...]
 </h4>
 <p>各层在上下文窗口中的预算分配应遵循<strong>稳定性-重要性矩阵</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>层级</th>
-					<th>内容</th>
-					<th>更新频率</th>
-					<th>典型预算占比</th>
-					<th>重要性</th>
-					<th>可裁剪性</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>L0 系统层</strong></td>
-					<td>角色、约束、全局规则</td>
-					<td>极低（会话级）</td>
-					<td>10-15%</td>
-					<td>必须</td>
-					<td>不可裁剪</td>
-			</tr>
-			<tr>
-					<td><strong>L1 任务层</strong></td>
-					<td>任务描述、格式要求</td>
-					<td>高（任务级）</td>
-					<td>5-10%</td>
-					<td>必须</td>
-					<td>不可裁剪</td>
-			</tr>
-			<tr>
-					<td><strong>L2 知识层</strong></td>
-					<td>RAG 结果、知识库</td>
-					<td>中（查询级）</td>
-					<td>30-40%</td>
-					<td>高</td>
-					<td>按相关性裁剪</td>
-			</tr>
-			<tr>
-					<td><strong>L3 记忆层</strong></td>
-					<td>历史对话、用户画像</td>
-					<td>中高（交互级）</td>
-					<td>20-30%</td>
-					<td>中</td>
-					<td>按时间衰减裁剪</td>
-			</tr>
-			<tr>
-					<td><strong>L4 工具层</strong></td>
-					<td>工具描述、Schema</td>
-					<td>低（会话级）</td>
-					<td>10-15%</td>
-					<td>高</td>
-					<td>按需加载</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>内容</th>
+          <th>更新频率</th>
+          <th>典型预算占比</th>
+          <th>重要性</th>
+          <th>可裁剪性</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>L0 系统层</strong></td>
+          <td>角色、约束、全局规则</td>
+          <td>极低（会话级）</td>
+          <td>10-15%</td>
+          <td>必须</td>
+          <td>不可裁剪</td>
+      </tr>
+      <tr>
+          <td><strong>L1 任务层</strong></td>
+          <td>任务描述、格式要求</td>
+          <td>高（任务级）</td>
+          <td>5-10%</td>
+          <td>必须</td>
+          <td>不可裁剪</td>
+      </tr>
+      <tr>
+          <td><strong>L2 知识层</strong></td>
+          <td>RAG 结果、知识库</td>
+          <td>中（查询级）</td>
+          <td>30-40%</td>
+          <td>高</td>
+          <td>按相关性裁剪</td>
+      </tr>
+      <tr>
+          <td><strong>L3 记忆层</strong></td>
+          <td>历史对话、用户画像</td>
+          <td>中高（交互级）</td>
+          <td>20-30%</td>
+          <td>中</td>
+          <td>按时间衰减裁剪</td>
+      </tr>
+      <tr>
+          <td><strong>L4 工具层</strong></td>
+          <td>工具描述、Schema</td>
+          <td>低（会话级）</td>
+          <td>10-15%</td>
+          <td>高</td>
+          <td>按需加载</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="各层代码实现">
   各层代码实现
   <a class="anchor" href="#%e5%90%84%e5%b1%82%e4%bb%a3%e7%a0%81%e5%ae%9e%e7%8e%b0">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Context Layer Architecture — 上下文分层架构实现
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">每层有独立的生命周期、更新策略和预算控制。
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;</span>
@@ -8327,7 +8374,7 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>        lines<span style="color:#f92672">.</span>append(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;  </span><span style="color:#e6db74">{</span><span style="color:#e6db74">&#39;TOTAL&#39;</span><span style="color:#e6db74">:</span><span style="color:#e6db74">15s</span><span style="color:#e6db74">}</span><span style="color:#e6db74">: </span><span style="color:#e6db74">{</span>total<span style="color:#e6db74">:</span><span style="color:#e6db74">5d</span><span style="color:#e6db74">}</span><span style="color:#e6db74"> tokens  (</span><span style="color:#e6db74">{</span>total<span style="color:#f92672">/</span>self<span style="color:#f92672">.</span>total_budget<span style="color:#f92672">*</span><span style="color:#ae81ff">100</span><span style="color:#e6db74">:</span><span style="color:#e6db74">.1f</span><span style="color:#e6db74">}</span><span style="color:#e6db74">%)&#34;</span>)
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span><span style="color:#f92672">.</span>join(lines)
 </span></span></code></pre></div><p><strong>分层上下文使用示例：</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 1. 构建各层</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 1. 构建各层</span>
 </span></span><span style="display:flex;"><span>system_layer <span style="color:#f92672">=</span> SystemLayer()
 </span></span><span style="display:flex;"><span>system_layer<span style="color:#f92672">.</span>configure(
 </span></span><span style="display:flex;"><span>    role<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;你是一位资深的数据库架构师，专注于分布式系统的性能优化。&#34;</span>,
@@ -8425,52 +8472,52 @@ Tₙ [持续演化...]
   <a class="anchor" href="#%e7%94%9f%e5%91%bd%e5%91%a8%e6%9c%9f%e5%90%84%e9%98%b6%e6%ae%b5%e8%af%a6%e8%a7%a3">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>阶段</th>
-					<th>触发条件</th>
-					<th>操作</th>
-					<th>TTL 策略</th>
-					<th>存储成本</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>CREATED</strong></td>
-					<td>信息源产生新数据</td>
-					<td>初始评分、去重、标记来源</td>
-					<td>初始 TTL = 7 天</td>
-					<td>低</td>
-			</tr>
-			<tr>
-					<td><strong>ACTIVE</strong></td>
-					<td>被注入上下文窗口</td>
-					<td>引用计数 +1、最后访问时间更新</td>
-					<td>TTL 延长至下次引用 + 3 天</td>
-					<td>中</td>
-			</tr>
-			<tr>
-					<td><strong>UPDATING</strong></td>
-					<td>同话题新信息到达</td>
-					<td>版本对比、增量合并</td>
-					<td>合并后重置 TTL</td>
-					<td>中</td>
-			</tr>
-			<tr>
-					<td><strong>STALE</strong></td>
-					<td>TTL 到期 或 连续 N 轮未被引用</td>
-					<td>从活跃窗口移除、标记为淘汰</td>
-					<td>归档 TTL = 30 天</td>
-					<td>低</td>
-			</tr>
-			<tr>
-					<td><strong>ARCHIVED</strong></td>
-					<td>淘汰后无人复活</td>
-					<td>压缩存储到长期记忆库</td>
-					<td>永久 或 按保留策略</td>
-					<td>极低</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>阶段</th>
+          <th>触发条件</th>
+          <th>操作</th>
+          <th>TTL 策略</th>
+          <th>存储成本</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>CREATED</strong></td>
+          <td>信息源产生新数据</td>
+          <td>初始评分、去重、标记来源</td>
+          <td>初始 TTL = 7 天</td>
+          <td>低</td>
+      </tr>
+      <tr>
+          <td><strong>ACTIVE</strong></td>
+          <td>被注入上下文窗口</td>
+          <td>引用计数 +1、最后访问时间更新</td>
+          <td>TTL 延长至下次引用 + 3 天</td>
+          <td>中</td>
+      </tr>
+      <tr>
+          <td><strong>UPDATING</strong></td>
+          <td>同话题新信息到达</td>
+          <td>版本对比、增量合并</td>
+          <td>合并后重置 TTL</td>
+          <td>中</td>
+      </tr>
+      <tr>
+          <td><strong>STALE</strong></td>
+          <td>TTL 到期 或 连续 N 轮未被引用</td>
+          <td>从活跃窗口移除、标记为淘汰</td>
+          <td>归档 TTL = 30 天</td>
+          <td>低</td>
+      </tr>
+      <tr>
+          <td><strong>ARCHIVED</strong></td>
+          <td>淘汰后无人复活</td>
+          <td>压缩存储到长期记忆库</td>
+          <td>永久 或 按保留策略</td>
+          <td>极低</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="ttl-与相关性衰减模型">
   TTL 与相关性衰减模型
@@ -8481,51 +8528,51 @@ Tₙ [持续演化...]
 <p>其中 $t_{1/2}$ 是半衰期（相关性减半所需时间），$\lambda = \frac{\ln 2}{t_{1/2}}$。</p>
 <p>不同类型信息的半衰期差异巨大：</p>
 <table>
-	<thead>
-			<tr>
-					<th>信息类型</th>
-					<th>典型半衰期</th>
-					<th>理由</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>系统指令</td>
-					<td>∞（不衰减）</td>
-					<td>会话内始终有效</td>
-			</tr>
-			<tr>
-					<td>任务上下文</td>
-					<td>2 小时</td>
-					<td>任务完成后即失效</td>
-			</tr>
-			<tr>
-					<td>技术知识</td>
-					<td>30-90 天</td>
-					<td>技术文档更新周期</td>
-			</tr>
-			<tr>
-					<td>用户偏好</td>
-					<td>180 天</td>
-					<td>偏好相对稳定但会变化</td>
-			</tr>
-			<tr>
-					<td>对话历史</td>
-					<td>24-48 小时</td>
-					<td>具体对话细节很快过时</td>
-			</tr>
-			<tr>
-					<td>实时数据</td>
-					<td>5-30 分钟</td>
-					<td>股票价格、天气等</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>信息类型</th>
+          <th>典型半衰期</th>
+          <th>理由</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>系统指令</td>
+          <td>∞（不衰减）</td>
+          <td>会话内始终有效</td>
+      </tr>
+      <tr>
+          <td>任务上下文</td>
+          <td>2 小时</td>
+          <td>任务完成后即失效</td>
+      </tr>
+      <tr>
+          <td>技术知识</td>
+          <td>30-90 天</td>
+          <td>技术文档更新周期</td>
+      </tr>
+      <tr>
+          <td>用户偏好</td>
+          <td>180 天</td>
+          <td>偏好相对稳定但会变化</td>
+      </tr>
+      <tr>
+          <td>对话历史</td>
+          <td>24-48 小时</td>
+          <td>具体对话细节很快过时</td>
+      </tr>
+      <tr>
+          <td>实时数据</td>
+          <td>5-30 分钟</td>
+          <td>股票价格、天气等</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="ttl-管理代码实现">
   TTL 管理代码实现
   <a class="anchor" href="#ttl-%e7%ae%a1%e7%90%86%e4%bb%a3%e7%a0%81%e5%ae%9e%e7%8e%b0">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Context Lifecycle Management — 上下文生命周期管理
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">实现 TTL 策略、相关性衰减和状态转换。
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;</span>
@@ -8786,7 +8833,7 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>        ]
 </span></span><span style="display:flex;"><span>        heapq<span style="color:#f92672">.</span>heapify(self<span style="color:#f92672">.</span>_active_heap)
 </span></span></code></pre></div><p><strong>生命周期使用示例：</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 配置：技术知识类上下文</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 配置：技术知识类上下文</span>
 </span></span><span style="display:flex;"><span>config <span style="color:#f92672">=</span> LifecycleConfig(
 </span></span><span style="display:flex;"><span>    half_life_seconds<span style="color:#f92672">=</span><span style="color:#ae81ff">86400</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">30</span>,    <span style="color:#75715e"># 30 天半衰期</span>
 </span></span><span style="display:flex;"><span>    initial_ttl<span style="color:#f92672">=</span><span style="color:#ae81ff">86400</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">7</span>,            <span style="color:#75715e"># 7 天初始 TTL</span>
@@ -8841,66 +8888,66 @@ Tₙ [持续演化...]
   <a class="anchor" href="#%e5%8e%8b%e7%bc%a9%e6%96%b9%e6%b3%95%e5%af%b9%e6%af%94">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>方法</th>
-					<th>原理</th>
-					<th>压缩率</th>
-					<th>信息损失</th>
-					<th>适用场景</th>
-					<th>计算成本</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>LLMLingua</strong></td>
-					<td>基于小模型的 token 级重要性评分</td>
-					<td>5-20x</td>
-					<td>低（&lt;3%）</td>
-					<td>长文档、代码</td>
-					<td>中（需小模型）</td>
-			</tr>
-			<tr>
-					<td><strong>Selective Context</strong></td>
-					<td>基于语言模型困惑度的句子筛选</td>
-					<td>3-10x</td>
-					<td>中（~5%）</td>
-					<td>对话、文章</td>
-					<td>低</td>
-			</tr>
-			<tr>
-					<td><strong>摘要压缩</strong></td>
-					<td>用 LLM 生成结构化摘要</td>
-					<td>10-50x</td>
-					<td>高（依赖摘要质量）</td>
-					<td>超长对话、文档</td>
-					<td>高（需 LLM）</td>
-			</tr>
-			<tr>
-					<td><strong>关键事件提取</strong></td>
-					<td>从时序数据中提取离散事件</td>
-					<td>20-100x</td>
-					<td>高（丢失细节）</td>
-					<td>对话历史、日志</td>
-					<td>中</td>
-			</tr>
-			<tr>
-					<td><strong>语义嵌入筛选</strong></td>
-					<td>保留与查询最相似的片段</td>
-					<td>2-5x</td>
-					<td>中</td>
-					<td>RAG 检索结果</td>
-					<td>中</td>
-			</tr>
-			<tr>
-					<td><strong>启发式截断</strong></td>
-					<td>固定规则（删空白、去冗余词）</td>
-					<td>1.5-3x</td>
-					<td>低</td>
-					<td>预处理</td>
-					<td>极低</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>方法</th>
+          <th>原理</th>
+          <th>压缩率</th>
+          <th>信息损失</th>
+          <th>适用场景</th>
+          <th>计算成本</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>LLMLingua</strong></td>
+          <td>基于小模型的 token 级重要性评分</td>
+          <td>5-20x</td>
+          <td>低（&lt;3%）</td>
+          <td>长文档、代码</td>
+          <td>中（需小模型）</td>
+      </tr>
+      <tr>
+          <td><strong>Selective Context</strong></td>
+          <td>基于语言模型困惑度的句子筛选</td>
+          <td>3-10x</td>
+          <td>中（~5%）</td>
+          <td>对话、文章</td>
+          <td>低</td>
+      </tr>
+      <tr>
+          <td><strong>摘要压缩</strong></td>
+          <td>用 LLM 生成结构化摘要</td>
+          <td>10-50x</td>
+          <td>高（依赖摘要质量）</td>
+          <td>超长对话、文档</td>
+          <td>高（需 LLM）</td>
+      </tr>
+      <tr>
+          <td><strong>关键事件提取</strong></td>
+          <td>从时序数据中提取离散事件</td>
+          <td>20-100x</td>
+          <td>高（丢失细节）</td>
+          <td>对话历史、日志</td>
+          <td>中</td>
+      </tr>
+      <tr>
+          <td><strong>语义嵌入筛选</strong></td>
+          <td>保留与查询最相似的片段</td>
+          <td>2-5x</td>
+          <td>中</td>
+          <td>RAG 检索结果</td>
+          <td>中</td>
+      </tr>
+      <tr>
+          <td><strong>启发式截断</strong></td>
+          <td>固定规则（删空白、去冗余词）</td>
+          <td>1.5-3x</td>
+          <td>低</td>
+          <td>预处理</td>
+          <td>极低</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="llmlingua-原理">
   LLMLingua 原理
@@ -8927,7 +8974,7 @@ Tₙ [持续演化...]
   代码实现：对话压缩为关键事件
   <a class="anchor" href="#%e4%bb%a3%e7%a0%81%e5%ae%9e%e7%8e%b0%e5%af%b9%e8%af%9d%e5%8e%8b%e7%bc%a9%e4%b8%ba%e5%85%b3%e9%94%ae%e4%ba%8b%e4%bb%b6">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Context Compression — 上下文压缩实现
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">包含：LLMLingua 风格压缩、摘要压缩、关键事件提取
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;</span>
@@ -9279,7 +9326,7 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>            lines<span style="color:#f92672">.</span>append(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">{</span>icon<span style="color:#f92672">.</span>get(event<span style="color:#f92672">.</span>event_type, <span style="color:#e6db74">&#39;•&#39;</span>)<span style="color:#e6db74">}</span><span style="color:#e6db74"> [</span><span style="color:#e6db74">{</span>event<span style="color:#f92672">.</span>event_type<span style="color:#e6db74">}</span><span style="color:#e6db74">] </span><span style="color:#e6db74">{</span>event<span style="color:#f92672">.</span>summary<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span><span style="color:#f92672">.</span>join(lines)
 </span></span></code></pre></div><p><strong>压缩实战：10 轮客服对话 → 3 个关键事件</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 模拟 10 轮客服对话</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 模拟 10 轮客服对话</span>
 </span></span><span style="display:flex;"><span>conversation <span style="color:#f92672">=</span> [
 </span></span><span style="display:flex;"><span>    {<span style="color:#e6db74">&#34;role&#34;</span>: <span style="color:#e6db74">&#34;user&#34;</span>,     <span style="color:#e6db74">&#34;content&#34;</span>: <span style="color:#e6db74">&#34;我的订单 #12345 显示已发货但没收到物流信息？&#34;</span>, <span style="color:#e6db74">&#34;ts&#34;</span>: <span style="color:#ae81ff">1700000000</span>},
 </span></span><span style="display:flex;"><span>    {<span style="color:#e6db74">&#34;role&#34;</span>: <span style="color:#e6db74">&#34;assistant&#34;</span>, <span style="color:#e6db74">&#34;content&#34;</span>: <span style="color:#e6db74">&#34;让我查询一下您的订单。请稍等...查询结果显示，您的订单已于 3 天前通过顺丰发出，运号 SF1234567890。&#34;</span>, <span style="color:#e6db74">&#34;ts&#34;</span>: <span style="color:#ae81ff">1700000010</span>},
@@ -9317,59 +9364,59 @@ Tₙ [持续演化...]
   <a class="anchor" href="#%e6%a3%80%e7%b4%a2%e6%96%b9%e6%b3%95%e5%af%b9%e6%af%94">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>方法</th>
-					<th>原理</th>
-					<th>优势</th>
-					<th>劣势</th>
-					<th>适用场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>关键词检索 (BM25)</strong></td>
-					<td>词频-逆文档频率统计</td>
-					<td>精确匹配、速度快、无需训练</td>
-					<td>无语义理解、同义词盲区</td>
-					<td>术语密集、精确定位</td>
-			</tr>
-			<tr>
-					<td><strong>语义检索 (Dense)</strong></td>
-					<td>向量嵌入 + 相似度</td>
-					<td>语义理解、跨语言</td>
-					<td>需要 Embedding 模型、计算成本</td>
-					<td>概念匹配、模糊查询</td>
-			</tr>
-			<tr>
-					<td><strong>混合检索 (Hybrid)</strong></td>
-					<td>BM25 + Dense 融合</td>
-					<td>兼顾精确与语义</td>
-					<td>调参复杂</td>
-					<td>通用 RAG</td>
-			</tr>
-			<tr>
-					<td><strong>ColBERT</strong></td>
-					<td>延迟交互匹配</td>
-					<td>细粒度匹配、准确率高</td>
-					<td>存储成本高</td>
-					<td>精细问答</td>
-			</tr>
-			<tr>
-					<td><strong>HyDE</strong></td>
-					<td>假设文档增强</td>
-					<td>零样本适配查询</td>
-					<td>额外 LLM 调用</td>
-					<td>无标注数据场景</td>
-			</tr>
-			<tr>
-					<td><strong>Parent Document</strong></td>
-					<td>检索小块 → 返回大块</td>
-					<td>上下文完整</td>
-					<td>可能引入噪声</td>
-					<td>长文档 QA</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>方法</th>
+          <th>原理</th>
+          <th>优势</th>
+          <th>劣势</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>关键词检索 (BM25)</strong></td>
+          <td>词频-逆文档频率统计</td>
+          <td>精确匹配、速度快、无需训练</td>
+          <td>无语义理解、同义词盲区</td>
+          <td>术语密集、精确定位</td>
+      </tr>
+      <tr>
+          <td><strong>语义检索 (Dense)</strong></td>
+          <td>向量嵌入 + 相似度</td>
+          <td>语义理解、跨语言</td>
+          <td>需要 Embedding 模型、计算成本</td>
+          <td>概念匹配、模糊查询</td>
+      </tr>
+      <tr>
+          <td><strong>混合检索 (Hybrid)</strong></td>
+          <td>BM25 + Dense 融合</td>
+          <td>兼顾精确与语义</td>
+          <td>调参复杂</td>
+          <td>通用 RAG</td>
+      </tr>
+      <tr>
+          <td><strong>ColBERT</strong></td>
+          <td>延迟交互匹配</td>
+          <td>细粒度匹配、准确率高</td>
+          <td>存储成本高</td>
+          <td>精细问答</td>
+      </tr>
+      <tr>
+          <td><strong>HyDE</strong></td>
+          <td>假设文档增强</td>
+          <td>零样本适配查询</td>
+          <td>额外 LLM 调用</td>
+          <td>无标注数据场景</td>
+      </tr>
+      <tr>
+          <td><strong>Parent Document</strong></td>
+          <td>检索小块 → 返回大块</td>
+          <td>上下文完整</td>
+          <td>可能引入噪声</td>
+          <td>长文档 QA</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="混合检索核心公式">
   混合检索核心公式
@@ -9382,7 +9429,7 @@ Tₙ [持续演化...]
   代码实现：法律文档问答的上下文注入
   <a class="anchor" href="#%e4%bb%a3%e7%a0%81%e5%ae%9e%e7%8e%b0%e6%b3%95%e5%be%8b%e6%96%87%e6%a1%a3%e9%97%ae%e7%ad%94%e7%9a%84%e4%b8%8a%e4%b8%8b%e6%96%87%e6%b3%a8%e5%85%a5">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Context Retrieval &amp; Injection — 检索与注入实现
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">聚焦 RAG 场景下的混合检索和上下文注入策略。
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;</span>
@@ -9691,7 +9738,7 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span><span style="color:#f92672">.</span>join(selected) <span style="color:#66d9ef">if</span> selected <span style="color:#66d9ef">else</span> content[:max_chars]
 </span></span></code></pre></div><p><strong>使用示例：</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 法律文档库</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 法律文档库</span>
 </span></span><span style="display:flex;"><span>legal_docs <span style="color:#f92672">=</span> [
 </span></span><span style="display:flex;"><span>    Document(id<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;civil_code_577&#34;</span>, title<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;《民法典》第577条&#34;</span>,
 </span></span><span style="display:flex;"><span>             content<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;当事人一方不履行合同义务或者履行合同义务不符合约定的，&#34;</span>
@@ -9783,56 +9830,56 @@ Tₙ [持续演化...]
   <a class="anchor" href="#%e8%ae%b0%e5%bf%86%e5%b1%82%e7%ba%a7%e8%ae%be%e8%ae%a1">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>层级</th>
-					<th>范围</th>
-					<th>数据结构</th>
-					<th>更新频率</th>
-					<th>查询方式</th>
-					<th>淘汰策略</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>短期记忆</strong></td>
-					<td>单次会话</td>
-					<td>列表/队列</td>
-					<td>每轮对话</td>
-					<td>直接读取</td>
-					<td>滑动窗口</td>
-			</tr>
-			<tr>
-					<td><strong>工作记忆</strong></td>
-					<td>会话内聚合</td>
-					<td>事件缓冲区</td>
-					<td>按需聚合</td>
-					<td>时间/主题查询</td>
-					<td>聚合后压缩</td>
-			</tr>
-			<tr>
-					<td><strong>长期记忆</strong></td>
-					<td>跨会话</td>
-					<td>向量 + KV</td>
-					<td>会话结束</td>
-					<td>语义检索 + 关键词</td>
-					<td>TTL + 衰减</td>
-			</tr>
-			<tr>
-					<td><strong>元记忆</strong></td>
-					<td>全局</td>
-					<td>配置文件</td>
-					<td>极低</td>
-					<td>直接读取</td>
-					<td>手动更新</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>范围</th>
+          <th>数据结构</th>
+          <th>更新频率</th>
+          <th>查询方式</th>
+          <th>淘汰策略</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>短期记忆</strong></td>
+          <td>单次会话</td>
+          <td>列表/队列</td>
+          <td>每轮对话</td>
+          <td>直接读取</td>
+          <td>滑动窗口</td>
+      </tr>
+      <tr>
+          <td><strong>工作记忆</strong></td>
+          <td>会话内聚合</td>
+          <td>事件缓冲区</td>
+          <td>按需聚合</td>
+          <td>时间/主题查询</td>
+          <td>聚合后压缩</td>
+      </tr>
+      <tr>
+          <td><strong>长期记忆</strong></td>
+          <td>跨会话</td>
+          <td>向量 + KV</td>
+          <td>会话结束</td>
+          <td>语义检索 + 关键词</td>
+          <td>TTL + 衰减</td>
+      </tr>
+      <tr>
+          <td><strong>元记忆</strong></td>
+          <td>全局</td>
+          <td>配置文件</td>
+          <td>极低</td>
+          <td>直接读取</td>
+          <td>手动更新</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="代码实现用户偏好记忆系统">
   代码实现：用户偏好记忆系统
   <a class="anchor" href="#%e4%bb%a3%e7%a0%81%e5%ae%9e%e7%8e%b0%e7%94%a8%e6%88%b7%e5%81%8f%e5%a5%bd%e8%ae%b0%e5%bf%86%e7%b3%bb%e7%bb%9f">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Memory System Design — AI 助手的用户偏好记忆系统
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">三层记忆架构：
@@ -10157,7 +10204,7 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;short_term_turns&#34;</span>: self<span style="color:#f92672">.</span>short_term<span style="color:#f92672">.</span>total_turns,
 </span></span><span style="display:flex;"><span>        }
 </span></span></code></pre></div><p><strong>使用示例：</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>coordinator <span style="color:#f92672">=</span> MemoryCoordinator()
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>coordinator <span style="color:#f92672">=</span> MemoryCoordinator()
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 模拟对话</span>
 </span></span><span style="display:flex;"><span>turns <span style="color:#f92672">=</span> [
@@ -10197,40 +10244,40 @@ Tₙ [持续演化...]
   <a class="anchor" href="#%e5%a4%9a-agent-%e4%b8%8a%e4%b8%8b%e6%96%87%e4%bc%a0%e9%80%92%e6%a8%a1%e5%bc%8f">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>模式</th>
-					<th>描述</th>
-					<th>适用场景</th>
-					<th>上下文损失风险</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>直通传递</strong></td>
-					<td>完整上下文传递给下游 Agent</td>
-					<td>简单任务链</td>
-					<td>低（但 token 成本高）</td>
-			</tr>
-			<tr>
-					<td><strong>摘要传递</strong></td>
-					<td>上游 Agent 生成摘要后传递</td>
-					<td>复杂规划 → 执行</td>
-					<td>中（摘要可能丢失细节）</td>
-			</tr>
-			<tr>
-					<td><strong>引用传递</strong></td>
-					<td>只传递上下文引用 ID，下游自行检索</td>
-					<td>大规模 Agent 集群</td>
-					<td>低（但增加延迟）</td>
-			</tr>
-			<tr>
-					<td><strong>分层传递</strong></td>
-					<td>按层传递：系统层共享，任务层定制</td>
-					<td>异构 Agent 协作</td>
-					<td>低</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>描述</th>
+          <th>适用场景</th>
+          <th>上下文损失风险</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>直通传递</strong></td>
+          <td>完整上下文传递给下游 Agent</td>
+          <td>简单任务链</td>
+          <td>低（但 token 成本高）</td>
+      </tr>
+      <tr>
+          <td><strong>摘要传递</strong></td>
+          <td>上游 Agent 生成摘要后传递</td>
+          <td>复杂规划 → 执行</td>
+          <td>中（摘要可能丢失细节）</td>
+      </tr>
+      <tr>
+          <td><strong>引用传递</strong></td>
+          <td>只传递上下文引用 ID，下游自行检索</td>
+          <td>大规模 Agent 集群</td>
+          <td>低（但增加延迟）</td>
+      </tr>
+      <tr>
+          <td><strong>分层传递</strong></td>
+          <td>按层传递：系统层共享，任务层定制</td>
+          <td>异构 Agent 协作</td>
+          <td>低</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="a2a-协议下的上下文共享">
   A2A 协议下的上下文共享
@@ -10258,7 +10305,7 @@ Tₙ [持续演化...]
   代码实现：规划 Agent → 执行 Agent 的上下文传递
   <a class="anchor" href="#%e4%bb%a3%e7%a0%81%e5%ae%9e%e7%8e%b0%e8%a7%84%e5%88%92-agent--%e6%89%a7%e8%a1%8c-agent-%e7%9a%84%e4%b8%8a%e4%b8%8b%e6%96%87%e4%bc%a0%e9%80%92">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Agent Context Orchestration — Agent 间上下文传递
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">核心概念：
@@ -10561,52 +10608,52 @@ Tₙ [持续演化...]
   <a class="anchor" href="#%e7%a4%ba%e4%be%8b%e9%80%89%e6%8b%a9%e7%ad%96%e7%95%a5">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>策略</th>
-					<th>原理</th>
-					<th>优势</th>
-					<th>劣势</th>
-					<th>适用场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>随机采样</strong></td>
-					<td>随机选取 K 个示例</td>
-					<td>简单、无偏</td>
-					<td>可能选到不相关示例</td>
-					<td>基准测试</td>
-			</tr>
-			<tr>
-					<td><strong>相似性选择</strong></td>
-					<td>选与当前输入最相似的示例</td>
-					<td>针对性强</td>
-					<td>可能缺乏多样性</td>
-					<td>常规任务</td>
-			</tr>
-			<tr>
-					<td><strong>多样性选择</strong></td>
-					<td>使用 MMR 选择覆盖不同模式</td>
-					<td>覆盖广</td>
-					<td>计算复杂</td>
-					<td>复杂任务</td>
-			</tr>
-			<tr>
-					<td><strong>代表性选择</strong></td>
-					<td>选聚类中心点</td>
-					<td>均衡</td>
-					<td>需要预聚类</td>
-					<td>大规模示例库</td>
-			</tr>
-			<tr>
-					<td><strong>动态选择</strong></td>
-					<td>根据任务特征实时选择</td>
-					<td>灵活</td>
-					<td>需要元数据</td>
-					<td>多变任务</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th>原理</th>
+          <th>优势</th>
+          <th>劣势</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>随机采样</strong></td>
+          <td>随机选取 K 个示例</td>
+          <td>简单、无偏</td>
+          <td>可能选到不相关示例</td>
+          <td>基准测试</td>
+      </tr>
+      <tr>
+          <td><strong>相似性选择</strong></td>
+          <td>选与当前输入最相似的示例</td>
+          <td>针对性强</td>
+          <td>可能缺乏多样性</td>
+          <td>常规任务</td>
+      </tr>
+      <tr>
+          <td><strong>多样性选择</strong></td>
+          <td>使用 MMR 选择覆盖不同模式</td>
+          <td>覆盖广</td>
+          <td>计算复杂</td>
+          <td>复杂任务</td>
+      </tr>
+      <tr>
+          <td><strong>代表性选择</strong></td>
+          <td>选聚类中心点</td>
+          <td>均衡</td>
+          <td>需要预聚类</td>
+          <td>大规模示例库</td>
+      </tr>
+      <tr>
+          <td><strong>动态选择</strong></td>
+          <td>根据任务特征实时选择</td>
+          <td>灵活</td>
+          <td>需要元数据</td>
+          <td>多变任务</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="动态示例注入原理">
   动态示例注入原理
@@ -10624,7 +10671,7 @@ Tₙ [持续演化...]
   代码实现：代码生成的 few-shot 示例选择
   <a class="anchor" href="#%e4%bb%a3%e7%a0%81%e5%ae%9e%e7%8e%b0%e4%bb%a3%e7%a0%81%e7%94%9f%e6%88%90%e7%9a%84-few-shot-%e7%a4%ba%e4%be%8b%e9%80%89%e6%8b%a9">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Few-shot Example Engineering — 代码生成的示例选择
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">核心问题：给定一个编程任务和一个大型示例库，
@@ -11018,59 +11065,59 @@ Tₙ [持续演化...]
   <a class="anchor" href="#513-token-%e5%88%86%e9%85%8d%e8%a1%a8">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>层级</th>
-					<th>内容</th>
-					<th style="text-align: center">基础预算 (tokens)</th>
-					<th style="text-align: center">弹性范围</th>
-					<th>裁剪策略</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>L1</td>
-					<td>系统指令、安全策略</td>
-					<td style="text-align: center">350</td>
-					<td style="text-align: center">固定</td>
-					<td>不裁剪</td>
-			</tr>
-			<tr>
-					<td>L2</td>
-					<td>知识库检索片段</td>
-					<td style="text-align: center">800</td>
-					<td style="text-align: center">400–1200</td>
-					<td>按相似度排序裁剪</td>
-			</tr>
-			<tr>
-					<td>L3</td>
-					<td>用户画像、偏好</td>
-					<td style="text-align: center">250</td>
-					<td style="text-align: center">0–400</td>
-					<td>按需加载，无关则不注入</td>
-			</tr>
-			<tr>
-					<td>L4</td>
-					<td>会话历史</td>
-					<td style="text-align: center">2600</td>
-					<td style="text-align: center">1000–4000</td>
-					<td>摘要压缩，保留关键轮次</td>
-			</tr>
-			<tr>
-					<td>预留</td>
-					<td>模型输出空间</td>
-					<td style="text-align: center">1000</td>
-					<td style="text-align: center">固定</td>
-					<td>不分配给输入</td>
-			</tr>
-			<tr>
-					<td><strong>合计</strong></td>
-					<td></td>
-					<td style="text-align: center"><strong>5000</strong></td>
-					<td style="text-align: center"><strong>2800–7000</strong></td>
-					<td>—</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>内容</th>
+          <th style="text-align: center">基础预算 (tokens)</th>
+          <th style="text-align: center">弹性范围</th>
+          <th>裁剪策略</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>L1</td>
+          <td>系统指令、安全策略</td>
+          <td style="text-align: center">350</td>
+          <td style="text-align: center">固定</td>
+          <td>不裁剪</td>
+      </tr>
+      <tr>
+          <td>L2</td>
+          <td>知识库检索片段</td>
+          <td style="text-align: center">800</td>
+          <td style="text-align: center">400–1200</td>
+          <td>按相似度排序裁剪</td>
+      </tr>
+      <tr>
+          <td>L3</td>
+          <td>用户画像、偏好</td>
+          <td style="text-align: center">250</td>
+          <td style="text-align: center">0–400</td>
+          <td>按需加载，无关则不注入</td>
+      </tr>
+      <tr>
+          <td>L4</td>
+          <td>会话历史</td>
+          <td style="text-align: center">2600</td>
+          <td style="text-align: center">1000–4000</td>
+          <td>摘要压缩，保留关键轮次</td>
+      </tr>
+      <tr>
+          <td>预留</td>
+          <td>模型输出空间</td>
+          <td style="text-align: center">1000</td>
+          <td style="text-align: center">固定</td>
+          <td>不分配给输入</td>
+      </tr>
+      <tr>
+          <td><strong>合计</strong></td>
+          <td></td>
+          <td style="text-align: center"><strong>5000</strong></td>
+          <td style="text-align: center"><strong>2800–7000</strong></td>
+          <td>—</td>
+      </tr>
+  </tbody>
 </table>
 <blockquote>
 <p><strong>设计决策</strong>：在 8K 上下文模型上，输入分配约 5K tokens，预留 1K 给模型输出。L2 层采用检索注入而非全量注入，通过相似度阈值（≥0.7）动态控制实际注入量，这是控制上下文膨胀的关键。</p>
@@ -11080,7 +11127,7 @@ Tₙ [持续演化...]
   <a class="anchor" href="#514-%e4%bb%a3%e7%a0%81%e5%ae%9e%e7%8e%b0">#</a>
 </h3>
 <p>以下是完整的上下文构建管线实现。代码分为三个模块：上下文构建器、检索注入器与会话管理器。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">智能客服上下文构建管线
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">======================
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">实现了分层上下文组装、RAG 检索注入与会话历史摘要压缩。
@@ -11632,38 +11679,38 @@ Tₙ [持续演化...]
 </h3>
 <p>我们对上述架构进行了 A/B 测试，对比三种上下文策略在相同测试集（1,200 条真实客服工单）上的表现：</p>
 <table>
-	<thead>
-			<tr>
-					<th>策略</th>
-					<th style="text-align: center">平均响应满意度 (1–5)</th>
-					<th style="text-align: center">首次解决率</th>
-					<th style="text-align: center">平均 token 消耗</th>
-					<th style="text-align: center">人工转接率</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>全量注入（Baseline）</td>
-					<td style="text-align: center">3.2</td>
-					<td style="text-align: center">41.2%</td>
-					<td style="text-align: center">7,200</td>
-					<td style="text-align: center">28.5%</td>
-			</tr>
-			<tr>
-					<td>固定模板注入</td>
-					<td style="text-align: center">3.6</td>
-					<td style="text-align: center">53.8%</td>
-					<td style="text-align: center">4,800</td>
-					<td style="text-align: center">21.3%</td>
-			</tr>
-			<tr>
-					<td><strong>分层动态注入（本方案）</strong></td>
-					<td style="text-align: center"><strong>4.1</strong></td>
-					<td style="text-align: center"><strong>67.4%</strong></td>
-					<td style="text-align: center"><strong>3,900</strong></td>
-					<td style="text-align: center"><strong>12.7%</strong></td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th style="text-align: center">平均响应满意度 (1–5)</th>
+          <th style="text-align: center">首次解决率</th>
+          <th style="text-align: center">平均 token 消耗</th>
+          <th style="text-align: center">人工转接率</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>全量注入（Baseline）</td>
+          <td style="text-align: center">3.2</td>
+          <td style="text-align: center">41.2%</td>
+          <td style="text-align: center">7,200</td>
+          <td style="text-align: center">28.5%</td>
+      </tr>
+      <tr>
+          <td>固定模板注入</td>
+          <td style="text-align: center">3.6</td>
+          <td style="text-align: center">53.8%</td>
+          <td style="text-align: center">4,800</td>
+          <td style="text-align: center">21.3%</td>
+      </tr>
+      <tr>
+          <td><strong>分层动态注入（本方案）</strong></td>
+          <td style="text-align: center"><strong>4.1</strong></td>
+          <td style="text-align: center"><strong>67.4%</strong></td>
+          <td style="text-align: center"><strong>3,900</strong></td>
+          <td style="text-align: center"><strong>12.7%</strong></td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>关键发现</strong>：</p>
 <ol>
@@ -11732,66 +11779,66 @@ Tₙ [持续演化...]
   <a class="anchor" href="#523-token-%e5%88%86%e9%85%8d%e8%a1%a8">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>层级</th>
-					<th>内容</th>
-					<th style="text-align: center">基础预算 (tokens)</th>
-					<th style="text-align: center">弹性范围</th>
-					<th>裁剪策略</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>CF</td>
-					<td>当前文件（焦点区域 + 窗口）</td>
-					<td style="text-align: center">1200</td>
-					<td style="text-align: center">800–2000</td>
-					<td>以 AST 节点为单位的窗口滑动</td>
-			</tr>
-			<tr>
-					<td>DEP</td>
-					<td>依赖文件（类型/签名）</td>
-					<td style="text-align: center">800</td>
-					<td style="text-align: center">400–1500</td>
-					<td>按调用距离排序裁剪</td>
-			</tr>
-			<tr>
-					<td>PROJ</td>
-					<td>项目结构摘要</td>
-					<td style="text-align: center">300</td>
-					<td style="text-align: center">200–500</td>
-					<td>目录树深度控制</td>
-			</tr>
-			<tr>
-					<td>CONV</td>
-					<td>编程规范</td>
-					<td style="text-align: center">200</td>
-					<td style="text-align: center">固定</td>
-					<td>不裁剪</td>
-			</tr>
-			<tr>
-					<td>系统</td>
-					<td>角色与指令</td>
-					<td style="text-align: center">300</td>
-					<td style="text-align: center">固定</td>
-					<td>不裁剪</td>
-			</tr>
-			<tr>
-					<td>预留</td>
-					<td>输出空间</td>
-					<td style="text-align: center">1000</td>
-					<td style="text-align: center">固定</td>
-					<td>不分配给输入</td>
-			</tr>
-			<tr>
-					<td><strong>合计</strong></td>
-					<td></td>
-					<td style="text-align: center"><strong>3800</strong></td>
-					<td style="text-align: center"><strong>2600–5500</strong></td>
-					<td>—</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>内容</th>
+          <th style="text-align: center">基础预算 (tokens)</th>
+          <th style="text-align: center">弹性范围</th>
+          <th>裁剪策略</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>CF</td>
+          <td>当前文件（焦点区域 + 窗口）</td>
+          <td style="text-align: center">1200</td>
+          <td style="text-align: center">800–2000</td>
+          <td>以 AST 节点为单位的窗口滑动</td>
+      </tr>
+      <tr>
+          <td>DEP</td>
+          <td>依赖文件（类型/签名）</td>
+          <td style="text-align: center">800</td>
+          <td style="text-align: center">400–1500</td>
+          <td>按调用距离排序裁剪</td>
+      </tr>
+      <tr>
+          <td>PROJ</td>
+          <td>项目结构摘要</td>
+          <td style="text-align: center">300</td>
+          <td style="text-align: center">200–500</td>
+          <td>目录树深度控制</td>
+      </tr>
+      <tr>
+          <td>CONV</td>
+          <td>编程规范</td>
+          <td style="text-align: center">200</td>
+          <td style="text-align: center">固定</td>
+          <td>不裁剪</td>
+      </tr>
+      <tr>
+          <td>系统</td>
+          <td>角色与指令</td>
+          <td style="text-align: center">300</td>
+          <td style="text-align: center">固定</td>
+          <td>不裁剪</td>
+      </tr>
+      <tr>
+          <td>预留</td>
+          <td>输出空间</td>
+          <td style="text-align: center">1000</td>
+          <td style="text-align: center">固定</td>
+          <td>不分配给输入</td>
+      </tr>
+      <tr>
+          <td><strong>合计</strong></td>
+          <td></td>
+          <td style="text-align: center"><strong>3800</strong></td>
+          <td style="text-align: center"><strong>2600–5500</strong></td>
+          <td>—</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="524-上下文裁剪流程">
   5.2.4 上下文裁剪流程
@@ -11838,7 +11885,7 @@ Tₙ [持续演化...]
   <a class="anchor" href="#525-%e4%bb%a3%e7%a0%81%e5%ae%9e%e7%8e%b0">#</a>
 </h3>
 <p>以下是完整的 AST 感知上下文选择器实现。本实现以 Python 代码为例，使用 <code>ast</code> 模块进行语法分析。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">代码助手 AST 感知上下文选择器
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">==============================
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">利用 AST 结构进行上下文裁剪，确保裁剪后的代码片段在语法上是
@@ -12474,38 +12521,38 @@ Tₙ [持续演化...]
 </h3>
 <p>在包含 5 个不同规模项目（总代码行数 120K–850K）的测试集上，我们对比了三种上下文策略的补全质量：</p>
 <table>
-	<thead>
-			<tr>
-					<th>策略</th>
-					<th style="text-align: center">编译通过率</th>
-					<th style="text-align: center">语法正确率</th>
-					<th style="text-align: center">平均上下文大小 (tokens)</th>
-					<th style="text-align: center">补全采纳率</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>行截断（Baseline）</td>
-					<td style="text-align: center">52.3%</td>
-					<td style="text-align: center">71.8%</td>
-					<td style="text-align: center">2,800</td>
-					<td style="text-align: center">23.1%</td>
-			</tr>
-			<tr>
-					<td>最近文件窗口</td>
-					<td style="text-align: center">61.7%</td>
-					<td style="text-align: center">82.4%</td>
-					<td style="text-align: center">3,200</td>
-					<td style="text-align: center">35.6%</td>
-			</tr>
-			<tr>
-					<td><strong>AST 感知选择（本方案）</strong></td>
-					<td style="text-align: center"><strong>78.9%</strong></td>
-					<td style="text-align: center"><strong>91.2%</strong></td>
-					<td style="text-align: center"><strong>2,400</strong></td>
-					<td style="text-align: center"><strong>47.3%</strong></td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th style="text-align: center">编译通过率</th>
+          <th style="text-align: center">语法正确率</th>
+          <th style="text-align: center">平均上下文大小 (tokens)</th>
+          <th style="text-align: center">补全采纳率</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>行截断（Baseline）</td>
+          <td style="text-align: center">52.3%</td>
+          <td style="text-align: center">71.8%</td>
+          <td style="text-align: center">2,800</td>
+          <td style="text-align: center">23.1%</td>
+      </tr>
+      <tr>
+          <td>最近文件窗口</td>
+          <td style="text-align: center">61.7%</td>
+          <td style="text-align: center">82.4%</td>
+          <td style="text-align: center">3,200</td>
+          <td style="text-align: center">35.6%</td>
+      </tr>
+      <tr>
+          <td><strong>AST 感知选择（本方案）</strong></td>
+          <td style="text-align: center"><strong>78.9%</strong></td>
+          <td style="text-align: center"><strong>91.2%</strong></td>
+          <td style="text-align: center"><strong>2,400</strong></td>
+          <td style="text-align: center"><strong>47.3%</strong></td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>关键发现</strong>：</p>
 <ol>
@@ -12577,73 +12624,73 @@ Tₙ [持续演化...]
   <a class="anchor" href="#533-token-%e5%88%86%e9%85%8d%e8%a1%a8">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>层级</th>
-					<th>内容</th>
-					<th style="text-align: center">基础预算 (tokens)</th>
-					<th style="text-align: center">弹性范围</th>
-					<th>注入时机</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>L1</td>
-					<td>分析目标</td>
-					<td style="text-align: center">200</td>
-					<td style="text-align: center">固定</td>
-					<td>始终</td>
-			</tr>
-			<tr>
-					<td>L2</td>
-					<td>数据 Schema</td>
-					<td style="text-align: center">500</td>
-					<td style="text-align: center">200–1000</td>
-					<td>分析启动时</td>
-			</tr>
-			<tr>
-					<td>L3</td>
-					<td>数据摘要</td>
-					<td style="text-align: center">600</td>
-					<td style="text-align: center">300–1200</td>
-					<td>按需（探索阶段）</td>
-			</tr>
-			<tr>
-					<td>L4</td>
-					<td>分析链路</td>
-					<td style="text-align: center">800</td>
-					<td style="text-align: center">400–1500</td>
-					<td>每步追加</td>
-			</tr>
-			<tr>
-					<td>L5</td>
-					<td>业务规则</td>
-					<td style="text-align: center">300</td>
-					<td style="text-align: center">100–500</td>
-					<td>按需（建模阶段）</td>
-			</tr>
-			<tr>
-					<td>系统</td>
-					<td>角色与指令</td>
-					<td style="text-align: center">300</td>
-					<td style="text-align: center">固定</td>
-					<td>始终</td>
-			</tr>
-			<tr>
-					<td>预留</td>
-					<td>输出空间</td>
-					<td style="text-align: center">1000</td>
-					<td style="text-align: center">固定</td>
-					<td>—</td>
-			</tr>
-			<tr>
-					<td><strong>合计</strong></td>
-					<td></td>
-					<td style="text-align: center"><strong>3700</strong></td>
-					<td style="text-align: center"><strong>2500–5400</strong></td>
-					<td>—</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>内容</th>
+          <th style="text-align: center">基础预算 (tokens)</th>
+          <th style="text-align: center">弹性范围</th>
+          <th>注入时机</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>L1</td>
+          <td>分析目标</td>
+          <td style="text-align: center">200</td>
+          <td style="text-align: center">固定</td>
+          <td>始终</td>
+      </tr>
+      <tr>
+          <td>L2</td>
+          <td>数据 Schema</td>
+          <td style="text-align: center">500</td>
+          <td style="text-align: center">200–1000</td>
+          <td>分析启动时</td>
+      </tr>
+      <tr>
+          <td>L3</td>
+          <td>数据摘要</td>
+          <td style="text-align: center">600</td>
+          <td style="text-align: center">300–1200</td>
+          <td>按需（探索阶段）</td>
+      </tr>
+      <tr>
+          <td>L4</td>
+          <td>分析链路</td>
+          <td style="text-align: center">800</td>
+          <td style="text-align: center">400–1500</td>
+          <td>每步追加</td>
+      </tr>
+      <tr>
+          <td>L5</td>
+          <td>业务规则</td>
+          <td style="text-align: center">300</td>
+          <td style="text-align: center">100–500</td>
+          <td>按需（建模阶段）</td>
+      </tr>
+      <tr>
+          <td>系统</td>
+          <td>角色与指令</td>
+          <td style="text-align: center">300</td>
+          <td style="text-align: center">固定</td>
+          <td>始终</td>
+      </tr>
+      <tr>
+          <td>预留</td>
+          <td>输出空间</td>
+          <td style="text-align: center">1000</td>
+          <td style="text-align: center">固定</td>
+          <td>—</td>
+      </tr>
+      <tr>
+          <td><strong>合计</strong></td>
+          <td></td>
+          <td style="text-align: center"><strong>3700</strong></td>
+          <td style="text-align: center"><strong>2500–5400</strong></td>
+          <td>—</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="534-数据分析-agent-上下文流程">
   5.3.4 数据分析 Agent 上下文流程
@@ -12694,7 +12741,7 @@ Tₙ [持续演化...]
   5.3.5 代码实现
   <a class="anchor" href="#535-%e4%bb%a3%e7%a0%81%e5%ae%9e%e7%8e%b0">#</a>
 </h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">数据分析 Agent 动态上下文注入系统
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">==================================
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">实现了分层数据描述、阶段感知上下文构建与动态注入管线。
@@ -13212,38 +13259,38 @@ Tₙ [持续演化...]
 </h3>
 <p>在 3 个真实业务数据集（电商订单、用户行为日志、供应链数据）上的测试表明：</p>
 <table>
-	<thead>
-			<tr>
-					<th>策略</th>
-					<th style="text-align: center">Schema 理解准确率</th>
-					<th style="text-align: center">生成 SQL 正确率</th>
-					<th style="text-align: center">平均 token 消耗</th>
-					<th style="text-align: center">多步分析连贯性</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>全量 Schema + 无摘要</td>
-					<td style="text-align: center">88.2%</td>
-					<td style="text-align: center">62.1%</td>
-					<td style="text-align: center">8,500</td>
-					<td style="text-align: center">差</td>
-			</tr>
-			<tr>
-					<td>紧凑 Schema + 无统计</td>
-					<td style="text-align: center">72.4%</td>
-					<td style="text-align: center">71.8%</td>
-					<td style="text-align: center">2,800</td>
-					<td style="text-align: center">中</td>
-			</tr>
-			<tr>
-					<td><strong>分层动态注入（本方案）</strong></td>
-					<td style="text-align: center"><strong>93.7%</strong></td>
-					<td style="text-align: center"><strong>84.3%</strong></td>
-					<td style="text-align: center"><strong>3,200</strong></td>
-					<td style="text-align: center"><strong>优</strong></td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th style="text-align: center">Schema 理解准确率</th>
+          <th style="text-align: center">生成 SQL 正确率</th>
+          <th style="text-align: center">平均 token 消耗</th>
+          <th style="text-align: center">多步分析连贯性</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>全量 Schema + 无摘要</td>
+          <td style="text-align: center">88.2%</td>
+          <td style="text-align: center">62.1%</td>
+          <td style="text-align: center">8,500</td>
+          <td style="text-align: center">差</td>
+      </tr>
+      <tr>
+          <td>紧凑 Schema + 无统计</td>
+          <td style="text-align: center">72.4%</td>
+          <td style="text-align: center">71.8%</td>
+          <td style="text-align: center">2,800</td>
+          <td style="text-align: center">中</td>
+      </tr>
+      <tr>
+          <td><strong>分层动态注入（本方案）</strong></td>
+          <td style="text-align: center"><strong>93.7%</strong></td>
+          <td style="text-align: center"><strong>84.3%</strong></td>
+          <td style="text-align: center"><strong>3,200</strong></td>
+          <td style="text-align: center"><strong>优</strong></td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>关键发现</strong>：</p>
 <ol>
@@ -13309,64 +13356,64 @@ Tₙ [持续演化...]
   <a class="anchor" href="#543-token-%e5%88%86%e9%85%8d%e8%a1%a8%e5%8d%95-agent-%e8%a7%86%e8%a7%92">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>内容</th>
-					<th style="text-align: center">基础预算 (tokens)</th>
-					<th style="text-align: center">弹性范围</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>全局任务摘要</td>
-					<td style="text-align: center">300</td>
-					<td style="text-align: center">固定</td>
-					<td>所有 Agent 共享</td>
-			</tr>
-			<tr>
-					<td>子任务详情</td>
-					<td style="text-align: center">500</td>
-					<td style="text-align: center">300–800</td>
-					<td>当前 Agent 负责的子任务</td>
-			</tr>
-			<tr>
-					<td>上游结果摘要</td>
-					<td style="text-align: center">600</td>
-					<td style="text-align: center">200–1500</td>
-					<td>前序 Agent 的输出</td>
-			</tr>
-			<tr>
-					<td>局部上下文</td>
-					<td style="text-align: center">800</td>
-					<td style="text-align: center">400–1200</td>
-					<td>Agent 自身的工作上下文</td>
-			</tr>
-			<tr>
-					<td>系统指令</td>
-					<td style="text-align: center">200</td>
-					<td style="text-align: center">固定</td>
-					<td>Agent 角色与行为约束</td>
-			</tr>
-			<tr>
-					<td>协作协议</td>
-					<td style="text-align: center">100</td>
-					<td style="text-align: center">固定</td>
-					<td>A2A 格式说明</td>
-			</tr>
-			<tr>
-					<td>预留</td>
-					<td style="text-align: center">1000</td>
-					<td style="text-align: center">固定</td>
-					<td>输出空间</td>
-			</tr>
-			<tr>
-					<td><strong>合计</strong></td>
-					<td style="text-align: center"><strong>3500</strong></td>
-					<td style="text-align: center"><strong>2700–5400</strong></td>
-					<td>—</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>内容</th>
+          <th style="text-align: center">基础预算 (tokens)</th>
+          <th style="text-align: center">弹性范围</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>全局任务摘要</td>
+          <td style="text-align: center">300</td>
+          <td style="text-align: center">固定</td>
+          <td>所有 Agent 共享</td>
+      </tr>
+      <tr>
+          <td>子任务详情</td>
+          <td style="text-align: center">500</td>
+          <td style="text-align: center">300–800</td>
+          <td>当前 Agent 负责的子任务</td>
+      </tr>
+      <tr>
+          <td>上游结果摘要</td>
+          <td style="text-align: center">600</td>
+          <td style="text-align: center">200–1500</td>
+          <td>前序 Agent 的输出</td>
+      </tr>
+      <tr>
+          <td>局部上下文</td>
+          <td style="text-align: center">800</td>
+          <td style="text-align: center">400–1200</td>
+          <td>Agent 自身的工作上下文</td>
+      </tr>
+      <tr>
+          <td>系统指令</td>
+          <td style="text-align: center">200</td>
+          <td style="text-align: center">固定</td>
+          <td>Agent 角色与行为约束</td>
+      </tr>
+      <tr>
+          <td>协作协议</td>
+          <td style="text-align: center">100</td>
+          <td style="text-align: center">固定</td>
+          <td>A2A 格式说明</td>
+      </tr>
+      <tr>
+          <td>预留</td>
+          <td style="text-align: center">1000</td>
+          <td style="text-align: center">固定</td>
+          <td>输出空间</td>
+      </tr>
+      <tr>
+          <td><strong>合计</strong></td>
+          <td style="text-align: center"><strong>3500</strong></td>
+          <td style="text-align: center"><strong>2700–5400</strong></td>
+          <td>—</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="544-a2a-上下文传递时序图">
   5.4.4 A2A 上下文传递时序图
@@ -13403,7 +13450,7 @@ Tₙ [持续演化...]
   5.4.5 代码实现
   <a class="anchor" href="#545-%e4%bb%a3%e7%a0%81%e5%ae%9e%e7%8e%b0">#</a>
 </h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">多 Agent 协作 A2A 上下文传递系统
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">==================================
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">实现了结构化的 Agent 间上下文传递、压缩与状态同步协议。
@@ -13972,38 +14019,38 @@ Tₙ [持续演化...]
 </h3>
 <p>在模拟的多 Agent 协作场景（3–5 个 Agent，2–4 轮依赖链）上的测试表明：</p>
 <table>
-	<thead>
-			<tr>
-					<th>策略</th>
-					<th style="text-align: center">任务完成率</th>
-					<th style="text-align: center">上下文一致性得分</th>
-					<th style="text-align: center">平均单 Agent Token</th>
-					<th style="text-align: center">传递损耗率</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>全量传递（Baseline）</td>
-					<td style="text-align: center">71.2%</td>
-					<td style="text-align: center">3.8/5</td>
-					<td style="text-align: center">6,800</td>
-					<td style="text-align: center">52%</td>
-			</tr>
-			<tr>
-					<td>无结构化传递</td>
-					<td style="text-align: center">58.4%</td>
-					<td style="text-align: center">2.9/5</td>
-					<td style="text-align: center">3,200</td>
-					<td style="text-align: center">78%</td>
-			</tr>
-			<tr>
-					<td><strong>A2A 压缩协议（本方案）</strong></td>
-					<td style="text-align: center"><strong>89.7%</strong></td>
-					<td style="text-align: center"><strong>4.5/5</strong></td>
-					<td style="text-align: center"><strong>2,900</strong></td>
-					<td style="text-align: center"><strong>23%</strong></td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th style="text-align: center">任务完成率</th>
+          <th style="text-align: center">上下文一致性得分</th>
+          <th style="text-align: center">平均单 Agent Token</th>
+          <th style="text-align: center">传递损耗率</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>全量传递（Baseline）</td>
+          <td style="text-align: center">71.2%</td>
+          <td style="text-align: center">3.8/5</td>
+          <td style="text-align: center">6,800</td>
+          <td style="text-align: center">52%</td>
+      </tr>
+      <tr>
+          <td>无结构化传递</td>
+          <td style="text-align: center">58.4%</td>
+          <td style="text-align: center">2.9/5</td>
+          <td style="text-align: center">3,200</td>
+          <td style="text-align: center">78%</td>
+      </tr>
+      <tr>
+          <td><strong>A2A 压缩协议（本方案）</strong></td>
+          <td style="text-align: center"><strong>89.7%</strong></td>
+          <td style="text-align: center"><strong>4.5/5</strong></td>
+          <td style="text-align: center"><strong>2,900</strong></td>
+          <td style="text-align: center"><strong>23%</strong></td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>关键发现</strong>：</p>
 <ol>
@@ -14026,40 +14073,40 @@ Tₙ [持续演化...]
   <a class="anchor" href="#%e6%9c%ac%e7%ab%a0%e5%b0%8f%e7%bb%93-1">#</a>
 </h2>
 <table>
-	<thead>
-			<tr>
-					<th>案例</th>
-					<th>核心挑战</th>
-					<th>关键设计</th>
-					<th>核心指标提升</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>智能客服</td>
-					<td>有限窗口内塞入多维度上下文</td>
-					<td>分层注入 + 检索裁剪</td>
-					<td>首次解决率 +26.2pp</td>
-			</tr>
-			<tr>
-					<td>代码助手</td>
-					<td>代码库远超上下文窗口</td>
-					<td>AST 感知选择 + 签名摘要</td>
-					<td>编译通过率 +26.6pp</td>
-			</tr>
-			<tr>
-					<td>数据分析</td>
-					<td>Schema 与数据规模矛盾</td>
-					<td>分层数据描述 + 阶段感知注入</td>
-					<td>SQL 正确率 +12.5pp</td>
-			</tr>
-			<tr>
-					<td>多 Agent 协作</td>
-					<td>分布式上下文传递损耗</td>
-					<td>A2A 压缩协议 + 结构化摘要</td>
-					<td>任务完成率 +31.3pp</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>案例</th>
+          <th>核心挑战</th>
+          <th>关键设计</th>
+          <th>核心指标提升</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>智能客服</td>
+          <td>有限窗口内塞入多维度上下文</td>
+          <td>分层注入 + 检索裁剪</td>
+          <td>首次解决率 +26.2pp</td>
+      </tr>
+      <tr>
+          <td>代码助手</td>
+          <td>代码库远超上下文窗口</td>
+          <td>AST 感知选择 + 签名摘要</td>
+          <td>编译通过率 +26.6pp</td>
+      </tr>
+      <tr>
+          <td>数据分析</td>
+          <td>Schema 与数据规模矛盾</td>
+          <td>分层数据描述 + 阶段感知注入</td>
+          <td>SQL 正确率 +12.5pp</td>
+      </tr>
+      <tr>
+          <td>多 Agent 协作</td>
+          <td>分布式上下文传递损耗</td>
+          <td>A2A 压缩协议 + 结构化摘要</td>
+          <td>任务完成率 +31.3pp</td>
+      </tr>
+  </tbody>
 </table>
 <p>四个案例共享同一个底层原则：<strong>上下文不是越多越好，而是越精确越好</strong>。好的上下文设计通过分层、检索、压缩和裁剪，在有限的窗口内注入最高密度的有效信息。这个原则在后续章节（性能优化、监控与调试）中将得到更系统的展开。</p>
 <hr>
@@ -14131,49 +14178,49 @@ Tₙ [持续演化...]
 <p>LangChain 和 LlamaIndex 是上下文工程中最常用的两个框架，它们的设计哲学有显著差异。</p>
 <p><strong>表 6-1：RAG 框架对比</strong></p>
 <table>
-	<thead>
-			<tr>
-					<th>维度</th>
-					<th>LangChain</th>
-					<th>LlamaIndex</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>设计哲学</td>
-					<td>通用编排框架（Orchestration-first）</td>
-					<td>数据连接框架（Data-first）</td>
-			</tr>
-			<tr>
-					<td>上下文构建方式</td>
-					<td>Runnable 链式组合，灵活但需要手动编排</td>
-					<td>Index → Retriever → Synthesizer 三层抽象</td>
-			</tr>
-			<tr>
-					<td>上下文窗口管理</td>
-					<td>手动拆分，通过 ContextManager 或自定义</td>
-					<td>自动分块 + 元数据过滤</td>
-			</tr>
-			<tr>
-					<td>记忆支持</td>
-					<td>ChatMessageHistory / LangMem</td>
-					<td>内建 SummaryIndex / VectorIndex</td>
-			</tr>
-			<tr>
-					<td>适用场景</td>
-					<td>多 Agent 协作、复杂工作流</td>
-					<td>文档问答、知识库检索</td>
-			</tr>
-			<tr>
-					<td>学习曲线</td>
-					<td>中（概念多但文档完善）</td>
-					<td>低（API 更直观）</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>LangChain</th>
+          <th>LlamaIndex</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>设计哲学</td>
+          <td>通用编排框架（Orchestration-first）</td>
+          <td>数据连接框架（Data-first）</td>
+      </tr>
+      <tr>
+          <td>上下文构建方式</td>
+          <td>Runnable 链式组合，灵活但需要手动编排</td>
+          <td>Index → Retriever → Synthesizer 三层抽象</td>
+      </tr>
+      <tr>
+          <td>上下文窗口管理</td>
+          <td>手动拆分，通过 ContextManager 或自定义</td>
+          <td>自动分块 + 元数据过滤</td>
+      </tr>
+      <tr>
+          <td>记忆支持</td>
+          <td>ChatMessageHistory / LangMem</td>
+          <td>内建 SummaryIndex / VectorIndex</td>
+      </tr>
+      <tr>
+          <td>适用场景</td>
+          <td>多 Agent 协作、复杂工作流</td>
+          <td>文档问答、知识库检索</td>
+      </tr>
+      <tr>
+          <td>学习曲线</td>
+          <td>中（概念多但文档完善）</td>
+          <td>低（API 更直观）</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>LangChain：ContextManager 与 Runnable 实践</strong></p>
 <p>LangChain 的 <code>Runnable</code> 协议是上下文管理的核心抽象。它允许我们将上下文的构建、检索、注入组合为可组合的流水线：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> langchain_core.runnables <span style="color:#f92672">import</span> RunnablePassthrough, RunnableLambda
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> langchain_core.runnables <span style="color:#f92672">import</span> RunnablePassthrough, RunnableLambda
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> langchain_core.prompts <span style="color:#f92672">import</span> ChatPromptTemplate
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> langchain_openai <span style="color:#f92672">import</span> ChatOpenAI
 </span></span><span style="display:flex;"><span>
@@ -14252,7 +14299,7 @@ Tₙ [持续演化...]
 </ul>
 <p><strong>LlamaIndex：Index + Retriever + Response Synthesizer</strong></p>
 <p>LlamaIndex 的设计哲学不同——它把上下文工程抽象为三层，每层都有明确的职责：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> llama_index.core <span style="color:#f92672">import</span> VectorStoreIndex, ServiceContext
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> llama_index.core <span style="color:#f92672">import</span> VectorStoreIndex, ServiceContext
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> llama_index.core.retrievers <span style="color:#f92672">import</span> VectorIndexRetriever
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> llama_index.core.query_engine <span style="color:#f92672">import</span> RetrieverQueryEngine
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> llama_index.core.response_synthesizers <span style="color:#f92672">import</span> get_response_synthesizer
@@ -14305,7 +14352,7 @@ Tₙ [持续演化...]
 <p>如果说 RAG 框架解决的是<strong>外部上下文</strong>（文档、知识库）的管理问题，记忆系统解决的是<strong>内部上下文</strong>（用户偏好、历史交互、长期状态）的管理问题。</p>
 <p><strong>Mem0：结构化记忆 API</strong></p>
 <p>Mem0 提供了一个统一的记忆管理 API，支持添加、检索、更新和删除记忆条目：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> mem0 <span style="color:#f92672">import</span> Memory
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> mem0 <span style="color:#f92672">import</span> Memory
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 初始化</span>
 </span></span><span style="display:flex;"><span>m <span style="color:#f92672">=</span> Memory()
@@ -14345,7 +14392,7 @@ Tₙ [持续演化...]
 </span></span></code></pre></div><p>Mem0 的核心价值在于<strong>自动化</strong>——它自动从自然语言中提取结构化记忆，而不是依赖手动标注。但这也带来了准确性问题：自动提取可能引入噪声，需要配合人工审核机制。</p>
 <p><strong>Letta：核心记忆管理</strong></p>
 <p>Letta（原 MemGPT）采用不同的架构——它将记忆分为三个层次：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> letta <span style="color:#f92672">import</span> Client
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> letta <span style="color:#f92672">import</span> Client
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>client <span style="color:#f92672">=</span> Client()
 </span></span><span style="display:flex;"><span>
@@ -14374,52 +14421,52 @@ Tₙ [持续演化...]
 </span></span></code></pre></div><p>Letta 的设计哲学是<strong>让模型自己管理记忆</strong>，而不是由外部系统注入。这更接近人类的记忆机制——我们不会每次都把所有记忆加载到工作记忆中，而是按需检索。但这种方式的代价是<strong>更高的延迟</strong>（需要多轮 LLM 调用来管理记忆）和<strong>不稳定性</strong>（模型可能错误地遗忘关键信息）。</p>
 <p><strong>表 6-2：记忆系统对比</strong></p>
 <table>
-	<thead>
-			<tr>
-					<th>维度</th>
-					<th>Mem0</th>
-					<th>Letta (MemGPT)</th>
-					<th>LangMem</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>记忆模型</td>
-					<td>结构化键值对</td>
-					<td>三层记忆（Core/Human/Archival）</td>
-					<td>会话级 + 长期记忆</td>
-			</tr>
-			<tr>
-					<td>管理方式</td>
-					<td>外部 API 自动提取</td>
-					<td>Agent 自主管理</td>
-					<td>LangGraph 状态管理</td>
-			</tr>
-			<tr>
-					<td>检索方式</td>
-					<td>向量语义检索</td>
-					<td>Agent 决策检索</td>
-					<td>规则 + 语义混合</td>
-			</tr>
-			<tr>
-					<td>适用场景</td>
-					<td>用户画像、偏好管理</td>
-					<td>长对话、复杂任务</td>
-					<td>LangChain 生态内的对话</td>
-			</tr>
-			<tr>
-					<td>延迟开销</td>
-					<td>低（单次 API 调用）</td>
-					<td>高（多轮 LLM 调用）</td>
-					<td>中</td>
-			</tr>
-			<tr>
-					<td>可控性</td>
-					<td>中（自动提取可能有噪声）</td>
-					<td>低（由 Agent 决定）</td>
-					<td>高（显式编程控制）</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>Mem0</th>
+          <th>Letta (MemGPT)</th>
+          <th>LangMem</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>记忆模型</td>
+          <td>结构化键值对</td>
+          <td>三层记忆（Core/Human/Archival）</td>
+          <td>会话级 + 长期记忆</td>
+      </tr>
+      <tr>
+          <td>管理方式</td>
+          <td>外部 API 自动提取</td>
+          <td>Agent 自主管理</td>
+          <td>LangGraph 状态管理</td>
+      </tr>
+      <tr>
+          <td>检索方式</td>
+          <td>向量语义检索</td>
+          <td>Agent 决策检索</td>
+          <td>规则 + 语义混合</td>
+      </tr>
+      <tr>
+          <td>适用场景</td>
+          <td>用户画像、偏好管理</td>
+          <td>长对话、复杂任务</td>
+          <td>LangChain 生态内的对话</td>
+      </tr>
+      <tr>
+          <td>延迟开销</td>
+          <td>低（单次 API 调用）</td>
+          <td>高（多轮 LLM 调用）</td>
+          <td>中</td>
+      </tr>
+      <tr>
+          <td>可控性</td>
+          <td>中（自动提取可能有噪声）</td>
+          <td>低（由 Agent 决定）</td>
+          <td>高（显式编程控制）</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="613-dspy自动优化上下文">
   6.1.3 DSPy：自动优化上下文
@@ -14427,7 +14474,7 @@ Tₙ [持续演化...]
 </h4>
 <p>前面介绍的框架都解决了上下文的&quot;构建&quot;和&quot;管理&quot;问题，但遗留了一个核心难题：<strong>如何知道上下文构建得好不好？如何自动优化？</strong></p>
 <p>DSPy 的回答是：<strong>不要手写 prompt，让系统自动学习最优的 prompt 和上下文组合。</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> dspy
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> dspy
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 1. 定义 LLM</span>
 </span></span><span style="display:flex;"><span>llm <span style="color:#f92672">=</span> dspy<span style="color:#f92672">.</span>OpenAI(model<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;gpt-4o&#34;</span>, max_tokens<span style="color:#f92672">=</span><span style="color:#ae81ff">1000</span>)
@@ -14487,45 +14534,45 @@ Tₙ [持续演化...]
 </span></span></code></pre></div><p>DSPy 的革命性在于<strong>将 prompt 工程从手工艺术变为可学习的参数</strong>。传统方式下，我们手动调整 prompt 中的措辞、示例顺序、格式要求；DSPy 将这些视为可优化参数，通过 Teleprompter 自动搜索最优组合。</p>
 <p><strong>DSPy 与传统手写 Prompt 的对比</strong></p>
 <table>
-	<thead>
-			<tr>
-					<th>维度</th>
-					<th>传统手写 Prompt</th>
-					<th>DSPy 自动优化</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>Few-shot 示例</td>
-					<td>人工挑选，主观性强</td>
-					<td>自动从训练数据中提取，覆盖性强</td>
-			</tr>
-			<tr>
-					<td>Prompt 格式</td>
-					<td>经验驱动，反复调试</td>
-					<td>自动搜索最优格式</td>
-			</tr>
-			<tr>
-					<td>优化迭代</td>
-					<td>手动 A/B 测试</td>
-					<td>Teleprompter 自动优化</td>
-			</tr>
-			<tr>
-					<td>可复现性</td>
-					<td>低（依赖个人经验）</td>
-					<td>高（基于数据和算法）</td>
-			</tr>
-			<tr>
-					<td>上下文长度优化</td>
-					<td>手动调整</td>
-					<td>自动平衡信息量和 token 成本</td>
-			</tr>
-			<tr>
-					<td>适用场景</td>
-					<td>简单、稳定的任务</td>
-					<td>复杂、多变的任务</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>传统手写 Prompt</th>
+          <th>DSPy 自动优化</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Few-shot 示例</td>
+          <td>人工挑选，主观性强</td>
+          <td>自动从训练数据中提取，覆盖性强</td>
+      </tr>
+      <tr>
+          <td>Prompt 格式</td>
+          <td>经验驱动，反复调试</td>
+          <td>自动搜索最优格式</td>
+      </tr>
+      <tr>
+          <td>优化迭代</td>
+          <td>手动 A/B 测试</td>
+          <td>Teleprompter 自动优化</td>
+      </tr>
+      <tr>
+          <td>可复现性</td>
+          <td>低（依赖个人经验）</td>
+          <td>高（基于数据和算法）</td>
+      </tr>
+      <tr>
+          <td>上下文长度优化</td>
+          <td>手动调整</td>
+          <td>自动平衡信息量和 token 成本</td>
+      </tr>
+      <tr>
+          <td>适用场景</td>
+          <td>简单、稳定的任务</td>
+          <td>复杂、多变的任务</td>
+      </tr>
+  </tbody>
 </table>
 <p>但 DSPy 不是银弹。它的核心限制是：</p>
 <ol>
@@ -14545,7 +14592,7 @@ Tₙ [持续演化...]
 <p><strong>定义</strong>：在一次 LLM 调用中，实际被模型&quot;使用&quot;的上下文 token 数量与注入的总上下文 token 数量的比值。</p>
 <pre tabindex="0"><code>CUR = (有效使用的上下文 token 数) / (注入的总上下文 token 数)
 </code></pre><p>CUR 衡量的是上下文注入的<strong>效率</strong>。CUR = 1 表示所有注入的信息都被使用了（理想情况）；CUR &laquo; 1 表示大量 token 被浪费（可能因为信息冗余、不相关、或超过注意力窗口）。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> tiktoken
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> tiktoken
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> openai <span style="color:#f92672">import</span> OpenAI
 </span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> json
 </span></span><span style="display:flex;"><span>
@@ -14627,7 +14674,7 @@ Tₙ [持续演化...]
   <a class="anchor" href="#622-%e4%bf%a1%e5%99%aa%e6%af%94signal-to-noise-ratio">#</a>
 </h4>
 <p><strong>定义</strong>：上下文中有用信息的信息密度。与 CUR 不同，SNR 不仅关心&quot;是否被使用&quot;，还关心&quot;使用的部分中有多少是真正有用的&quot;。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">compute_context_snr</span>(context: str, question: str, response: str) <span style="color:#f92672">-&gt;</span> dict:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">compute_context_snr</span>(context: str, question: str, response: str) <span style="color:#f92672">-&gt;</span> dict:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    计算上下文信噪比 (SNR)
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    
@@ -14696,7 +14743,7 @@ Tₙ [持续演化...]
   <a class="anchor" href="#623-%e4%b8%8a%e4%b8%8b%e6%96%87%e6%88%90%e6%9c%ac%e6%95%88%e7%9b%8a%e5%88%86%e6%9e%90">#</a>
 </h4>
 <p><strong>定义</strong>：每单位上下文 token 成本带来的输出质量提升。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">cost_benefit_analysis</span>(base_output: str, context_output: str,
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">cost_benefit_analysis</span>(base_output: str, context_output: str,
 </span></span><span style="display:flex;"><span>                          context_tokens: int, model_pricing: dict) <span style="color:#f92672">-&gt;</span> dict:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    上下文成本效益分析
@@ -14744,66 +14791,66 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>    }
 </span></span></code></pre></div><p><strong>表 6-3：上下文评估指标汇总</strong></p>
 <table>
-	<thead>
-			<tr>
-					<th>指标</th>
-					<th>公式</th>
-					<th>理想值</th>
-					<th>含义</th>
-					<th>优化方向</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>CUR</td>
-					<td>有效 token / 总 token</td>
-					<td>&gt; 0.6</td>
-					<td>上下文注入效率</td>
-					<td>精确检索，减少冗余</td>
-			</tr>
-			<tr>
-					<td>SNR</td>
-					<td>信号 token / 噪声 token</td>
-					<td>&gt; 2.0</td>
-					<td>上下文信息密度</td>
-					<td>引入 reranker，过滤无关信息</td>
-			</tr>
-			<tr>
-					<td>信息密度</td>
-					<td>信号 token / 总 token × 100%</td>
-					<td>&gt; 60%</td>
-					<td>每千 token 有用信息量</td>
-					<td>优化分块策略</td>
-			</tr>
-			<tr>
-					<td>成本效益</td>
-					<td>质量提升 / token 成本</td>
-					<td>越高越好</td>
-					<td>每元投入带来的质量提升</td>
-					<td>平衡上下文长度和质量</td>
-			</tr>
-			<tr>
-					<td>忠实度 (RAGAS)</td>
-					<td>回答与上下文的一致性</td>
-					<td>&gt; 0.8</td>
-					<td>是否仅使用上下文信息</td>
-					<td>强化引用约束</td>
-			</tr>
-			<tr>
-					<td>上下文相关性 (RAGAS)</td>
-					<td>检索内容与问题的相关性</td>
-					<td>&gt; 0.7</td>
-					<td>检索质量</td>
-					<td>改进检索策略</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>指标</th>
+          <th>公式</th>
+          <th>理想值</th>
+          <th>含义</th>
+          <th>优化方向</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>CUR</td>
+          <td>有效 token / 总 token</td>
+          <td>&gt; 0.6</td>
+          <td>上下文注入效率</td>
+          <td>精确检索，减少冗余</td>
+      </tr>
+      <tr>
+          <td>SNR</td>
+          <td>信号 token / 噪声 token</td>
+          <td>&gt; 2.0</td>
+          <td>上下文信息密度</td>
+          <td>引入 reranker，过滤无关信息</td>
+      </tr>
+      <tr>
+          <td>信息密度</td>
+          <td>信号 token / 总 token × 100%</td>
+          <td>&gt; 60%</td>
+          <td>每千 token 有用信息量</td>
+          <td>优化分块策略</td>
+      </tr>
+      <tr>
+          <td>成本效益</td>
+          <td>质量提升 / token 成本</td>
+          <td>越高越好</td>
+          <td>每元投入带来的质量提升</td>
+          <td>平衡上下文长度和质量</td>
+      </tr>
+      <tr>
+          <td>忠实度 (RAGAS)</td>
+          <td>回答与上下文的一致性</td>
+          <td>&gt; 0.8</td>
+          <td>是否仅使用上下文信息</td>
+          <td>强化引用约束</td>
+      </tr>
+      <tr>
+          <td>上下文相关性 (RAGAS)</td>
+          <td>检索内容与问题的相关性</td>
+          <td>&gt; 0.7</td>
+          <td>检索质量</td>
+          <td>改进检索策略</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="624-完整评估脚本">
   6.2.4 完整评估脚本
   <a class="anchor" href="#624-%e5%ae%8c%e6%95%b4%e8%af%84%e4%bc%b0%e8%84%9a%e6%9c%ac">#</a>
 </h4>
 <p>以下是一个可执行的上下文质量评估脚本，整合了上述所有指标：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">context_evaluator.py - 上下文工程质量评估工具
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">使用方法:
@@ -15065,7 +15112,7 @@ Tₙ [持续演化...]
   7.1.2 诊断方法
   <a class="anchor" href="#712-%e8%af%8a%e6%96%ad%e6%96%b9%e6%b3%95">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> tiktoken
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> tiktoken
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> openai <span style="color:#f92672">import</span> OpenAI
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">diagnose_context_overload</span>(context: str, question: str, 
@@ -15155,7 +15202,7 @@ Tₙ [持续演化...]
   <a class="anchor" href="#713-%e8%a7%a3%e5%86%b3%e6%96%b9%e6%a1%88">#</a>
 </h4>
 <p><strong>策略一：上下文分块 + 逐段摘要</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">chunk_and_summarize</span>(context: str, question: str, 
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">chunk_and_summarize</span>(context: str, question: str, 
 </span></span><span style="display:flex;"><span>                        max_chunk_tokens: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">1500</span>) <span style="color:#f92672">-&gt;</span> str:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    上下文分块策略：
@@ -15198,7 +15245,7 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>    
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> full_context
 </span></span></code></pre></div><p><strong>策略二：信息重排（Re-ranking）</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">rerank_context_by_relevance</span>(context: str, question: str) <span style="color:#f92672">-&gt;</span> str:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">rerank_context_by_relevance</span>(context: str, question: str) <span style="color:#f92672">-&gt;</span> str:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    按与问题的相关性重排上下文段落
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    确保最相关的信息在注意力窗口的开头
@@ -15244,7 +15291,7 @@ Tₙ [持续演化...]
   7.2.2 诊断方法
   <a class="anchor" href="#722-%e8%af%8a%e6%96%ad%e6%96%b9%e6%b3%95">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">diagnose_context_conflict</span>(context: str) <span style="color:#f92672">-&gt;</span> dict:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">diagnose_context_conflict</span>(context: str) <span style="color:#f92672">-&gt;</span> dict:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    诊断上下文中的事实冲突
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    
@@ -15308,7 +15355,7 @@ Tₙ [持续演化...]
   <a class="anchor" href="#723-%e8%a7%a3%e5%86%b3%e6%96%b9%e6%a1%88">#</a>
 </h4>
 <p><strong>策略一：来源可信度加权</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">resolve_conflict_with_credibility</span>(context_with_sources: list) <span style="color:#f92672">-&gt;</span> str:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">resolve_conflict_with_credibility</span>(context_with_sources: list) <span style="color:#f92672">-&gt;</span> str:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    通过来源可信度解决冲突
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    
@@ -15350,7 +15397,7 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 无冲突，直接拼接</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">---</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span><span style="color:#f92672">.</span>join([s[<span style="color:#e6db74">&#34;content&#34;</span>] <span style="color:#66d9ef">for</span> s <span style="color:#f92672">in</span> ranked])
 </span></span></code></pre></div><p><strong>策略二：冲突显式标注 + 模型裁决</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">annotate_and_resolve</span>(conflicts: list, context: str, question: str) <span style="color:#f92672">-&gt;</span> str:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">annotate_and_resolve</span>(conflicts: list, context: str, question: str) <span style="color:#f92672">-&gt;</span> str:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    将冲突显式标注在上下文中，让模型自己裁决
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;&#34;&#34;</span>
@@ -15391,7 +15438,7 @@ Tₙ [持续演化...]
   7.3.2 诊断方法
   <a class="anchor" href="#732-%e8%af%8a%e6%96%ad%e6%96%b9%e6%b3%95">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> re
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> re
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> typing <span style="color:#f92672">import</span> List, Tuple
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 敏感信息模式</span>
@@ -15456,7 +15503,7 @@ Tₙ [持续演化...]
   <a class="anchor" href="#733-%e8%a7%a3%e5%86%b3%e6%96%b9%e6%a1%88">#</a>
 </h4>
 <p><strong>策略一：上下文注入前脱敏</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> dataclasses <span style="color:#f92672">import</span> dataclass
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> dataclasses <span style="color:#f92672">import</span> dataclass
 </span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> re
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
@@ -15520,7 +15567,7 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>        result <span style="color:#f92672">=</span> result<span style="color:#f92672">.</span>replace(placeholder, original)
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> result
 </span></span></code></pre></div><p><strong>策略二：输出后过滤</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">filter_response_leakage</span>(response: str, sensitive_values: List[str]) <span style="color:#f92672">-&gt;</span> str:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">filter_response_leakage</span>(response: str, sensitive_values: List[str]) <span style="color:#f92672">-&gt;</span> str:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    在返回给用户前，过滤响应中的敏感信息
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;&#34;&#34;</span>
@@ -15550,7 +15597,7 @@ Tₙ [持续演化...]
   7.4.2 诊断方法
   <a class="anchor" href="#742-%e8%af%8a%e6%96%ad%e6%96%b9%e6%b3%95">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> time
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> time
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> datetime <span style="color:#f92672">import</span> datetime, timedelta
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">diagnose_context_staleness</span>(context: str, known_current_facts: dict) <span style="color:#f92672">-&gt;</span> dict:
@@ -15609,7 +15656,7 @@ Tₙ [持续演化...]
   <a class="anchor" href="#743-%e8%a7%a3%e5%86%b3%e6%96%b9%e6%a1%88">#</a>
 </h4>
 <p><strong>策略一：TTL（Time-To-Live）机制</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> dataclasses <span style="color:#f92672">import</span> dataclass, field
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> dataclasses <span style="color:#f92672">import</span> dataclass, field
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> datetime <span style="color:#f92672">import</span> datetime, timedelta
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
@@ -15671,7 +15718,7 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>        ]
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> before <span style="color:#f92672">-</span> len(self<span style="color:#f92672">.</span>chunks)
 </span></span></code></pre></div><p><strong>策略二：实时更新触发器</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">RealTimeContextUpdater</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">RealTimeContextUpdater</span>:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    实时上下文更新器
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    
@@ -15728,7 +15775,7 @@ Tₙ [持续演化...]
   7.5.2 诊断方法
   <a class="anchor" href="#752-%e8%af%8a%e6%96%ad%e6%96%b9%e6%b3%95">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">diagnose_context_fragmentation</span>(context: str, cross_source_questions: list) <span style="color:#f92672">-&gt;</span> dict:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">diagnose_context_fragmentation</span>(context: str, cross_source_questions: list) <span style="color:#f92672">-&gt;</span> dict:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    诊断上下文碎片化问题
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    
@@ -15791,7 +15838,7 @@ Tₙ [持续演化...]
   <a class="anchor" href="#753-%e8%a7%a3%e5%86%b3%e6%96%b9%e6%a1%88">#</a>
 </h4>
 <p><strong>策略一：知识图谱式上下文构建</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">build_knowledge_graph_context</span>(sources: list[dict]) <span style="color:#f92672">-&gt;</span> str:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">build_knowledge_graph_context</span>(sources: list[dict]) <span style="color:#f92672">-&gt;</span> str:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    将多源信息构建为知识图谱格式的上下文
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    
@@ -15864,7 +15911,7 @@ Tₙ [持续演化...]
 </span></span><span style="display:flex;"><span>    
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span><span style="color:#f92672">.</span>join(context_lines)
 </span></span></code></pre></div><p><strong>策略二：跨源关联提示</strong></p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">add_cross_source_hints</span>(context: str) <span style="color:#f92672">-&gt;</span> str:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">add_cross_source_hints</span>(context: str) <span style="color:#f92672">-&gt;</span> str:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    在上下文中添加跨源关联提示
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    
@@ -15921,58 +15968,58 @@ Tₙ [持续演化...]
 </h3>
 <p><strong>表 7-1：上下文工程常见陷阱速查表</strong></p>
 <table>
-	<thead>
-			<tr>
-					<th>陷阱</th>
-					<th>核心症状</th>
-					<th>根因</th>
-					<th>诊断方法</th>
-					<th>主要解决方案</th>
-					<th>严重度</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>上下文过载</strong></td>
-					<td>中间信息被忽略</td>
-					<td>注意力窗口限制，首因/近因效应</td>
-					<td>分段 recall 测试</td>
-					<td>分块+摘要、重排、分层注入</td>
-					<td>⭐⭐⭐</td>
-			</tr>
-			<tr>
-					<td><strong>上下文冲突</strong></td>
-					<td>输出前后矛盾</td>
-					<td>多源信息不一致</td>
-					<td>事实提取+冲突检测</td>
-					<td>可信度加权、显式标注、冲突解决</td>
-					<td>⭐⭐⭐⭐</td>
-			</tr>
-			<tr>
-					<td><strong>上下文泄露</strong></td>
-					<td>敏感信息外泄</td>
-					<td>未脱敏直接注入</td>
-					<td>正则模式扫描</td>
-					<td>注入前脱敏、输出后过滤、权限控制</td>
-					<td>⭐⭐⭐⭐⭐</td>
-			</tr>
-			<tr>
-					<td><strong>上下文滞后</strong></td>
-					<td>使用过期知识</td>
-					<td>数据/索引/缓存未更新</td>
-					<td>时间敏感事实对比</td>
-					<td>TTL机制、实时更新触发器、版本控制</td>
-					<td>⭐⭐⭐⭐</td>
-			</tr>
-			<tr>
-					<td><strong>上下文碎片化</strong></td>
-					<td>无法关联多源信息</td>
-					<td>缺乏跨源关联</td>
-					<td>跨源问题测试</td>
-					<td>知识图谱构建、关联提示、实体对齐</td>
-					<td>⭐⭐⭐</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>陷阱</th>
+          <th>核心症状</th>
+          <th>根因</th>
+          <th>诊断方法</th>
+          <th>主要解决方案</th>
+          <th>严重度</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>上下文过载</strong></td>
+          <td>中间信息被忽略</td>
+          <td>注意力窗口限制，首因/近因效应</td>
+          <td>分段 recall 测试</td>
+          <td>分块+摘要、重排、分层注入</td>
+          <td>⭐⭐⭐</td>
+      </tr>
+      <tr>
+          <td><strong>上下文冲突</strong></td>
+          <td>输出前后矛盾</td>
+          <td>多源信息不一致</td>
+          <td>事实提取+冲突检测</td>
+          <td>可信度加权、显式标注、冲突解决</td>
+          <td>⭐⭐⭐⭐</td>
+      </tr>
+      <tr>
+          <td><strong>上下文泄露</strong></td>
+          <td>敏感信息外泄</td>
+          <td>未脱敏直接注入</td>
+          <td>正则模式扫描</td>
+          <td>注入前脱敏、输出后过滤、权限控制</td>
+          <td>⭐⭐⭐⭐⭐</td>
+      </tr>
+      <tr>
+          <td><strong>上下文滞后</strong></td>
+          <td>使用过期知识</td>
+          <td>数据/索引/缓存未更新</td>
+          <td>时间敏感事实对比</td>
+          <td>TTL机制、实时更新触发器、版本控制</td>
+          <td>⭐⭐⭐⭐</td>
+      </tr>
+      <tr>
+          <td><strong>上下文碎片化</strong></td>
+          <td>无法关联多源信息</td>
+          <td>缺乏跨源关联</td>
+          <td>跨源问题测试</td>
+          <td>知识图谱构建、关联提示、实体对齐</td>
+          <td>⭐⭐⭐</td>
+      </tr>
+  </tbody>
 </table>
 <hr>
 <p><strong>本部分小结</strong>：上下文工程不是&quot;把东西塞进 prompt&quot;那么简单。它需要一个完整的工具链来支撑上下文的构建、管理和优化，需要一套量化指标来评估上下文质量，更需要对常见陷阱的系统性认知。下一章（也是最后一章），我们将探讨上下文工程的未来趋势——当模型窗口趋于无限、Agent 自主性增强、多模态上下文普及时，上下文工程将面临什么新挑战和新机遇。</p>

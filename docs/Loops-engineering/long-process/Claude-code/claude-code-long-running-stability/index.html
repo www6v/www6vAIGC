@@ -44,20 +44,20 @@
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
 <meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/">
-	<meta property="og:site_name" content="Modern Agent">
-	<meta property="og:title" content="Claude Code 长程任务稳定性">
-	<meta property="og:description" content="Claude Code 长程任务稳定性：如何在 50&#43; 轮迭代中不迷失、不失控、不崩溃#摘要：本文深度解析 Claude Code 如何在长程编程任务（数十轮 API 往返、数小时运行、数十万 token 消耗）中保持稳定。涵盖上下文生命周期管理、5 级压缩流水线、Session 持久化与回滚、Subagent 上下文隔离、错误恢复降级链、CLAUDE.md 双记忆系统、Hooks 预处理降本、Token 预算硬限制、Checkpointing 快照等 9 大稳定机制。所有结论均以 Claude Code 官方文档、逆向可运行源码（oboard/claude-code-rev）、学术论文（VILA-Lab, arXiv:2604.14228）、递进式教学（shareAI-lab/learn-claude-code）和 17 篇深度解析（openedclaude/claude-reviews-claude）为交叉验证依据。
-目录#1. 引言：长程任务的&#34;死亡之谷&#34; 2. 上下文生命周期管理：从加载到压缩的完整链路 3. Session 持久化与恢复：断点续传的会话管理 4. Checkpointing：代码与对话的快照回滚 5. Subagent 上下文隔离：分而治之的策略 6. 错误恢复与降级链：当事情出错时 7. CLAUDE.md 双记忆系统：跨会话的知识持久化 8. Hooks 预处理：在 Claude 看到之前做减法 9. 多 Agent 编排与成本治理：团队级稳定性 10. 工程卓越：支撑长程稳定的底层架构 11. 长程任务最佳实践：从官方文档到社区经验 12. 可迁移设计模式：构建你自己的长程稳定 Agent 13. 总结与展望 附录 1. 引言：长程任务的&#34;死亡之谷&#34;#1.1 什么是长程任务？#在 Claude Code 的实践中，任务的复杂度可以从单行 Bug 修复到整个代码库的架构重构。根据任务的规模，我们可以将其分为以下几个等级：">
-	<meta property="og:locale" content="en">
-	<meta property="og:type" content="article">
-		<meta property="article:section" content="docs">
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Claude Code 长程任务稳定性">
+  <meta property="og:description" content="Claude Code 长程任务稳定性：如何在 50&#43; 轮迭代中不迷失、不失控、不崩溃 # 摘要：本文深度解析 Claude Code 如何在长程编程任务（数十轮 API 往返、数小时运行、数十万 token 消耗）中保持稳定。涵盖上下文生命周期管理、5 级压缩流水线、Session 持久化与回滚、Subagent 上下文隔离、错误恢复降级链、CLAUDE.md 双记忆系统、Hooks 预处理降本、Token 预算硬限制、Checkpointing 快照等 9 大稳定机制。所有结论均以 Claude Code 官方文档、逆向可运行源码（oboard/claude-code-rev）、学术论文（VILA-Lab, arXiv:2604.14228）、递进式教学（shareAI-lab/learn-claude-code）和 17 篇深度解析（openedclaude/claude-reviews-claude）为交叉验证依据。
+目录 # 1. 引言：长程任务的&#34;死亡之谷&#34; 2. 上下文生命周期管理：从加载到压缩的完整链路 3. Session 持久化与恢复：断点续传的会话管理 4. Checkpointing：代码与对话的快照回滚 5. Subagent 上下文隔离：分而治之的策略 6. 错误恢复与降级链：当事情出错时 7. CLAUDE.md 双记忆系统：跨会话的知识持久化 8. Hooks 预处理：在 Claude 看到之前做减法 9. 多 Agent 编排与成本治理：团队级稳定性 10. 工程卓越：支撑长程稳定的底层架构 11. 长程任务最佳实践：从官方文档到社区经验 12. 可迁移设计模式：构建你自己的长程稳定 Agent 13. 总结与展望 附录 1. 引言：长程任务的&#34;死亡之谷&#34; # 1.1 什么是长程任务？ # 在 Claude Code 的实践中，任务的复杂度可以从单行 Bug 修复到整个代码库的架构重构。根据任务的规模，我们可以将其分为以下几个等级：">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="docs">
 <title>Claude Code 长程任务稳定性 | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Loops-engineering/long-process/Claude-code/claude-code-long-running-stability/">
-<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+<link rel="stylesheet" href="/www6vAIGC/book.min.3257a7ce7c061eb5dfc72257c356229b1470dc77ce9b982ac220c02542f9f04f.css" integrity="sha256-MlenznwGHrXfxyJXw1YimxRw3HfOm5gqwiDAJUL58E8=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.b03d70a1a41ebd2598f66475385e5f3acbb00c4c00220e8b32e57e4ea027ff4e.js" integrity="sha256-sD1woaQevSWY9mR1OF5fOsuwDEwAIg6LMuV&#43;TqAn/04=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.9ac9103c9736d6d7fd88e6f79ca53fdabcb398fab716e8ab8092ebfee52b0415.js" integrity="sha256-mskQPJc21tf9iOb3nKU/2ryzmPq3FuirgJLr/uUrBBU=" crossorigin="anonymous"></script>
 <!--
 Made with Book Theme
 https://github.com/alex-shpak/hugo-book
@@ -109,8 +109,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="toggle"  />
-    <label for="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="flex justify-between">
+    <input type="checkbox" id="section-8eeae87632e610dbb7fc73d309f4a86d" class="toggle"  />
+    <label for="section-8eeae87632e610dbb7fc73d309f4a86d" class="flex justify-between">
       <a role="button" class="">RAG</a>
     </label>
   
@@ -125,8 +125,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c551263d461ebff83b9463dc3a94952c" class="toggle"  />
-    <label for="section-c551263d461ebff83b9463dc3a94952c" class="flex justify-between">
+    <input type="checkbox" id="section-098fde1b4be868f62390668d03d7d338" class="toggle"  />
+    <label for="section-098fde1b4be868f62390668d03d7d338" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -236,8 +236,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6d871616372a4994f42a7668d9af7715" class="toggle"  />
-    <label for="section-6d871616372a4994f42a7668d9af7715" class="flex justify-between">
+    <input type="checkbox" id="section-7c089cd98011270279a8c4693580483e" class="toggle"  />
+    <label for="section-7c089cd98011270279a8c4693580483e" class="flex justify-between">
       <a role="button" class="">实战 *</a>
     </label>
   
@@ -473,8 +473,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd42bffd52a5c198755daef56da179f9" class="toggle"  />
-    <label for="section-cd42bffd52a5c198755daef56da179f9" class="flex justify-between">
+    <input type="checkbox" id="section-00e0992ed3785617d99441f38424d443" class="toggle"  />
+    <label for="section-00e0992ed3785617d99441f38424d443" class="flex justify-between">
       <a role="button" class="">Pattern</a>
     </label>
   
@@ -674,8 +674,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-afec0c322e2a85b11a48111f0dba315c" class="toggle"  />
-    <label for="section-afec0c322e2a85b11a48111f0dba315c" class="flex justify-between">
+    <input type="checkbox" id="section-5e6438c77671b5eb480dd2c40a29deb4" class="toggle"  />
+    <label for="section-5e6438c77671b5eb480dd2c40a29deb4" class="flex justify-between">
       <a role="button" class="">phase *</a>
     </label>
   
@@ -875,8 +875,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="toggle"  />
-    <label for="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="flex justify-between">
+    <input type="checkbox" id="section-1205a3b6d7d0d892a149b0be18b55680" class="toggle"  />
+    <label for="section-1205a3b6d7d0d892a149b0be18b55680" class="flex justify-between">
       <a role="button" class="">案例</a>
     </label>
   
@@ -937,8 +937,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="toggle"  />
-    <label for="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="flex justify-between">
+    <input type="checkbox" id="section-2853751cf001bfb0dbbd0927de99f326" class="toggle"  />
+    <label for="section-2853751cf001bfb0dbbd0927de99f326" class="flex justify-between">
       <a role="button" class="">Agent Infra</a>
     </label>
   
@@ -953,8 +953,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="toggle"  />
-    <label for="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="flex justify-between">
+    <input type="checkbox" id="section-4277410225f2a82b8e3d740cbc19c27a" class="toggle"  />
+    <label for="section-4277410225f2a82b8e3d740cbc19c27a" class="flex justify-between">
       <a role="button" class="">Dify</a>
     </label>
   
@@ -1028,8 +1028,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d35a724145e4438b19d0128310151060" class="toggle"  />
-    <label for="section-d35a724145e4438b19d0128310151060" class="flex justify-between">
+    <input type="checkbox" id="section-21f3c925847a2d764db6eed92d3a72d8" class="toggle"  />
+    <label for="section-21f3c925847a2d764db6eed92d3a72d8" class="flex justify-between">
       <a role="button" class="">产品</a>
     </label>
   
@@ -1067,8 +1067,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d8fb1e2742348190fede849f378398c8" class="toggle"  />
-    <label for="section-d8fb1e2742348190fede849f378398c8" class="flex justify-between">
+    <input type="checkbox" id="section-781abe85b1b1e35a22f023c37cdc2d1e" class="toggle"  />
+    <label for="section-781abe85b1b1e35a22f023c37cdc2d1e" class="flex justify-between">
       <a role="button" class="">API</a>
     </label>
   
@@ -1124,8 +1124,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="toggle"  />
-    <label for="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="flex justify-between">
+    <input type="checkbox" id="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="toggle"  />
+    <label for="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="flex justify-between">
       <a role="button" class="">Sandbox</a>
     </label>
   
@@ -1181,8 +1181,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="toggle"  />
-    <label for="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="flex justify-between">
+    <input type="checkbox" id="section-c1654de4801752aac71344ec5dc9df88" class="toggle"  />
+    <label for="section-c1654de4801752aac71344ec5dc9df88" class="flex justify-between">
       <a role="button" class="">SDK</a>
     </label>
   
@@ -1243,8 +1243,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-465ebbe8c8eae209a571787ecebad2c0" class="toggle"  />
-    <label for="section-465ebbe8c8eae209a571787ecebad2c0" class="flex justify-between">
+    <input type="checkbox" id="section-0883be528cd603181ff8e3bbd53972c2" class="toggle"  />
+    <label for="section-0883be528cd603181ff8e3bbd53972c2" class="flex justify-between">
       <a role="button" class="">Agent</a>
     </label>
   
@@ -1259,8 +1259,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f76aa66a03b4f060262d5e206195edee" class="toggle"  />
-    <label for="section-f76aa66a03b4f060262d5e206195edee" class="flex justify-between">
+    <input type="checkbox" id="section-60cbe7eba0e55272c2f7e88142209eee" class="toggle"  />
+    <label for="section-60cbe7eba0e55272c2f7e88142209eee" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -1316,8 +1316,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d28aa4a73439b10799fd7621d99b09a8" class="toggle"  />
-    <label for="section-d28aa4a73439b10799fd7621d99b09a8" class="flex justify-between">
+    <input type="checkbox" id="section-34b90f1a802a08434ef79ad7e69c7bec" class="toggle"  />
+    <label for="section-34b90f1a802a08434ef79ad7e69c7bec" class="flex justify-between">
       <a role="button" class="">Practice</a>
     </label>
   
@@ -1409,8 +1409,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="toggle"  />
-    <label for="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="flex justify-between">
+    <input type="checkbox" id="section-d23f53c64147d40d7800ad362d50d826" class="toggle"  />
+    <label for="section-d23f53c64147d40d7800ad362d50d826" class="flex justify-between">
       <a role="button" class="">Reflection</a>
     </label>
   
@@ -1448,8 +1448,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c1c7bf1336ea4ad525ce468e5624159f" class="toggle"  />
-    <label for="section-c1c7bf1336ea4ad525ce468e5624159f" class="flex justify-between">
+    <input type="checkbox" id="section-071bdfde77f8dcb0258746094eb4b7ab" class="toggle"  />
+    <label for="section-071bdfde77f8dcb0258746094eb4b7ab" class="flex justify-between">
       <a role="button" class="">Planning</a>
     </label>
   
@@ -1541,8 +1541,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="toggle"  />
-    <label for="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="flex justify-between">
+    <input type="checkbox" id="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="toggle"  />
+    <label for="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1557,8 +1557,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e338773a0b87bd3d5520b81d5b88db62" class="toggle"  />
-    <label for="section-e338773a0b87bd3d5520b81d5b88db62" class="flex justify-between">
+    <input type="checkbox" id="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="toggle"  />
+    <label for="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1622,8 +1622,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9d0fe56670c342283f8f972214b72137" class="toggle"  />
-    <label for="section-9d0fe56670c342283f8f972214b72137" class="flex justify-between">
+    <input type="checkbox" id="section-fb50c7bc07294aad8ab163e5c05043d7" class="toggle"  />
+    <label for="section-fb50c7bc07294aad8ab163e5c05043d7" class="flex justify-between">
       <a role="button" class="">Hermes</a>
     </label>
   
@@ -1697,8 +1697,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a9773226cdddc85ff8f10cae8bdb49a2" class="toggle"  />
-    <label for="section-a9773226cdddc85ff8f10cae8bdb49a2" class="flex justify-between">
+    <input type="checkbox" id="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="toggle"  />
+    <label for="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="flex justify-between">
       <a role="button" class="">managed agents</a>
     </label>
   
@@ -1754,8 +1754,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-041a0b369c13985983a2e78e073f1143" class="toggle"  />
-    <label for="section-041a0b369c13985983a2e78e073f1143" class="flex justify-between">
+    <input type="checkbox" id="section-f0d84b83965f02340d4fc81e88ba04ab" class="toggle"  />
+    <label for="section-f0d84b83965f02340d4fc81e88ba04ab" class="flex justify-between">
       <a role="button" class="">Memory *</a>
     </label>
   
@@ -1912,8 +1912,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-360e9d19bffa35d5db5a46e0c0c05a65" class="toggle"  />
-    <label for="section-360e9d19bffa35d5db5a46e0c0c05a65" class="flex justify-between">
+    <input type="checkbox" id="section-66d86d5f38d04ef58ebb26728c026d4e" class="toggle"  />
+    <label for="section-66d86d5f38d04ef58ebb26728c026d4e" class="flex justify-between">
       <a role="button" class="">Openclaw</a>
     </label>
   
@@ -1951,8 +1951,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="toggle"  />
-    <label for="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="flex justify-between">
+    <input type="checkbox" id="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="toggle"  />
+    <label for="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
@@ -2031,8 +2031,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="toggle"  />
-    <label for="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="flex justify-between">
+    <input type="checkbox" id="section-f9cf8c4489e32d49710bcbde19d88feb" class="toggle"  />
+    <label for="section-f9cf8c4489e32d49710bcbde19d88feb" class="flex justify-between">
       <a role="button" class="">Multi Agent</a>
     </label>
   
@@ -2047,8 +2047,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e496587d113a69d69794ccf2791a9ec7" class="toggle"  />
-    <label for="section-e496587d113a69d69794ccf2791a9ec7" class="flex justify-between">
+    <input type="checkbox" id="section-7eb50204504aa47e2bb008fa842d839e" class="toggle"  />
+    <label for="section-7eb50204504aa47e2bb008fa842d839e" class="flex justify-between">
       <a role="button" class="">Agent编排</a>
     </label>
   
@@ -2104,8 +2104,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-386b9d0b04e254d93a6bcfe648c4dabb" class="toggle"  />
-    <label for="section-386b9d0b04e254d93a6bcfe648c4dabb" class="flex justify-between">
+    <input type="checkbox" id="section-f36497092f145d804086d65929bc2e21" class="toggle"  />
+    <label for="section-f36497092f145d804086d65929bc2e21" class="flex justify-between">
       <a role="button" class="">Multi-agent</a>
     </label>
   
@@ -2197,8 +2197,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3b952b230f5462315a195fb221f48926" class="toggle"  />
-    <label for="section-3b952b230f5462315a195fb221f48926" class="flex justify-between">
+    <input type="checkbox" id="section-68da3356eb5814cf26b079259a3868f0" class="toggle"  />
+    <label for="section-68da3356eb5814cf26b079259a3868f0" class="flex justify-between">
       <a role="button" class="">OpenClaw *</a>
     </label>
   
@@ -2272,8 +2272,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d1f7a2a771a519d5e8b989f2e775ff25" class="toggle"  />
-    <label for="section-d1f7a2a771a519d5e8b989f2e775ff25" class="flex justify-between">
+    <input type="checkbox" id="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="toggle"  />
+    <label for="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="flex justify-between">
       <a role="button" class="">subagent *</a>
     </label>
   
@@ -2329,8 +2329,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b8e7621552172a9013b3c0dae0dba198" class="toggle"  />
-    <label for="section-b8e7621552172a9013b3c0dae0dba198" class="flex justify-between">
+    <input type="checkbox" id="section-88a7a1de323948713dc3ef284015e786" class="toggle"  />
+    <label for="section-88a7a1de323948713dc3ef284015e786" class="flex justify-between">
       <a role="button" class="">Teams *</a>
     </label>
   
@@ -2391,8 +2391,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="toggle"  />
-    <label for="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="flex justify-between">
+    <input type="checkbox" id="section-32002b3a68174992b401de86ca7466b5" class="toggle"  />
+    <label for="section-32002b3a68174992b401de86ca7466b5" class="flex justify-between">
       <a role="button" class="">Tool &amp; Skill</a>
     </label>
   
@@ -2425,8 +2425,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5cca64c106a3667481dd63b47c86e87a" class="toggle"  />
-    <label for="section-5cca64c106a3667481dd63b47c86e87a" class="flex justify-between">
+    <input type="checkbox" id="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="toggle"  />
+    <label for="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="flex justify-between">
       <a role="button" class="">Survey &amp; SFT</a>
     </label>
   
@@ -2518,8 +2518,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c655fd9062845f96cffb72685b2fd696" class="toggle"  />
-    <label for="section-c655fd9062845f96cffb72685b2fd696" class="flex justify-between">
+    <input type="checkbox" id="section-80682025fb6883cc3c0dd48368b5f7e2" class="toggle"  />
+    <label for="section-80682025fb6883cc3c0dd48368b5f7e2" class="flex justify-between">
       <a role="button" class="">Tool 演进</a>
     </label>
   
@@ -2557,8 +2557,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-412785899ca57a1289f566e38e9ac427" class="toggle"  />
-    <label for="section-412785899ca57a1289f566e38e9ac427" class="flex justify-between">
+    <input type="checkbox" id="section-906763a3f2cf8396c71a61e320169919" class="toggle"  />
+    <label for="section-906763a3f2cf8396c71a61e320169919" class="flex justify-between">
       <a role="button" class="">tools</a>
     </label>
   
@@ -2596,8 +2596,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="toggle"  />
-    <label for="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="flex justify-between">
+    <input type="checkbox" id="section-92f9fae5d8ab88847e6e20bd4d125306" class="toggle"  />
+    <label for="section-92f9fae5d8ab88847e6e20bd4d125306" class="flex justify-between">
       <a role="button" class="">MCP *</a>
     </label>
   
@@ -2689,8 +2689,42 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-efd004ff6efd6d01576ed8f1a0e02adf" class="toggle"  />
-    <label for="section-efd004ff6efd6d01576ed8f1a0e02adf" class="flex justify-between">
+    <input type="checkbox" id="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="toggle"  />
+    <label for="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="flex justify-between">
+      <a role="button" class="">integrate *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/integrate/hermes/Agent-Harness-%E5%A6%82%E4%BD%95%E4%B8%8E%E4%BC%81%E4%B8%9A%E5%86%85%E9%83%A8%E7%B3%BB%E7%BB%9F%E9%9B%86%E6%88%90/" class="">Agent Harness 如何与企业内部系统集成</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-10c047fd3087cf2b29cccd85fa867912" class="toggle"  />
+    <label for="section-10c047fd3087cf2b29cccd85fa867912" class="flex justify-between">
       <a role="button" class="">skill *</a>
     </label>
   
@@ -2795,8 +2829,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="toggle"  />
-    <label for="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="flex justify-between">
+    <input type="checkbox" id="section-8f63915fcb39ad7378f7bc5015f45f65" class="toggle"  />
+    <label for="section-8f63915fcb39ad7378f7bc5015f45f65" class="flex justify-between">
       <a role="button" class="">Agent Eval</a>
     </label>
   
@@ -2829,8 +2863,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a89b3f08479487c94e6a45e37e72a862" class="toggle"  />
-    <label for="section-a89b3f08479487c94e6a45e37e72a862" class="flex justify-between">
+    <input type="checkbox" id="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="toggle"  />
+    <label for="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="flex justify-between">
       <a role="button" class="">Demystifying Evals for AI Agents</a>
     </label>
   
@@ -2881,8 +2915,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-83c0821b846e1dac2e8bfc2d8d45e825" class="toggle"  />
-    <label for="section-83c0821b846e1dac2e8bfc2d8d45e825" class="flex justify-between">
+    <input type="checkbox" id="section-6a8786ba009ef23a5dd033a252f02f8b" class="toggle"  />
+    <label for="section-6a8786ba009ef23a5dd033a252f02f8b" class="flex justify-between">
       <a role="button" class="">langfuse</a>
     </label>
   
@@ -2920,8 +2954,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9c20639ed9ed4feb764f4bac9cac218f" class="toggle"  />
-    <label for="section-9c20639ed9ed4feb764f4bac9cac218f" class="flex justify-between">
+    <input type="checkbox" id="section-159965614aff9bed370d992d243d0f28" class="toggle"  />
+    <label for="section-159965614aff9bed370d992d243d0f28" class="flex justify-between">
       <a role="button" class="">ragas</a>
     </label>
   
@@ -2959,8 +2993,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f0f5dda3ea316a50f6d522c3904406d7" class="toggle"  />
-    <label for="section-f0f5dda3ea316a50f6d522c3904406d7" class="flex justify-between">
+    <input type="checkbox" id="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="toggle"  />
+    <label for="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="flex justify-between">
       <a role="button" class="">llm-as-judge</a>
     </label>
   
@@ -3112,8 +3146,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="toggle"  />
-    <label for="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="flex justify-between">
+    <input type="checkbox" id="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="toggle"  />
+    <label for="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="flex justify-between">
       <a role="button" class="">Harness engineering</a>
     </label>
   
@@ -3128,8 +3162,212 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-fba0f3dbc923c98eb8930452d3ded9da" class="toggle"  />
-    <label for="section-fba0f3dbc923c98eb8930452d3ded9da" class="flex justify-between">
+    <input type="checkbox" id="section-104617d101dbf375f60fa698eeb5966a" class="toggle"  />
+    <label for="section-104617d101dbf375f60fa698eeb5966a" class="flex justify-between">
+      <a role="button" class="">Compress *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code/" class="">Claude /compact[A1] *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-compress/" class="">Claude Code - Compact summary</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/codex/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code2/" class="">Claude Code2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code3/" class="">Claude Code3</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f957c352b7370ac61b04758ecb52fade" class="toggle"  />
+    <label for="section-f957c352b7370ac61b04758ecb52fade" class="flex justify-between">
+      <a role="button" class="">可靠性 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/codex/" class="">Codex 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/dsh/" class="">Deepseek harness 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/pi-durable/" class="">Pi Durable</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="toggle"  />
+    <label for="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="flex justify-between">
       <a role="button" class="">Harness</a>
     </label>
   
@@ -3144,7 +3382,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/10-harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
   
 
           
@@ -3162,7 +3400,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/10-harness-enginering/harness/" class="">Harness</a>
   
 
           
@@ -3185,8 +3423,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="toggle"  />
-    <label for="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="flex justify-between">
+    <input type="checkbox" id="section-a0f0941605053d7b5666363df4970351" class="toggle"  />
+    <label for="section-a0f0941605053d7b5666363df4970351" class="flex justify-between">
       <a role="button" class="">OpenClaw</a>
     </label>
   
@@ -3332,8 +3570,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-946abd4062c933c072a8c623969add46" class="toggle"  />
-    <label for="section-946abd4062c933c072a8c623969add46" class="flex justify-between">
+    <input type="checkbox" id="section-7185e230a37938c1265b025f647037ad" class="toggle"  />
+    <label for="section-7185e230a37938c1265b025f647037ad" class="flex justify-between">
       <a role="button" class="">Hermes Agent</a>
     </label>
   
@@ -3443,47 +3681,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e7b0748ad48450dde76b72297d165429" class="toggle"  />
-    <label for="section-e7b0748ad48450dde76b72297d165429" class="flex justify-between">
-      <a role="button" class="">JEV</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/JEV/JEV/" class="">JEV</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-fcf812d87768431bb3ab86201a4222e2" class="toggle"  />
-    <label for="section-fcf812d87768431bb3ab86201a4222e2" class="flex justify-between">
+    <input type="checkbox" id="section-9d52e8079db1067f4a0c448c7b68b11b" class="toggle"  />
+    <label for="section-9d52e8079db1067f4a0c448c7b68b11b" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
@@ -3593,8 +3792,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-02af4685675e68e6f8179d748eeb6c5a" class="toggle"  />
-    <label for="section-02af4685675e68e6f8179d748eeb6c5a" class="flex justify-between">
+    <input type="checkbox" id="section-484bcac8c98a52dc9d58366512e4159a" class="toggle"  />
+    <label for="section-484bcac8c98a52dc9d58366512e4159a" class="flex justify-between">
       <a role="button" class="">Codex</a>
     </label>
   
@@ -3627,137 +3826,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ad440789e1a7ba07eb2b3918829c7257" class="toggle"  />
-    <label for="section-ad440789e1a7ba07eb2b3918829c7257" class="flex justify-between">
-      <a role="button" class="">Compress *</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code/" class="">Claude /compact[A1] *</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-compress/" class="">Claude Code - Compact summary</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/codex/" class="">CodeX 上下文</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code2/" class="">Claude Code2</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code3/" class="">Claude Code3</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-7b4eb57325a2b2a77e7753390fc7d915" class="toggle"  />
-    <label for="section-7b4eb57325a2b2a77e7753390fc7d915" class="flex justify-between">
+    <input type="checkbox" id="section-bb4ccb54455a606ed07ce1fdab4ac532" class="toggle"  />
+    <label for="section-bb4ccb54455a606ed07ce1fdab4ac532" class="flex justify-between">
       <a role="button" class="">Pi Agent</a>
     </label>
   
@@ -3839,83 +3909,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c47c9c73c26a489b07f412d8d4ee4f40" class="toggle"  />
-    <label for="section-c47c9c73c26a489b07f412d8d4ee4f40" class="flex justify-between">
-      <a role="button" class="">可靠性 *</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/codex/" class="">Codex 可靠性</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/dsh/" class="">Deepseek harness 可靠性</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/pi-durable/" class="">Pi Durable</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-eec787204d3e675b4351db6ec0be7bc8" class="toggle"  />
-    <label for="section-eec787204d3e675b4351db6ec0be7bc8" class="flex justify-between">
+    <input type="checkbox" id="section-27894a1d29427c9d52d1df6110020b8e" class="toggle"  />
+    <label for="section-27894a1d29427c9d52d1df6110020b8e" class="flex justify-between">
       <a role="button" class="">实战</a>
     </label>
   
@@ -3931,6 +3926,58 @@ https://github.com/alex-shpak/hugo-book
 
   
     <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8488d215ee4dde3fcb569ebf074c8d99" class="toggle"  />
+    <label for="section-8488d215ee4dde3fcb569ebf074c8d99" class="flex justify-between">
+      <a role="button" class="">JEV</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/100-JEV/hermes/Jev%E5%8E%9F%E7%90%86%E4%B8%8E%E5%BA%94%E7%94%A8/" class="">Jev原理与应用</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/100-JEV/JEV/" class="">JEV</a>
   
 
           
@@ -3976,8 +4023,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b41552d83299a260ffc5181fd5bf1177" class="toggle" checked />
-    <label for="section-b41552d83299a260ffc5181fd5bf1177" class="flex justify-between">
+    <input type="checkbox" id="section-1f82435e89939f7232e02729b008213e" class="toggle" checked />
+    <label for="section-1f82435e89939f7232e02729b008213e" class="flex justify-between">
       <a role="button" class="">Loops engineering</a>
     </label>
   
@@ -3992,8 +4039,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1a4757bdd1099e1149094c77f1470e5d" class="toggle"  />
-    <label for="section-1a4757bdd1099e1149094c77f1470e5d" class="flex justify-between">
+    <input type="checkbox" id="section-bf010a926485186e47c6ea2d2776a45f" class="toggle"  />
+    <label for="section-bf010a926485186e47c6ea2d2776a45f" class="flex justify-between">
       <a role="button" class="">goal</a>
     </label>
   
@@ -4049,8 +4096,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-eca2bd358c3e27c981a441ba4e158cb3" class="toggle"  />
-    <label for="section-eca2bd358c3e27c981a441ba4e158cb3" class="flex justify-between">
+    <input type="checkbox" id="section-013b791baed028e00c3cd685450d1255" class="toggle"  />
+    <label for="section-013b791baed028e00c3cd685450d1255" class="flex justify-between">
       <a role="button" class="">loop engineering</a>
     </label>
   
@@ -4106,8 +4153,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27d39407dbc0d87e956d19638a0f1da3" class="toggle" checked />
-    <label for="section-27d39407dbc0d87e956d19638a0f1da3" class="flex justify-between">
+    <input type="checkbox" id="section-b284ec03b7c672cfde434851c4ea7377" class="toggle" checked />
+    <label for="section-b284ec03b7c672cfde434851c4ea7377" class="flex justify-between">
       <a role="button" class="">长程任务</a>
     </label>
   
@@ -4176,8 +4223,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-689fa0c955be06dbb890852c4c2826e8" class="toggle"  />
-    <label for="section-689fa0c955be06dbb890852c4c2826e8" class="flex justify-between">
+    <input type="checkbox" id="section-4211c6654bc32161daa2abe28c73b06e" class="toggle"  />
+    <label for="section-4211c6654bc32161daa2abe28c73b06e" class="flex justify-between">
       <a role="button" class="">Meta Harness</a>
     </label>
   
@@ -4192,8 +4239,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-524d9cf59683da54d7ecc3c0ff6519ce" class="toggle"  />
-    <label for="section-524d9cf59683da54d7ecc3c0ff6519ce" class="flex justify-between">
+    <input type="checkbox" id="section-c81a15018d7ae452140c88ff216be77d" class="toggle"  />
+    <label for="section-c81a15018d7ae452140c88ff216be77d" class="flex justify-between">
       <a role="button" class="">Managed Agent</a>
     </label>
   
@@ -4321,8 +4368,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="toggle"  />
-    <label for="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="flex justify-between">
+    <input type="checkbox" id="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="toggle"  />
+    <label for="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="flex justify-between">
       <a role="button" class="">Omnigent</a>
     </label>
   
@@ -4365,8 +4412,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="toggle"  />
-    <label for="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="flex justify-between">
+    <input type="checkbox" id="section-920c2fa3546aca5261a01784a53ddff3" class="toggle"  />
+    <label for="section-920c2fa3546aca5261a01784a53ddff3" class="flex justify-between">
       <a role="button" class="">Context Engineering</a>
     </label>
   
@@ -4435,8 +4482,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="toggle"  />
-    <label for="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="flex justify-between">
+    <input type="checkbox" id="section-0563b2fd6005bd3ffd431bec1f81b423" class="toggle"  />
+    <label for="section-0563b2fd6005bd3ffd431bec1f81b423" class="flex justify-between">
       <a role="button" class="">Plan mode</a>
     </label>
   
@@ -4492,8 +4539,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-4a730712863635107d9ac9a5d3e3abd6" class="toggle"  />
-    <label for="section-4a730712863635107d9ac9a5d3e3abd6" class="flex justify-between">
+    <input type="checkbox" id="section-ceda1f30ce03531a336a1f1ebb026a63" class="toggle"  />
+    <label for="section-ceda1f30ce03531a336a1f1ebb026a63" class="flex justify-between">
       <a role="button" class="">Prompting caching *</a>
     </label>
   
@@ -4536,8 +4583,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-98dd33716c353fd55829a04c54d5e57e" class="toggle"  />
-    <label for="section-98dd33716c353fd55829a04c54d5e57e" class="flex justify-between">
+    <input type="checkbox" id="section-097abb2131971a92a13c1e53f850eb30" class="toggle"  />
+    <label for="section-097abb2131971a92a13c1e53f850eb30" class="flex justify-between">
       <a role="button" class="">Prompt Engineering</a>
     </label>
   
@@ -4701,8 +4748,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ad26e82e3d025c385444444a93d72502" class="toggle"  />
-    <label for="section-ad26e82e3d025c385444444a93d72502" class="flex justify-between">
+    <input type="checkbox" id="section-951bebaba4a0e7ffcc11ac548251e389" class="toggle"  />
+    <label for="section-951bebaba4a0e7ffcc11ac548251e389" class="flex justify-between">
       <a role="button" class="">DeepResearch</a>
     </label>
   
@@ -4884,8 +4931,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9cc3ec6d88705686bc94595daa8aa25e" class="toggle"  />
-    <label for="section-9cc3ec6d88705686bc94595daa8aa25e" class="flex justify-between">
+    <input type="checkbox" id="section-def011b742c3bb564ed84bad958a8bb9" class="toggle"  />
+    <label for="section-def011b742c3bb564ed84bad958a8bb9" class="flex justify-between">
       <a role="button" class="">FineTuning</a>
     </label>
   
@@ -4900,8 +4947,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-7b3c994f2c17601a215b6b57dc71b7ef" class="toggle"  />
-    <label for="section-7b3c994f2c17601a215b6b57dc71b7ef" class="flex justify-between">
+    <input type="checkbox" id="section-b1c6c40bb101131e4fe5a95225175846" class="toggle"  />
+    <label for="section-b1c6c40bb101131e4fe5a95225175846" class="flex justify-between">
       <a role="button" class="">Instruct Tuning</a>
     </label>
   
@@ -4957,8 +5004,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ebf0a5559cc09bbc171db379534a7dc9" class="toggle"  />
-    <label for="section-ebf0a5559cc09bbc171db379534a7dc9" class="flex justify-between">
+    <input type="checkbox" id="section-a5f257b0a67dc566e55c98245e32a9a3" class="toggle"  />
+    <label for="section-a5f257b0a67dc566e55c98245e32a9a3" class="flex justify-between">
       <a role="button" class="">实践 *</a>
     </label>
   
@@ -5032,8 +5079,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0082251d40c765323fa32be9b3686aa0" class="toggle"  />
-    <label for="section-0082251d40c765323fa32be9b3686aa0" class="flex justify-between">
+    <input type="checkbox" id="section-bc06fe507152e253f2b8fedc786f69f9" class="toggle"  />
+    <label for="section-bc06fe507152e253f2b8fedc786f69f9" class="flex justify-between">
       <a role="button" class="">PEFT *</a>
     </label>
   
@@ -5233,8 +5280,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d763501d6c35330245339b6c8531cf7c" class="toggle"  />
-    <label for="section-d763501d6c35330245339b6c8531cf7c" class="flex justify-between">
+    <input type="checkbox" id="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="toggle"  />
+    <label for="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="flex justify-between">
       <a role="button" class="">Data</a>
     </label>
   
@@ -5493,8 +5540,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-284de0efced75cd016672664a17456be" class="toggle"  />
-    <label for="section-284de0efced75cd016672664a17456be" class="flex justify-between">
+    <input type="checkbox" id="section-ec440fd30b4fccc02d2866bf269d3c1c" class="toggle"  />
+    <label for="section-ec440fd30b4fccc02d2866bf269d3c1c" class="flex justify-between">
       <a role="button" class="">AI Native</a>
     </label>
   
@@ -5604,8 +5651,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a67b63d6d594556c363a35d7d38cd355" class="toggle"  />
-    <label for="section-a67b63d6d594556c363a35d7d38cd355" class="flex justify-between">
+    <input type="checkbox" id="section-c4d50087126f44db07d7a7f0faa67711" class="toggle"  />
+    <label for="section-c4d50087126f44db07d7a7f0faa67711" class="flex justify-between">
       <a role="button" class="">Langchain</a>
     </label>
   
@@ -5697,8 +5744,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3926c431ee2abb31fef9cd9185588ed0" class="toggle"  />
-    <label for="section-3926c431ee2abb31fef9cd9185588ed0" class="flex justify-between">
+    <input type="checkbox" id="section-461a4404ae59395291876d9268139c73" class="toggle"  />
+    <label for="section-461a4404ae59395291876d9268139c73" class="flex justify-between">
       <a role="button" class="">Application</a>
     </label>
   
@@ -5844,8 +5891,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="toggle"  />
-    <label for="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="flex justify-between">
+    <input type="checkbox" id="section-3ce504245d1c08bb826d2f16a7a9180c" class="toggle"  />
+    <label for="section-3ce504245d1c08bb826d2f16a7a9180c" class="flex justify-between">
       <a role="button" class="">其他</a>
     </label>
   
@@ -6116,45 +6163,45 @@ https://github.com/alex-shpak/hugo-book
 </h3>
 <p>在 Claude Code 的实践中，任务的复杂度可以从单行 Bug 修复到整个代码库的架构重构。根据任务的规模，我们可以将其分为以下几个等级：</p>
 <table>
-	<thead>
-			<tr>
-					<th>任务类型</th>
-					<th>典型轮次 (Turns)</th>
-					<th>典型耗时</th>
-					<th>典型 Token 消耗</th>
-					<th>复杂度描述</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>简单修复</td>
-					<td>1-5 轮</td>
-					<td>&lt;1 分钟</td>
-					<td>&lt;10K</td>
-					<td>单文件、单函数的 Bug 修复</td>
-			</tr>
-			<tr>
-					<td>功能开发</td>
-					<td>10-30 轮</td>
-					<td>5-30 分钟</td>
-					<td>50K-200K</td>
-					<td>涉及多个文件的 Feature 实现</td>
-			</tr>
-			<tr>
-					<td>重构迁移</td>
-					<td>30-80 轮</td>
-					<td>30 分钟-2 小时</td>
-					<td>200K-500K+</td>
-					<td>系统性重构、API 迁移、框架升级</td>
-			</tr>
-			<tr>
-					<td>大型代码库探索</td>
-					<td>50-100+ 轮</td>
-					<td>1-4 小时</td>
-					<td>500K-1M+</td>
-					<td>无文档大型项目的理解与改造</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>任务类型</th>
+          <th>典型轮次 (Turns)</th>
+          <th>典型耗时</th>
+          <th>典型 Token 消耗</th>
+          <th>复杂度描述</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>简单修复</td>
+          <td>1-5 轮</td>
+          <td>&lt;1 分钟</td>
+          <td>&lt;10K</td>
+          <td>单文件、单函数的 Bug 修复</td>
+      </tr>
+      <tr>
+          <td>功能开发</td>
+          <td>10-30 轮</td>
+          <td>5-30 分钟</td>
+          <td>50K-200K</td>
+          <td>涉及多个文件的 Feature 实现</td>
+      </tr>
+      <tr>
+          <td>重构迁移</td>
+          <td>30-80 轮</td>
+          <td>30 分钟-2 小时</td>
+          <td>200K-500K+</td>
+          <td>系统性重构、API 迁移、框架升级</td>
+      </tr>
+      <tr>
+          <td>大型代码库探索</td>
+          <td>50-100+ 轮</td>
+          <td>1-4 小时</td>
+          <td>500K-1M+</td>
+          <td>无文档大型项目的理解与改造</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>长程任务</strong>的定义：<strong>超过 20 轮 API 往返</strong>、<strong>涉及多个文件的系统性变更</strong>、<strong>需要保持上下文连贯性</strong>的任务。这类任务对 AI 编程助手提出了最高级别的稳定性要求。</p>
 <h3 id="12-长程任务的死亡之谷">
@@ -6163,45 +6210,45 @@ https://github.com/alex-shpak/hugo-book
 </h3>
 <p>任何使用过 Claude Code 处理复杂任务的开发者都经历过一个令人沮丧的现象：任务开始时 Claude 表现卓越，但随着对话轮次的增加，质量逐渐退化。这种退化不是随机的，而是遵循一个可预测的模式——我们称之为**&ldquo;死亡之谷&rdquo;（Valley of Death）**：</p>
 <table>
-	<thead>
-			<tr>
-					<th>阶段</th>
-					<th>轮次范围</th>
-					<th>风险等级</th>
-					<th>典型症状</th>
-					<th>根因分析</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>蜜月期</strong></td>
-					<td>1-10 轮</td>
-					<td>低</td>
-					<td>Claude 精准执行，效果显著</td>
-					<td>完整上下文、Prompt Cache 命中率高</td>
-			</tr>
-			<tr>
-					<td><strong>疲劳期</strong></td>
-					<td>10-30 轮</td>
-					<td>中</td>
-					<td>开始遗漏指令，需要重复提醒</td>
-					<td>早期指令被压缩、注意力分散</td>
-			</tr>
-			<tr>
-					<td><strong>迷失期</strong></td>
-					<td>30-50 轮</td>
-					<td>高</td>
-					<td>忘记早期目标，产生幻觉</td>
-					<td>上下文截断、关键信息丢失</td>
-			</tr>
-			<tr>
-					<td><strong>崩溃期</strong></td>
-					<td>50+ 轮</td>
-					<td>极高</td>
-					<td>循环执行、上下文溢出、任务失败</td>
-					<td>熵增效应达到临界点</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>阶段</th>
+          <th>轮次范围</th>
+          <th>风险等级</th>
+          <th>典型症状</th>
+          <th>根因分析</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>蜜月期</strong></td>
+          <td>1-10 轮</td>
+          <td>低</td>
+          <td>Claude 精准执行，效果显著</td>
+          <td>完整上下文、Prompt Cache 命中率高</td>
+      </tr>
+      <tr>
+          <td><strong>疲劳期</strong></td>
+          <td>10-30 轮</td>
+          <td>中</td>
+          <td>开始遗漏指令，需要重复提醒</td>
+          <td>早期指令被压缩、注意力分散</td>
+      </tr>
+      <tr>
+          <td><strong>迷失期</strong></td>
+          <td>30-50 轮</td>
+          <td>高</td>
+          <td>忘记早期目标，产生幻觉</td>
+          <td>上下文截断、关键信息丢失</td>
+      </tr>
+      <tr>
+          <td><strong>崩溃期</strong></td>
+          <td>50+ 轮</td>
+          <td>极高</td>
+          <td>循环执行、上下文溢出、任务失败</td>
+          <td>熵增效应达到临界点</td>
+      </tr>
+  </tbody>
 </table>
 <p>这个现象的本质是<strong>上下文熵增</strong>——随着对话的进行，上下文中的有效信息密度不断降低，噪声和冗余不断增加，最终导致模型的理解和执行能力退化。</p>
 <h3 id="13-本文视角五大参考源交叉验证">
@@ -6210,52 +6257,52 @@ https://github.com/alex-shpak/hugo-book
 </h3>
 <p>本文的每一个技术结论都经过至少两个独立参考源的交叉验证：</p>
 <table>
-	<thead>
-			<tr>
-					<th>参考源</th>
-					<th>类型</th>
-					<th>规模</th>
-					<th>贡献维度</th>
-					<th>链接</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><a href="https://code.claude.com/docs/">Claude Code 官方文档</a></td>
-					<td>官方文档</td>
-					<td>65+ 页面</td>
-					<td>机制规范、API 定义、最佳实践</td>
-					<td><a href="https://code.claude.com/docs/">code.claude.com/docs</a></td>
-			</tr>
-			<tr>
-					<td><a href="https://github.com/oboard/claude-code-rev">oboard/claude-code-rev</a></td>
-					<td>逆向工程</td>
-					<td>可运行源码</td>
-					<td>12 步状态机、compaction 源码、错误恢复逻辑</td>
-					<td><a href="https://github.com/oboard/claude-code-rev">GitHub</a></td>
-			</tr>
-			<tr>
-					<td><a href="https://github.com/VILA-Lab/Dive-into-Claude-Code">VILA-Lab/Dive-into-Claude-Code</a></td>
-					<td>学术论文</td>
-					<td>系统性分析 (arXiv:2604.14228)</td>
-					<td>5 级 Compaction 机制、上下文衰减模型</td>
-					<td><a href="https://github.com/VILA-Lab/Dive-into-Claude-Code">GitHub</a></td>
-			</tr>
-			<tr>
-					<td><a href="https://github.com/shareAI-lab/learn-claude-code">shareAI-lab/learn-claude-code</a></td>
-					<td>教学材料</td>
-					<td>12 阶段递进</td>
-					<td>长程任务最佳实践、上下文管理策略</td>
-					<td><a href="https://github.com/shareAI-lab/learn-claude-code">GitHub</a></td>
-			</tr>
-			<tr>
-					<td><a href="https://openedclaude.github.io/claude-reviews-claude/zh-CN/overview">openedclaude/claude-reviews-claude</a></td>
-					<td>深度解析</td>
-					<td>17 篇，8,600+ 行</td>
-					<td>工程实践、可迁移设计模式、错误恢复</td>
-					<td><a href="https://openedclaude.github.io/claude-reviews-claude/zh-CN/overview">openedclaude</a></td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>参考源</th>
+          <th>类型</th>
+          <th>规模</th>
+          <th>贡献维度</th>
+          <th>链接</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><a href="https://code.claude.com/docs/">Claude Code 官方文档</a></td>
+          <td>官方文档</td>
+          <td>65+ 页面</td>
+          <td>机制规范、API 定义、最佳实践</td>
+          <td><a href="https://code.claude.com/docs/">code.claude.com/docs</a></td>
+      </tr>
+      <tr>
+          <td><a href="https://github.com/oboard/claude-code-rev">oboard/claude-code-rev</a></td>
+          <td>逆向工程</td>
+          <td>可运行源码</td>
+          <td>12 步状态机、compaction 源码、错误恢复逻辑</td>
+          <td><a href="https://github.com/oboard/claude-code-rev">GitHub</a></td>
+      </tr>
+      <tr>
+          <td><a href="https://github.com/VILA-Lab/Dive-into-Claude-Code">VILA-Lab/Dive-into-Claude-Code</a></td>
+          <td>学术论文</td>
+          <td>系统性分析 (arXiv:2604.14228)</td>
+          <td>5 级 Compaction 机制、上下文衰减模型</td>
+          <td><a href="https://github.com/VILA-Lab/Dive-into-Claude-Code">GitHub</a></td>
+      </tr>
+      <tr>
+          <td><a href="https://github.com/shareAI-lab/learn-claude-code">shareAI-lab/learn-claude-code</a></td>
+          <td>教学材料</td>
+          <td>12 阶段递进</td>
+          <td>长程任务最佳实践、上下文管理策略</td>
+          <td><a href="https://github.com/shareAI-lab/learn-claude-code">GitHub</a></td>
+      </tr>
+      <tr>
+          <td><a href="https://openedclaude.github.io/claude-reviews-claude/zh-CN/overview">openedclaude/claude-reviews-claude</a></td>
+          <td>深度解析</td>
+          <td>17 篇，8,600+ 行</td>
+          <td>工程实践、可迁移设计模式、错误恢复</td>
+          <td><a href="https://openedclaude.github.io/claude-reviews-claude/zh-CN/overview">openedclaude</a></td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="14-官方参考文档索引">
   1.4 官方参考文档索引
@@ -6267,265 +6314,265 @@ https://github.com/alex-shpak/hugo-book
   <a class="anchor" href="#%e6%a0%b8%e5%bf%83%e6%9c%ba%e5%88%b6%e4%b8%8e%e9%95%bf%e7%a8%8b%e7%a8%b3%e5%ae%9a%e6%80%a7%e7%9b%b4%e6%8e%a5%e7%9b%b8%e5%85%b3">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>#</th>
-					<th>文档</th>
-					<th>本文引用章节</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>1</td>
-					<td><a href="https://code.claude.com/docs/en/agent-sdk/agent-loop.md">Agent Loop (SDK)</a></td>
-					<td>Ch2 上下文生命周期、Ch6 错误恢复</td>
-			</tr>
-			<tr>
-					<td>2</td>
-					<td><a href="https://code.claude.com/docs/en/checkpointing.md">Checkpointing</a></td>
-					<td>Ch4 快照回滚</td>
-			</tr>
-			<tr>
-					<td>3</td>
-					<td><a href="https://code.claude.com/docs/en/sessions.md">Sessions</a></td>
-					<td>Ch3 持久化与恢复</td>
-			</tr>
-			<tr>
-					<td>4</td>
-					<td><a href="https://code.claude.com/docs/en/agent-sdk/sessions.md">Sessions (SDK)</a></td>
-					<td>Ch3 持久化与恢复</td>
-			</tr>
-			<tr>
-					<td>5</td>
-					<td><a href="https://code.claude.com/docs/en/memory.md">Memory (CLAUDE.md)</a></td>
-					<td>Ch7 双记忆系统</td>
-			</tr>
-			<tr>
-					<td>6</td>
-					<td><a href="https://code.claude.com/docs/en/sub-agents.md">Sub-agents</a></td>
-					<td>Ch5 上下文隔离</td>
-			</tr>
-			<tr>
-					<td>7</td>
-					<td><a href="https://code.claude.com/docs/en/agent-sdk/subagents.md">Subagents (SDK)</a></td>
-					<td>Ch5 上下文隔离</td>
-			</tr>
-			<tr>
-					<td>8</td>
-					<td><a href="https://code.claude.com/docs/en/context-window.md">Context Window</a></td>
-					<td>Ch2 上下文生命周期</td>
-			</tr>
-			<tr>
-					<td>9</td>
-					<td><a href="https://code.claude.com/docs/en/compaction.md">Compaction</a></td>
-					<td>Ch2 5 级压缩流水线</td>
-			</tr>
-			<tr>
-					<td>10</td>
-					<td><a href="https://code.claude.com/docs/en/costs.md">Costs</a></td>
-					<td>Ch9 成本治理</td>
-			</tr>
-			<tr>
-					<td>11</td>
-					<td><a href="https://code.claude.com/docs/en/agent-sdk/cost-tracking.md">Cost Tracking (SDK)</a></td>
-					<td>Ch9 成本治理</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>文档</th>
+          <th>本文引用章节</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td><a href="https://code.claude.com/docs/en/agent-sdk/agent-loop.md">Agent Loop (SDK)</a></td>
+          <td>Ch2 上下文生命周期、Ch6 错误恢复</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td><a href="https://code.claude.com/docs/en/checkpointing.md">Checkpointing</a></td>
+          <td>Ch4 快照回滚</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td><a href="https://code.claude.com/docs/en/sessions.md">Sessions</a></td>
+          <td>Ch3 持久化与恢复</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td><a href="https://code.claude.com/docs/en/agent-sdk/sessions.md">Sessions (SDK)</a></td>
+          <td>Ch3 持久化与恢复</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td><a href="https://code.claude.com/docs/en/memory.md">Memory (CLAUDE.md)</a></td>
+          <td>Ch7 双记忆系统</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td><a href="https://code.claude.com/docs/en/sub-agents.md">Sub-agents</a></td>
+          <td>Ch5 上下文隔离</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td><a href="https://code.claude.com/docs/en/agent-sdk/subagents.md">Subagents (SDK)</a></td>
+          <td>Ch5 上下文隔离</td>
+      </tr>
+      <tr>
+          <td>8</td>
+          <td><a href="https://code.claude.com/docs/en/context-window.md">Context Window</a></td>
+          <td>Ch2 上下文生命周期</td>
+      </tr>
+      <tr>
+          <td>9</td>
+          <td><a href="https://code.claude.com/docs/en/compaction.md">Compaction</a></td>
+          <td>Ch2 5 级压缩流水线</td>
+      </tr>
+      <tr>
+          <td>10</td>
+          <td><a href="https://code.claude.com/docs/en/costs.md">Costs</a></td>
+          <td>Ch9 成本治理</td>
+      </tr>
+      <tr>
+          <td>11</td>
+          <td><a href="https://code.claude.com/docs/en/agent-sdk/cost-tracking.md">Cost Tracking (SDK)</a></td>
+          <td>Ch9 成本治理</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="扩展与集成">
   扩展与集成
   <a class="anchor" href="#%e6%89%a9%e5%b1%95%e4%b8%8e%e9%9b%86%e6%88%90">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>#</th>
-					<th>文档</th>
-					<th>本文引用章节</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>12</td>
-					<td><a href="https://code.claude.com/docs/en/hooks.md">Hooks</a></td>
-					<td>Ch8 Hooks 预处理</td>
-			</tr>
-			<tr>
-					<td>13</td>
-					<td><a href="https://code.claude.com/docs/en/agent-sdk/hooks.md">Hooks (SDK)</a></td>
-					<td>Ch8 Hooks 预处理</td>
-			</tr>
-			<tr>
-					<td>14</td>
-					<td><a href="https://code.claude.com/docs/en/skills.md">Skills</a></td>
-					<td>Ch8 Skills 按需加载</td>
-			</tr>
-			<tr>
-					<td>15</td>
-					<td><a href="https://code.claude.com/docs/en/agent-sdk/skills.md">Skills (SDK)</a></td>
-					<td>Ch8 Skills 按需加载</td>
-			</tr>
-			<tr>
-					<td>16</td>
-					<td><a href="https://code.claude.com/docs/en/plugins.md">Plugins</a></td>
-					<td>Ch12 可迁移模式</td>
-			</tr>
-			<tr>
-					<td>17</td>
-					<td><a href="https://code.claude.com/docs/en/mcp.md">MCP</a></td>
-					<td>Ch2 上下文加载</td>
-			</tr>
-			<tr>
-					<td>18</td>
-					<td><a href="https://code.claude.com/docs/en/tool-search.md">Tool Search</a></td>
-					<td>Ch2 上下文加载</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>文档</th>
+          <th>本文引用章节</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>12</td>
+          <td><a href="https://code.claude.com/docs/en/hooks.md">Hooks</a></td>
+          <td>Ch8 Hooks 预处理</td>
+      </tr>
+      <tr>
+          <td>13</td>
+          <td><a href="https://code.claude.com/docs/en/agent-sdk/hooks.md">Hooks (SDK)</a></td>
+          <td>Ch8 Hooks 预处理</td>
+      </tr>
+      <tr>
+          <td>14</td>
+          <td><a href="https://code.claude.com/docs/en/skills.md">Skills</a></td>
+          <td>Ch8 Skills 按需加载</td>
+      </tr>
+      <tr>
+          <td>15</td>
+          <td><a href="https://code.claude.com/docs/en/agent-sdk/skills.md">Skills (SDK)</a></td>
+          <td>Ch8 Skills 按需加载</td>
+      </tr>
+      <tr>
+          <td>16</td>
+          <td><a href="https://code.claude.com/docs/en/plugins.md">Plugins</a></td>
+          <td>Ch12 可迁移模式</td>
+      </tr>
+      <tr>
+          <td>17</td>
+          <td><a href="https://code.claude.com/docs/en/mcp.md">MCP</a></td>
+          <td>Ch2 上下文加载</td>
+      </tr>
+      <tr>
+          <td>18</td>
+          <td><a href="https://code.claude.com/docs/en/tool-search.md">Tool Search</a></td>
+          <td>Ch2 上下文加载</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="安全与权限">
   安全与权限
   <a class="anchor" href="#%e5%ae%89%e5%85%a8%e4%b8%8e%e6%9d%83%e9%99%90">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>#</th>
-					<th>文档</th>
-					<th>本文引用章节</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>19</td>
-					<td><a href="https://code.claude.com/docs/en/permissions.md">Permissions</a></td>
-					<td>Ch6 错误恢复</td>
-			</tr>
-			<tr>
-					<td>20</td>
-					<td><a href="https://code.claude.com/docs/en/permission-modes.md">Permission Modes</a></td>
-					<td>Ch6 错误恢复</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>文档</th>
+          <th>本文引用章节</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>19</td>
+          <td><a href="https://code.claude.com/docs/en/permissions.md">Permissions</a></td>
+          <td>Ch6 错误恢复</td>
+      </tr>
+      <tr>
+          <td>20</td>
+          <td><a href="https://code.claude.com/docs/en/permission-modes.md">Permission Modes</a></td>
+          <td>Ch6 错误恢复</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="多-agent-编排">
   多 Agent 编排
   <a class="anchor" href="#%e5%a4%9a-agent-%e7%bc%96%e6%8e%92">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>#</th>
-					<th>文档</th>
-					<th>本文引用章节</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>21</td>
-					<td><a href="https://code.claude.com/docs/en/agent-teams.md">Agent Teams</a></td>
-					<td>Ch9 多 Agent 编排</td>
-			</tr>
-			<tr>
-					<td>22</td>
-					<td><a href="https://code.claude.com/docs/en/agent-view.md">Agent View</a></td>
-					<td>Ch9 多 Agent 编排</td>
-			</tr>
-			<tr>
-					<td>23</td>
-					<td><a href="https://code.claude.com/docs/en/agents.md">Agents (Parallel)</a></td>
-					<td>Ch9 多 Agent 编排</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>文档</th>
+          <th>本文引用章节</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>21</td>
+          <td><a href="https://code.claude.com/docs/en/agent-teams.md">Agent Teams</a></td>
+          <td>Ch9 多 Agent 编排</td>
+      </tr>
+      <tr>
+          <td>22</td>
+          <td><a href="https://code.claude.com/docs/en/agent-view.md">Agent View</a></td>
+          <td>Ch9 多 Agent 编排</td>
+      </tr>
+      <tr>
+          <td>23</td>
+          <td><a href="https://code.claude.com/docs/en/agents.md">Agents (Parallel)</a></td>
+          <td>Ch9 多 Agent 编排</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="最佳实践与工作流">
   最佳实践与工作流
   <a class="anchor" href="#%e6%9c%80%e4%bd%b3%e5%ae%9e%e8%b7%b5%e4%b8%8e%e5%b7%a5%e4%bd%9c%e6%b5%81">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>#</th>
-					<th>文档</th>
-					<th>本文引用章节</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>24</td>
-					<td><a href="https://code.claude.com/docs/en/best-practices.md">Best Practices</a></td>
-					<td>Ch11 最佳实践</td>
-			</tr>
-			<tr>
-					<td>25</td>
-					<td><a href="https://code.claude.com/docs/en/common-workflows.md">Common Workflows</a></td>
-					<td>Ch11 最佳实践</td>
-			</tr>
-			<tr>
-					<td>26</td>
-					<td><a href="https://code.claude.com/docs/en/code-review.md">Code Review</a></td>
-					<td>Ch11 最佳实践</td>
-			</tr>
-			<tr>
-					<td>27</td>
-					<td><a href="https://code.claude.com/docs/en/statusline.md">Status Line</a></td>
-					<td>Ch11 最佳实践</td>
-			</tr>
-			<tr>
-					<td>28</td>
-					<td><a href="https://code.claude.com/docs/en/agent-sdk/todo-tracking.md">Todo Tracking (SDK)</a></td>
-					<td>Ch11 最佳实践</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>文档</th>
+          <th>本文引用章节</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>24</td>
+          <td><a href="https://code.claude.com/docs/en/best-practices.md">Best Practices</a></td>
+          <td>Ch11 最佳实践</td>
+      </tr>
+      <tr>
+          <td>25</td>
+          <td><a href="https://code.claude.com/docs/en/common-workflows.md">Common Workflows</a></td>
+          <td>Ch11 最佳实践</td>
+      </tr>
+      <tr>
+          <td>26</td>
+          <td><a href="https://code.claude.com/docs/en/code-review.md">Code Review</a></td>
+          <td>Ch11 最佳实践</td>
+      </tr>
+      <tr>
+          <td>27</td>
+          <td><a href="https://code.claude.com/docs/en/statusline.md">Status Line</a></td>
+          <td>Ch11 最佳实践</td>
+      </tr>
+      <tr>
+          <td>28</td>
+          <td><a href="https://code.claude.com/docs/en/agent-sdk/todo-tracking.md">Todo Tracking (SDK)</a></td>
+          <td>Ch11 最佳实践</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="工程与运维">
   工程与运维
   <a class="anchor" href="#%e5%b7%a5%e7%a8%8b%e4%b8%8e%e8%bf%90%e7%bb%b4">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>#</th>
-					<th>文档</th>
-					<th>本文引用章节</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>29</td>
-					<td><a href="https://code.claude.com/docs/en/claude-directory.md">Claude Directory</a></td>
-					<td>Ch7 CLAUDE.md 双记忆</td>
-			</tr>
-			<tr>
-					<td>30</td>
-					<td><a href="https://code.claude.com/docs/en/settings.md">Settings</a></td>
-					<td>Ch3 Session 管理</td>
-			</tr>
-			<tr>
-					<td>31</td>
-					<td><a href="https://code.claude.com/docs/en/env-vars.md">Environment Variables</a></td>
-					<td>Ch3 Session 管理</td>
-			</tr>
-			<tr>
-					<td>32</td>
-					<td><a href="https://code.claude.com/docs/en/cli-reference.md">CLI Reference</a></td>
-					<td>Ch3 Session 管理</td>
-			</tr>
-			<tr>
-					<td>33</td>
-					<td><a href="https://code.claude.com/docs/en/analytics.md">Analytics</a></td>
-					<td>Ch9 成本治理</td>
-			</tr>
-			<tr>
-					<td>34</td>
-					<td><a href="https://code.claude.com/docs/en/agent-sdk/structured-outputs.md">Structured Outputs (SDK)</a></td>
-					<td>Ch12 可迁移模式</td>
-			</tr>
-			<tr>
-					<td>35</td>
-					<td><a href="https://code.claude.com/docs/en/agent-sdk/file-checkpointing.md">File Checkpointing (SDK)</a></td>
-					<td>Ch4 快照回滚</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>文档</th>
+          <th>本文引用章节</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>29</td>
+          <td><a href="https://code.claude.com/docs/en/claude-directory.md">Claude Directory</a></td>
+          <td>Ch7 CLAUDE.md 双记忆</td>
+      </tr>
+      <tr>
+          <td>30</td>
+          <td><a href="https://code.claude.com/docs/en/settings.md">Settings</a></td>
+          <td>Ch3 Session 管理</td>
+      </tr>
+      <tr>
+          <td>31</td>
+          <td><a href="https://code.claude.com/docs/en/env-vars.md">Environment Variables</a></td>
+          <td>Ch3 Session 管理</td>
+      </tr>
+      <tr>
+          <td>32</td>
+          <td><a href="https://code.claude.com/docs/en/cli-reference.md">CLI Reference</a></td>
+          <td>Ch3 Session 管理</td>
+      </tr>
+      <tr>
+          <td>33</td>
+          <td><a href="https://code.claude.com/docs/en/analytics.md">Analytics</a></td>
+          <td>Ch9 成本治理</td>
+      </tr>
+      <tr>
+          <td>34</td>
+          <td><a href="https://code.claude.com/docs/en/agent-sdk/structured-outputs.md">Structured Outputs (SDK)</a></td>
+          <td>Ch12 可迁移模式</td>
+      </tr>
+      <tr>
+          <td>35</td>
+          <td><a href="https://code.claude.com/docs/en/agent-sdk/file-checkpointing.md">File Checkpointing (SDK)</a></td>
+          <td>Ch4 快照回滚</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="15-核心命题">
   1.5 核心命题
@@ -6632,55 +6679,55 @@ sequenceDiagram
 
 <p>每个加载步骤都有可估算的 token 成本：</p>
 <table>
-	<thead>
-			<tr>
-					<th>加载步骤</th>
-					<th>Token 估算</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>System Prompt</td>
-					<td>~2K-5K</td>
-					<td>固定的系统提示，包含工具描述和安全约束</td>
-			</tr>
-			<tr>
-					<td>Managed CLAUDE.md</td>
-					<td>0-10K</td>
-					<td>组织级配置，由管理员设置</td>
-			</tr>
-			<tr>
-					<td>User CLAUDE.md</td>
-					<td>0-5K</td>
-					<td>用户级偏好和工具快捷方式</td>
-			</tr>
-			<tr>
-					<td>Project CLAUDE.md</td>
-					<td>0-10K</td>
-					<td>项目架构、编码标准、构建命令</td>
-			</tr>
-			<tr>
-					<td>CLAUDE.local.md</td>
-					<td>0-3K</td>
-					<td>个人沙盒配置</td>
-			</tr>
-			<tr>
-					<td>.claude/rules/</td>
-					<td>0-5K</td>
-					<td>路径级作用域规则</td>
-			</tr>
-			<tr>
-					<td>MCP 工具描述</td>
-					<td>1K-10K</td>
-					<td>取决于注册的 MCP 服务器数量</td>
-			</tr>
-			<tr>
-					<td><strong>总计（冷启动）</strong></td>
-					<td><strong>3K-48K</strong></td>
-					<td>实际取决于配置复杂度</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>加载步骤</th>
+          <th>Token 估算</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>System Prompt</td>
+          <td>~2K-5K</td>
+          <td>固定的系统提示，包含工具描述和安全约束</td>
+      </tr>
+      <tr>
+          <td>Managed CLAUDE.md</td>
+          <td>0-10K</td>
+          <td>组织级配置，由管理员设置</td>
+      </tr>
+      <tr>
+          <td>User CLAUDE.md</td>
+          <td>0-5K</td>
+          <td>用户级偏好和工具快捷方式</td>
+      </tr>
+      <tr>
+          <td>Project CLAUDE.md</td>
+          <td>0-10K</td>
+          <td>项目架构、编码标准、构建命令</td>
+      </tr>
+      <tr>
+          <td>CLAUDE.local.md</td>
+          <td>0-3K</td>
+          <td>个人沙盒配置</td>
+      </tr>
+      <tr>
+          <td>.claude/rules/</td>
+          <td>0-5K</td>
+          <td>路径级作用域规则</td>
+      </tr>
+      <tr>
+          <td>MCP 工具描述</td>
+          <td>1K-10K</td>
+          <td>取决于注册的 MCP 服务器数量</td>
+      </tr>
+      <tr>
+          <td><strong>总计（冷启动）</strong></td>
+          <td><strong>3K-48K</strong></td>
+          <td>实际取决于配置复杂度</td>
+      </tr>
+  </tbody>
 </table>
 <blockquote>
 <p><strong>关键洞察</strong>：冷启动 token 消耗在 3K-48K 之间，这意味着对于上下文窗口为 200K 的模型，仅初始加载就可能消耗 2.4%-24% 的窗口。在长程任务中，这个初始负载会进一步压缩可用空间。</p>
@@ -6691,58 +6738,58 @@ sequenceDiagram
 </h3>
 <p>Compaction 是 Claude Code 对抗上下文熵增的核心机制。根据 <a href="https://github.com/VILA-Lab/Dive-into-Claude-Code">VILA-Lab 论文 (arXiv:2604.14228)</a> 的系统性分析和 <a href="https://github.com/oboard/claude-code-rev">oboard/claude-code-rev</a> 的逆向工程验证，Claude Code 实现了 <strong>5 级渐进式压缩流水线</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>级别</th>
-					<th>名称</th>
-					<th>触发条件</th>
-					<th>策略</th>
-					<th>代价</th>
-					<th>保留率</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>L1</strong></td>
-					<td><code>applyToolResultBudget</code></td>
-					<td>工具结果 &gt; 预算阈值</td>
-					<td>截断超大输出</td>
-					<td>低</td>
-					<td>~95%</td>
-			</tr>
-			<tr>
-					<td><strong>L2</strong></td>
-					<td><code>snipCompact</code></td>
-					<td>Feature-gated 触发</td>
-					<td>裁剪最旧的历史消息</td>
-					<td>中</td>
-					<td>~80%</td>
-			</tr>
-			<tr>
-					<td><strong>L3</strong></td>
-					<td><code>microcompact</code></td>
-					<td>始终运行</td>
-					<td>缓存感知 + 时间衰减加权</td>
-					<td>低</td>
-					<td>~70%</td>
-			</tr>
-			<tr>
-					<td><strong>L4</strong></td>
-					<td><code>contextCollapse</code></td>
-					<td>Feature-gated 触发</td>
-					<td>折叠冗余上下文片段</td>
-					<td>中</td>
-					<td>~50%</td>
-			</tr>
-			<tr>
-					<td><strong>L5</strong></td>
-					<td><code>autocompact</code></td>
-					<td>兜底触发（上下文即将溢出）</td>
-					<td>AI 生成摘要，替换历史</td>
-					<td>高</td>
-					<td>~30%</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>级别</th>
+          <th>名称</th>
+          <th>触发条件</th>
+          <th>策略</th>
+          <th>代价</th>
+          <th>保留率</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>L1</strong></td>
+          <td><code>applyToolResultBudget</code></td>
+          <td>工具结果 &gt; 预算阈值</td>
+          <td>截断超大输出</td>
+          <td>低</td>
+          <td>~95%</td>
+      </tr>
+      <tr>
+          <td><strong>L2</strong></td>
+          <td><code>snipCompact</code></td>
+          <td>Feature-gated 触发</td>
+          <td>裁剪最旧的历史消息</td>
+          <td>中</td>
+          <td>~80%</td>
+      </tr>
+      <tr>
+          <td><strong>L3</strong></td>
+          <td><code>microcompact</code></td>
+          <td>始终运行</td>
+          <td>缓存感知 + 时间衰减加权</td>
+          <td>低</td>
+          <td>~70%</td>
+      </tr>
+      <tr>
+          <td><strong>L4</strong></td>
+          <td><code>contextCollapse</code></td>
+          <td>Feature-gated 触发</td>
+          <td>折叠冗余上下文片段</td>
+          <td>中</td>
+          <td>~50%</td>
+      </tr>
+      <tr>
+          <td><strong>L5</strong></td>
+          <td><code>autocompact</code></td>
+          <td>兜底触发（上下文即将溢出）</td>
+          <td>AI 生成摘要，替换历史</td>
+          <td>高</td>
+          <td>~30%</td>
+      </tr>
+  </tbody>
 </table>
 
 <div class="mermaid">
@@ -6777,7 +6824,7 @@ graph LR
   <a class="anchor" href="#l1-applytoolresultbudget--%e5%b7%a5%e5%85%b7%e7%bb%93%e6%9e%9c%e9%a2%84%e7%ae%97%e6%8e%a7%e5%88%b6">#</a>
 </h4>
 <p>这是最轻量的压缩层级，在<strong>每次工具执行后</strong>运行。当工具返回的结果超过预设预算时，自动截断输出。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 伪代码：applyToolResultBudget 的工作原理</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 伪代码：applyToolResultBudget 的工作原理</span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">apply_tool_result_budget</span>(tool_result: str, budget: int) <span style="color:#f92672">-&gt;</span> str:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;截断超出预算的工具结果&#34;&#34;&#34;</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> len(tool_result) <span style="color:#f92672">&lt;=</span> budget:
@@ -6875,37 +6922,37 @@ graph LR
 </h3>
 <p>Claude Code 提供了多种方式监控上下文使用情况：</p>
 <table>
-	<thead>
-			<tr>
-					<th>方法</th>
-					<th>命令/接口</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>状态栏</td>
-					<td><code>/context</code></td>
-					<td>显示当前上下文使用率</td>
-			</tr>
-			<tr>
-					<td>SDK</td>
-					<td><code>context</code> 消息类型</td>
-					<td>在 agent stream 中返回 token 使用量</td>
-			</tr>
-			<tr>
-					<td>Status Line</td>
-					<td>自定义配置</td>
-					<td>在终端状态栏实时显示</td>
-			</tr>
-			<tr>
-					<td>成本报告</td>
-					<td><code>/usage</code></td>
-					<td>显示累积 token 和成本</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>方法</th>
+          <th>命令/接口</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>状态栏</td>
+          <td><code>/context</code></td>
+          <td>显示当前上下文使用率</td>
+      </tr>
+      <tr>
+          <td>SDK</td>
+          <td><code>context</code> 消息类型</td>
+          <td>在 agent stream 中返回 token 使用量</td>
+      </tr>
+      <tr>
+          <td>Status Line</td>
+          <td>自定义配置</td>
+          <td>在终端状态栏实时显示</td>
+      </tr>
+      <tr>
+          <td>成本报告</td>
+          <td><code>/usage</code></td>
+          <td>显示累积 token 和成本</td>
+      </tr>
+  </tbody>
 </table>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// SDK 中监控上下文使用
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// SDK 中监控上下文使用
 </span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> <span style="color:#66d9ef">await</span> (<span style="color:#66d9ef">const</span> <span style="color:#a6e22e">message</span> <span style="color:#66d9ef">of</span> <span style="color:#a6e22e">query</span>({ <span style="color:#a6e22e">prompt</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Refactor the auth module&#34;</span> })) {
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">message</span>.<span style="color:#66d9ef">type</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;context&#34;</span>) {
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">usage</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">message</span>.<span style="color:#a6e22e">context</span>;
@@ -6926,40 +6973,40 @@ graph LR
 <pre tabindex="0"><code>存储路径: ~/.claude/projects/&lt;project-name&gt;/&lt;session-id&gt;.jsonl
 </code></pre><p>JSONL 格式的每一行都是一个独立的 JSON 对象，包含以下类型的记录：</p>
 <table>
-	<thead>
-			<tr>
-					<th>记录类型</th>
-					<th>内容</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>user</code></td>
-					<td>用户消息</td>
-					<td>用户的输入文本</td>
-			</tr>
-			<tr>
-					<td><code>assistant</code></td>
-					<td>AI 回复</td>
-					<td>Claude 的回复内容</td>
-			</tr>
-			<tr>
-					<td><code>tool_use</code></td>
-					<td>工具调用</td>
-					<td>工具名称和参数</td>
-			</tr>
-			<tr>
-					<td><code>tool_result</code></td>
-					<td>工具结果</td>
-					<td>工具执行的输出</td>
-			</tr>
-			<tr>
-					<td><code>metadata</code></td>
-					<td>元数据</td>
-					<td>时间戳、token 计数等</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>记录类型</th>
+          <th>内容</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>user</code></td>
+          <td>用户消息</td>
+          <td>用户的输入文本</td>
+      </tr>
+      <tr>
+          <td><code>assistant</code></td>
+          <td>AI 回复</td>
+          <td>Claude 的回复内容</td>
+      </tr>
+      <tr>
+          <td><code>tool_use</code></td>
+          <td>工具调用</td>
+          <td>工具名称和参数</td>
+      </tr>
+      <tr>
+          <td><code>tool_result</code></td>
+          <td>工具结果</td>
+          <td>工具执行的输出</td>
+      </tr>
+      <tr>
+          <td><code>metadata</code></td>
+          <td>元数据</td>
+          <td>时间戳、token 计数等</td>
+      </tr>
+  </tbody>
 </table>
 <pre tabindex="0"><code>session-abc123.jsonl 示例：
 {&#34;type&#34;:&#34;user&#34;,&#34;content&#34;:&#34;Refactor the auth module&#34;,&#34;timestamp&#34;:&#34;2025-01-15T10:00:00Z&#34;}
@@ -6978,35 +7025,35 @@ graph LR
 </h3>
 <p>Claude Code 支持在启动时或会话中对 Session 进行命名，使其更容易识别和恢复：</p>
 <table>
-	<thead>
-			<tr>
-					<th>操作</th>
-					<th>命令</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>启动时命名</td>
-					<td><code>claude -n auth-refactor</code></td>
-					<td>创建可恢复的命名会话</td>
-			</tr>
-			<tr>
-					<td>会话中重命名</td>
-					<td><code>/rename auth-refactor</code></td>
-					<td>动态修改当前会话名称</td>
-			</tr>
-			<tr>
-					<td>恢复命名会话</td>
-					<td><code>claude --resume auth-refactor</code></td>
-					<td>直接恢复到指定会话</td>
-			</tr>
-			<tr>
-					<td>Session Picker</td>
-					<td><code>/resume</code></td>
-					<td>交互式浏览和选择历史会话</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>操作</th>
+          <th>命令</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>启动时命名</td>
+          <td><code>claude -n auth-refactor</code></td>
+          <td>创建可恢复的命名会话</td>
+      </tr>
+      <tr>
+          <td>会话中重命名</td>
+          <td><code>/rename auth-refactor</code></td>
+          <td>动态修改当前会话名称</td>
+      </tr>
+      <tr>
+          <td>恢复命名会话</td>
+          <td><code>claude --resume auth-refactor</code></td>
+          <td>直接恢复到指定会话</td>
+      </tr>
+      <tr>
+          <td>Session Picker</td>
+          <td><code>/resume</code></td>
+          <td>交互式浏览和选择历史会话</td>
+      </tr>
+  </tbody>
 </table>
 
 <div class="mermaid">
@@ -7053,38 +7100,38 @@ graph TB
 
 <p><strong>分支的重要特性</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>特性</th>
-					<th>说明</th>
-					<th>影响</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>对话复制</td>
-					<td><code>/branch</code> 创建当前对话的完整副本</td>
-					<td>保留所有上下文</td>
-			</tr>
-			<tr>
-					<td>原会话不变</td>
-					<td>原始会话保持完整，不受分支影响</td>
-					<td>安全探索</td>
-			</tr>
-			<tr>
-					<td>权限不继承</td>
-					<td>&ldquo;allow for this session&rdquo; 的权限不传递到分支</td>
-					<td>安全隔离</td>
-			</tr>
-			<tr>
-					<td>独立存储</td>
-					<td>分支有独立的 JSONL 文件</td>
-					<td>独立管理生命周期</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>特性</th>
+          <th>说明</th>
+          <th>影响</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>对话复制</td>
+          <td><code>/branch</code> 创建当前对话的完整副本</td>
+          <td>保留所有上下文</td>
+      </tr>
+      <tr>
+          <td>原会话不变</td>
+          <td>原始会话保持完整，不受分支影响</td>
+          <td>安全探索</td>
+      </tr>
+      <tr>
+          <td>权限不继承</td>
+          <td>&ldquo;allow for this session&rdquo; 的权限不传递到分支</td>
+          <td>安全隔离</td>
+      </tr>
+      <tr>
+          <td>独立存储</td>
+          <td>分支有独立的 JSONL 文件</td>
+          <td>独立管理生命周期</td>
+      </tr>
+  </tbody>
 </table>
 <p>命令行分支：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 从上一个会话继续并分支</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 从上一个会话继续并分支</span>
 </span></span><span style="display:flex;"><span>claude --continue --fork-session
 </span></span></code></pre></div><h3 id="34-会话清理与生命周期">
   3.4 会话清理与生命周期
@@ -7092,37 +7139,37 @@ graph TB
 </h3>
 <p>Claude Code 对历史会话有自动清理机制：</p>
 <table>
-	<thead>
-			<tr>
-					<th>配置项</th>
-					<th>默认值</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>自动清理周期</td>
-					<td>30 天</td>
-					<td>超过 30 天的会话自动清理</td>
-			</tr>
-			<tr>
-					<td>存储路径</td>
-					<td><code>~/.claude/projects/</code></td>
-					<td>可通过 <code>CLAUDE_CONFIG_DIR</code> 自定义</td>
-			</tr>
-			<tr>
-					<td>跳过持久化</td>
-					<td>关闭</td>
-					<td><code>CLAUDE_CODE_SKIP_PROMPT_HISTORY=1</code> 跳过写入</td>
-			</tr>
-			<tr>
-					<td>非交互模式</td>
-					<td>保存</td>
-					<td><code>--no-session-persistence</code> 非交互模式不保存</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>配置项</th>
+          <th>默认值</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>自动清理周期</td>
+          <td>30 天</td>
+          <td>超过 30 天的会话自动清理</td>
+      </tr>
+      <tr>
+          <td>存储路径</td>
+          <td><code>~/.claude/projects/</code></td>
+          <td>可通过 <code>CLAUDE_CONFIG_DIR</code> 自定义</td>
+      </tr>
+      <tr>
+          <td>跳过持久化</td>
+          <td>关闭</td>
+          <td><code>CLAUDE_CODE_SKIP_PROMPT_HISTORY=1</code> 跳过写入</td>
+      </tr>
+      <tr>
+          <td>非交互模式</td>
+          <td>保存</td>
+          <td><code>--no-session-persistence</code> 非交互模式不保存</td>
+      </tr>
+  </tbody>
 </table>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 自定义存储路径</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 自定义存储路径</span>
 </span></span><span style="display:flex;"><span>export CLAUDE_CONFIG_DIR<span style="color:#f92672">=</span>/mnt/data/claude-configs
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 不记录历史（隐私模式）</span>
@@ -7136,7 +7183,7 @@ graph TB
   <a class="anchor" href="#35-sdk-%e4%b8%ad%e7%9a%84-session-%e7%ae%a1%e7%90%86">#</a>
 </h3>
 <p>在 Claude Agent SDK 中，Session 管理通过 <code>resume</code> 选项实现：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">import</span> { <span style="color:#a6e22e">query</span> } <span style="color:#66d9ef">from</span> <span style="color:#e6db74">&#34;@anthropic-ai/claude-agent-sdk&#34;</span>;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">import</span> { <span style="color:#a6e22e">query</span> } <span style="color:#66d9ef">from</span> <span style="color:#e6db74">&#34;@anthropic-ai/claude-agent-sdk&#34;</span>;
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">// 恢复之前的会话
 </span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> <span style="color:#66d9ef">await</span> (<span style="color:#66d9ef">const</span> <span style="color:#a6e22e">message</span> <span style="color:#66d9ef">of</span> <span style="color:#a6e22e">query</span>({
@@ -7147,7 +7194,7 @@ graph TB
 </span></span><span style="display:flex;"><span>})) {
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">console</span>.<span style="color:#a6e22e">log</span>(<span style="color:#a6e22e">message</span>);
 </span></span><span style="display:flex;"><span>}
-</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> asyncio
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> asyncio
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> claude_agent_sdk <span style="color:#f92672">import</span> query, ClaudeAgentOptions
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">resume_session</span>():
@@ -7186,30 +7233,30 @@ graph LR
 
 <p><strong>核心特性</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>特性</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>自动创建</td>
-					<td>每次工具执行后自动创建，无需手动操作</td>
-			</tr>
-			<tr>
-					<td>文件级差异</td>
-					<td>记录每个文件的变更（类似 git diff）</td>
-			</tr>
-			<tr>
-					<td>对话关联</td>
-					<td>每个 Checkpoint 与特定的对话轮次关联</td>
-			</tr>
-			<tr>
-					<td>会话内有效</td>
-					<td>Checkpoint 在当前会话内可用</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>特性</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>自动创建</td>
+          <td>每次工具执行后自动创建，无需手动操作</td>
+      </tr>
+      <tr>
+          <td>文件级差异</td>
+          <td>记录每个文件的变更（类似 git diff）</td>
+      </tr>
+      <tr>
+          <td>对话关联</td>
+          <td>每个 Checkpoint 与特定的对话轮次关联</td>
+      </tr>
+      <tr>
+          <td>会话内有效</td>
+          <td>Checkpoint 在当前会话内可用</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="42-checkpoint-vs-git-commit">
   4.2 Checkpoint vs Git Commit
@@ -7217,50 +7264,50 @@ graph LR
 </h3>
 <p>理解 Checkpoint 与 Git Commit 的区别对于正确使用它们至关重要：</p>
 <table>
-	<thead>
-			<tr>
-					<th>特性</th>
-					<th>Checkpoint</th>
-					<th>Git Commit</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>创建频率</strong></td>
-					<td>每次工具执行后自动</td>
-					<td>手动触发</td>
-			</tr>
-			<tr>
-					<td><strong>粒度</strong></td>
-					<td>文件级差异</td>
-					<td>仓库级快照</td>
-			</tr>
-			<tr>
-					<td><strong>回滚范围</strong></td>
-					<td>代码 + 对话上下文</td>
-					<td>仅代码</td>
-			</tr>
-			<tr>
-					<td><strong>用户感知</strong></td>
-					<td>完全自动，零感知</td>
-					<td>需要手动操作</td>
-			</tr>
-			<tr>
-					<td><strong>持久性</strong></td>
-					<td>会话内有效</td>
-					<td>永久存储（除非 force push）</td>
-			</tr>
-			<tr>
-					<td><strong>回滚命令</strong></td>
-					<td><code>/checkpoint revert &lt;id&gt;</code></td>
-					<td><code>git revert</code> / <code>git reset</code></td>
-			</tr>
-			<tr>
-					<td><strong>可分享性</strong></td>
-					<td>仅限本地会话</td>
-					<td>可推送到远程仓库</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>特性</th>
+          <th>Checkpoint</th>
+          <th>Git Commit</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>创建频率</strong></td>
+          <td>每次工具执行后自动</td>
+          <td>手动触发</td>
+      </tr>
+      <tr>
+          <td><strong>粒度</strong></td>
+          <td>文件级差异</td>
+          <td>仓库级快照</td>
+      </tr>
+      <tr>
+          <td><strong>回滚范围</strong></td>
+          <td>代码 + 对话上下文</td>
+          <td>仅代码</td>
+      </tr>
+      <tr>
+          <td><strong>用户感知</strong></td>
+          <td>完全自动，零感知</td>
+          <td>需要手动操作</td>
+      </tr>
+      <tr>
+          <td><strong>持久性</strong></td>
+          <td>会话内有效</td>
+          <td>永久存储（除非 force push）</td>
+      </tr>
+      <tr>
+          <td><strong>回滚命令</strong></td>
+          <td><code>/checkpoint revert &lt;id&gt;</code></td>
+          <td><code>git revert</code> / <code>git reset</code></td>
+      </tr>
+      <tr>
+          <td><strong>可分享性</strong></td>
+          <td>仅限本地会话</td>
+          <td>可推送到远程仓库</td>
+      </tr>
+  </tbody>
 </table>
 <blockquote>
 <p><strong>最佳实践</strong>：Checkpoint 和 Git Commit 是互补关系，而非替代关系。在长程任务中，Checkpoint 提供细粒度的快速回滚能力，而 Git Commit 提供永久的版本控制。</p>
@@ -7299,7 +7346,7 @@ graph TB
   <a class="anchor" href="#44-sdk-%e4%b8%ad%e7%9a%84%e6%96%87%e4%bb%b6-checkpointing">#</a>
 </h3>
 <p>在 Claude Agent SDK 中，Checkpointing 通过文件快照实现：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> claude_agent_sdk <span style="color:#f92672">import</span> query, ClaudeAgentOptions
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> claude_agent_sdk <span style="color:#f92672">import</span> query, ClaudeAgentOptions
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">run_with_checkpointing</span>():
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">for</span> message <span style="color:#f92672">in</span> query(
@@ -7362,58 +7409,58 @@ graph TB
 </h3>
 <p>Claude Code 内建了多种 Subagent，每种都有不同的模型、工具集和上下文隔离策略：</p>
 <table>
-	<thead>
-			<tr>
-					<th>Subagent</th>
-					<th>模型</th>
-					<th>工具权限</th>
-					<th>用途</th>
-					<th>上下文隔离</th>
-					<th>典型 Token 消耗</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>Explore</strong></td>
-					<td>Haiku</td>
-					<td>只读 (Read, Grep, Glob)</td>
-					<td>代码搜索、文件发现</td>
-					<td>完全隔离</td>
-					<td>~5K-20K</td>
-			</tr>
-			<tr>
-					<td><strong>Plan</strong></td>
-					<td>继承主会话</td>
-					<td>只读</td>
-					<td>Plan Mode 调研</td>
-					<td>完全隔离</td>
-					<td>~10K-30K</td>
-			</tr>
-			<tr>
-					<td><strong>General-purpose</strong></td>
-					<td>继承主会话</td>
-					<td>全部工具</td>
-					<td>复杂多步任务</td>
-					<td>完全隔离</td>
-					<td>~20K-100K</td>
-			</tr>
-			<tr>
-					<td><strong>statusline-setup</strong></td>
-					<td>Sonnet</td>
-					<td>有限</td>
-					<td>状态栏配置</td>
-					<td>完全隔离</td>
-					<td>~2K-5K</td>
-			</tr>
-			<tr>
-					<td><strong>claude-code-guide</strong></td>
-					<td>Haiku</td>
-					<td>有限</td>
-					<td>功能问答</td>
-					<td>完全隔离</td>
-					<td>~2K-10K</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>Subagent</th>
+          <th>模型</th>
+          <th>工具权限</th>
+          <th>用途</th>
+          <th>上下文隔离</th>
+          <th>典型 Token 消耗</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Explore</strong></td>
+          <td>Haiku</td>
+          <td>只读 (Read, Grep, Glob)</td>
+          <td>代码搜索、文件发现</td>
+          <td>完全隔离</td>
+          <td>~5K-20K</td>
+      </tr>
+      <tr>
+          <td><strong>Plan</strong></td>
+          <td>继承主会话</td>
+          <td>只读</td>
+          <td>Plan Mode 调研</td>
+          <td>完全隔离</td>
+          <td>~10K-30K</td>
+      </tr>
+      <tr>
+          <td><strong>General-purpose</strong></td>
+          <td>继承主会话</td>
+          <td>全部工具</td>
+          <td>复杂多步任务</td>
+          <td>完全隔离</td>
+          <td>~20K-100K</td>
+      </tr>
+      <tr>
+          <td><strong>statusline-setup</strong></td>
+          <td>Sonnet</td>
+          <td>有限</td>
+          <td>状态栏配置</td>
+          <td>完全隔离</td>
+          <td>~2K-5K</td>
+      </tr>
+      <tr>
+          <td><strong>claude-code-guide</strong></td>
+          <td>Haiku</td>
+          <td>有限</td>
+          <td>功能问答</td>
+          <td>完全隔离</td>
+          <td>~2K-10K</td>
+      </tr>
+  </tbody>
 </table>
 <blockquote>
 <p><strong>关键洞察</strong>：Explore Subagent 使用 Haiku 模型（成本最低），且仅具有只读工具权限。这意味着大量的探索性文件读取不会消耗主会话的昂贵 Sonnet/Opus token，也不会污染主会话的上下文。</p>
@@ -7437,14 +7484,14 @@ Subagent Token 计算：
   <a class="anchor" href="#54-%e8%87%aa%e5%ae%9a%e4%b9%89-subagent">#</a>
 </h3>
 <p>Claude Code 支持通过 Markdown + YAML frontmatter 定义自定义 Subagent：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-markdown" data-lang="markdown"><span style="display:flex;"><span>---
-</span></span><span style="display:flex;"><span><span style="color:#f92672">name</span>: <span style="color:#ae81ff">security-reviewer</span>
-</span></span><span style="display:flex;"><span><span style="color:#f92672">model</span>: <span style="color:#ae81ff">claude-sonnet-4-20250514</span>
-</span></span><span style="display:flex;"><span><span style="color:#f92672">description</span>: <span style="color:#ae81ff">Reviews code for security vulnerabilities</span>
-</span></span><span style="display:flex;"><span><span style="color:#f92672">tools</span>:
-</span></span><span style="display:flex;"><span>  - <span style="color:#ae81ff">Read</span>
-</span></span><span style="display:flex;"><span>  - <span style="color:#ae81ff">Grep</span>
-</span></span><span style="display:flex;"><span>  - <span style="color:#ae81ff">Glob</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-markdown" data-lang="markdown"><span style="display:flex;"><span>---
+</span></span><span style="display:flex;"><span>name: security-reviewer
+</span></span><span style="display:flex;"><span>model: claude-sonnet-4-20250514
+</span></span><span style="display:flex;"><span>description: Reviews code for security vulnerabilities
+</span></span><span style="display:flex;"><span>tools:
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">-</span> Read
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">-</span> Grep
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">-</span> Glob
 </span></span><span style="display:flex;"><span>---
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>You are a security code reviewer. Analyze the codebase for:
@@ -7455,46 +7502,46 @@ Subagent Token 计算：
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">5.</span> Missing input validation
 </span></span></code></pre></div><p><strong>5 个作用域</strong>（优先级从高到低）：</p>
 <table>
-	<thead>
-			<tr>
-					<th>优先级</th>
-					<th>作用域</th>
-					<th>路径</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>1</td>
-					<td>Managed Settings</td>
-					<td>组织级</td>
-					<td>管理员强制配置</td>
-			</tr>
-			<tr>
-					<td>2</td>
-					<td>CLI</td>
-					<td>命令行参数</td>
-					<td><code>--agent</code> 指定</td>
-			</tr>
-			<tr>
-					<td>3</td>
-					<td>项目</td>
-					<td><code>.claude/agents/</code></td>
-					<td>团队共享</td>
-			</tr>
-			<tr>
-					<td>4</td>
-					<td>用户</td>
-					<td><code>~/.claude/agents/</code></td>
-					<td>个人配置</td>
-			</tr>
-			<tr>
-					<td>5</td>
-					<td>Plugin</td>
-					<td>插件目录</td>
-					<td>插件提供</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>优先级</th>
+          <th>作用域</th>
+          <th>路径</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td>Managed Settings</td>
+          <td>组织级</td>
+          <td>管理员强制配置</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td>CLI</td>
+          <td>命令行参数</td>
+          <td><code>--agent</code> 指定</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td>项目</td>
+          <td><code>.claude/agents/</code></td>
+          <td>团队共享</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td>用户</td>
+          <td><code>~/.claude/agents/</code></td>
+          <td>个人配置</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td>Plugin</td>
+          <td>插件目录</td>
+          <td>插件提供</td>
+      </tr>
+  </tbody>
 </table>
 <p>每个 Subagent 有独立的记忆目录（<code>~/.claude/agent-memory/</code>），确保不同 Agent 之间的学习不会互相干扰。</p>
 <hr>
@@ -7508,66 +7555,66 @@ Subagent Token 计算：
 </h3>
 <p>在长程任务中，各种错误不可避免。Claude Code 通过<strong>分类错误并应用不同的恢复策略</strong>来维持任务稳定性：</p>
 <table>
-	<thead>
-			<tr>
-					<th>错误类型</th>
-					<th>发生频率</th>
-					<th>严重程度</th>
-					<th>恢复策略</th>
-					<th>自动/手动</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>API Rate Limit</strong></td>
-					<td>高</td>
-					<td>低</td>
-					<td>指数退避重试 (Exponential Backoff)</td>
-					<td>自动</td>
-			</tr>
-			<tr>
-					<td><strong>Token Budget 超支</strong></td>
-					<td>中</td>
-					<td>中</td>
-					<td>触发 Compaction → 警告 → 终止</td>
-					<td>半自动</td>
-			</tr>
-			<tr>
-					<td><strong>工具执行失败</strong></td>
-					<td>中</td>
-					<td>中</td>
-					<td>错误注入上下文，Claude 自主修复</td>
-					<td>自动</td>
-			</tr>
-			<tr>
-					<td><strong>网络超时</strong></td>
-					<td>低</td>
-					<td>中</td>
-					<td>重试 + 降级到备用端点</td>
-					<td>自动</td>
-			</tr>
-			<tr>
-					<td><strong>Prompt Cache Miss</strong></td>
-					<td>低</td>
-					<td>低</td>
-					<td>重新加载（成本增加 ~50%）</td>
-					<td>自动</td>
-			</tr>
-			<tr>
-					<td><strong>上下文溢出</strong></td>
-					<td>低</td>
-					<td>高</td>
-					<td>强制 Autocompact</td>
-					<td>自动</td>
-			</tr>
-			<tr>
-					<td><strong>权限拒绝</strong></td>
-					<td>中</td>
-					<td>中</td>
-					<td>请求用户授权或跳过操作</td>
-					<td>手动</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>错误类型</th>
+          <th>发生频率</th>
+          <th>严重程度</th>
+          <th>恢复策略</th>
+          <th>自动/手动</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>API Rate Limit</strong></td>
+          <td>高</td>
+          <td>低</td>
+          <td>指数退避重试 (Exponential Backoff)</td>
+          <td>自动</td>
+      </tr>
+      <tr>
+          <td><strong>Token Budget 超支</strong></td>
+          <td>中</td>
+          <td>中</td>
+          <td>触发 Compaction → 警告 → 终止</td>
+          <td>半自动</td>
+      </tr>
+      <tr>
+          <td><strong>工具执行失败</strong></td>
+          <td>中</td>
+          <td>中</td>
+          <td>错误注入上下文，Claude 自主修复</td>
+          <td>自动</td>
+      </tr>
+      <tr>
+          <td><strong>网络超时</strong></td>
+          <td>低</td>
+          <td>中</td>
+          <td>重试 + 降级到备用端点</td>
+          <td>自动</td>
+      </tr>
+      <tr>
+          <td><strong>Prompt Cache Miss</strong></td>
+          <td>低</td>
+          <td>低</td>
+          <td>重新加载（成本增加 ~50%）</td>
+          <td>自动</td>
+      </tr>
+      <tr>
+          <td><strong>上下文溢出</strong></td>
+          <td>低</td>
+          <td>高</td>
+          <td>强制 Autocompact</td>
+          <td>自动</td>
+      </tr>
+      <tr>
+          <td><strong>权限拒绝</strong></td>
+          <td>中</td>
+          <td>中</td>
+          <td>请求用户授权或跳过操作</td>
+          <td>手动</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="62-tokenbudget-硬限制">
   6.2 TokenBudget 硬限制
@@ -7634,35 +7681,35 @@ sequenceDiagram
 </h3>
 <p>Claude Code 的 Hooks 系统支持在任务执行过程中进行拦截和干预（详见第 8 章）。在错误恢复场景中，特别重要的是 <strong>StopHook</strong> 机制：</p>
 <table>
-	<thead>
-			<tr>
-					<th>Hook 类型</th>
-					<th>触发时机</th>
-					<th>错误恢复用途</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>PreToolUse</strong></td>
-					<td>工具执行前</td>
-					<td>拦截危险操作、修改命令参数</td>
-			</tr>
-			<tr>
-					<td><strong>PostToolUse</strong></td>
-					<td>工具执行后</td>
-					<td>修改输出、检测错误模式</td>
-			</tr>
-			<tr>
-					<td><strong>Notification</strong></td>
-					<td>通知发送前</td>
-					<td>过滤噪声通知</td>
-			</tr>
-			<tr>
-					<td><strong>Stop</strong></td>
-					<td>任务停止前</td>
-					<td>清理资源、保存状态</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>Hook 类型</th>
+          <th>触发时机</th>
+          <th>错误恢复用途</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>PreToolUse</strong></td>
+          <td>工具执行前</td>
+          <td>拦截危险操作、修改命令参数</td>
+      </tr>
+      <tr>
+          <td><strong>PostToolUse</strong></td>
+          <td>工具执行后</td>
+          <td>修改输出、检测错误模式</td>
+      </tr>
+      <tr>
+          <td><strong>Notification</strong></td>
+          <td>通知发送前</td>
+          <td>过滤噪声通知</td>
+      </tr>
+      <tr>
+          <td><strong>Stop</strong></td>
+          <td>任务停止前</td>
+          <td>清理资源、保存状态</td>
+      </tr>
+  </tbody>
 </table>
 <p>StopHook 可以在任务被终止前执行清理操作，确保：</p>
 <ol>
@@ -7676,33 +7723,33 @@ sequenceDiagram
 </h3>
 <p><a href="https://code.claude.com/docs/en/permissions.md">官方 permissions.md</a> 和 <a href="https://code.claude.com/docs/en/permission-modes.md">permission-modes.md</a> 文档定义了多层权限控制：</p>
 <table>
-	<thead>
-			<tr>
-					<th>权限模式</th>
-					<th>行为</th>
-					<th>适用场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>Default</strong></td>
-					<td>危险操作需要确认</td>
-					<td>日常开发</td>
-			</tr>
-			<tr>
-					<td><strong>Accept Edits</strong></td>
-					<td>接受所有编辑，确认危险操作</td>
-					<td>快速迭代</td>
-			</tr>
-			<tr>
-					<td><strong>Danger Mode</strong></td>
-					<td>所有操作自动执行</td>
-					<td>CI/CD、自动化任务</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>权限模式</th>
+          <th>行为</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Default</strong></td>
+          <td>危险操作需要确认</td>
+          <td>日常开发</td>
+      </tr>
+      <tr>
+          <td><strong>Accept Edits</strong></td>
+          <td>接受所有编辑，确认危险操作</td>
+          <td>快速迭代</td>
+      </tr>
+      <tr>
+          <td><strong>Danger Mode</strong></td>
+          <td>所有操作自动执行</td>
+          <td>CI/CD、自动化任务</td>
+      </tr>
+  </tbody>
 </table>
 <p>在长程任务中，权限确认可能成为瓶颈。<a href="https://code.claude.com/docs/en/auto-mode-config.md">auto-mode-config</a> 允许预先配置特定命令的自动批准，减少人工干预：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#75715e">// .claude/settings.json
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#75715e">// .claude/settings.json
 </span></span></span><span style="display:flex;"><span>{
 </span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;permissions&#34;</span>: {
 </span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;allow&#34;</span>: [
@@ -7723,45 +7770,45 @@ sequenceDiagram
 </h3>
 <p>Claude Code 实现了两种互补的记忆机制，共同支撑跨会话的知识持久化：</p>
 <table>
-	<thead>
-			<tr>
-					<th>维度</th>
-					<th>CLAUDE.md</th>
-					<th>Auto Memory</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>谁写入</strong></td>
-					<td>用户（手动编辑）</td>
-					<td>Claude（自动学习）</td>
-			</tr>
-			<tr>
-					<td><strong>内容类型</strong></td>
-					<td>指令、规则、标准</td>
-					<td>学习到的模式、经验</td>
-			</tr>
-			<tr>
-					<td><strong>作用域</strong></td>
-					<td>项目/用户/组织</td>
-					<td>每个仓库</td>
-			</tr>
-			<tr>
-					<td><strong>加载方式</strong></td>
-					<td>每次会话完整加载</td>
-					<td>每次会话加载（前 200 行或 25KB）</td>
-			</tr>
-			<tr>
-					<td><strong>更新频率</strong></td>
-					<td>用户主动修改</td>
-					<td>Claude 持续自动更新</td>
-			</tr>
-			<tr>
-					<td><strong>示例内容</strong></td>
-					<td>编码标准、架构决策</td>
-					<td>构建命令、调试经验、用户偏好</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>CLAUDE.md</th>
+          <th>Auto Memory</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>谁写入</strong></td>
+          <td>用户（手动编辑）</td>
+          <td>Claude（自动学习）</td>
+      </tr>
+      <tr>
+          <td><strong>内容类型</strong></td>
+          <td>指令、规则、标准</td>
+          <td>学习到的模式、经验</td>
+      </tr>
+      <tr>
+          <td><strong>作用域</strong></td>
+          <td>项目/用户/组织</td>
+          <td>每个仓库</td>
+      </tr>
+      <tr>
+          <td><strong>加载方式</strong></td>
+          <td>每次会话完整加载</td>
+          <td>每次会话加载（前 200 行或 25KB）</td>
+      </tr>
+      <tr>
+          <td><strong>更新频率</strong></td>
+          <td>用户主动修改</td>
+          <td>Claude 持续自动更新</td>
+      </tr>
+      <tr>
+          <td><strong>示例内容</strong></td>
+          <td>编码标准、架构决策</td>
+          <td>构建命令、调试经验、用户偏好</td>
+      </tr>
+  </tbody>
 </table>
 
 <div class="mermaid">
@@ -7815,47 +7862,47 @@ graph TB
 </h3>
 <p>CLAUDE.md 支持四级作用域，从组织级到本地级，优先级依次递增：</p>
 <table>
-	<thead>
-			<tr>
-					<th>级别</th>
-					<th>路径</th>
-					<th>作用域</th>
-					<th>示例内容</th>
-					<th>优先级</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>L1</strong></td>
-					<td>Managed Settings</td>
-					<td>组织级</td>
-					<td>公司编码标准、安全策略、合规要求</td>
-					<td>最低（可被覆盖）</td>
-			</tr>
-			<tr>
-					<td><strong>L2</strong></td>
-					<td><code>~/.claude/CLAUDE.md</code></td>
-					<td>用户级</td>
-					<td>个人编码偏好、常用工具快捷方式</td>
-					<td>中低</td>
-			</tr>
-			<tr>
-					<td><strong>L3</strong></td>
-					<td><code>./CLAUDE.md</code></td>
-					<td>项目级</td>
-					<td>项目架构、编码标准、构建命令</td>
-					<td>中高</td>
-			</tr>
-			<tr>
-					<td><strong>L4</strong></td>
-					<td><code>./CLAUDE.local.md</code></td>
-					<td>本地级</td>
-					<td>个人沙盒 URL、测试数据路径</td>
-					<td>最高</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>级别</th>
+          <th>路径</th>
+          <th>作用域</th>
+          <th>示例内容</th>
+          <th>优先级</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>L1</strong></td>
+          <td>Managed Settings</td>
+          <td>组织级</td>
+          <td>公司编码标准、安全策略、合规要求</td>
+          <td>最低（可被覆盖）</td>
+      </tr>
+      <tr>
+          <td><strong>L2</strong></td>
+          <td><code>~/.claude/CLAUDE.md</code></td>
+          <td>用户级</td>
+          <td>个人编码偏好、常用工具快捷方式</td>
+          <td>中低</td>
+      </tr>
+      <tr>
+          <td><strong>L3</strong></td>
+          <td><code>./CLAUDE.md</code></td>
+          <td>项目级</td>
+          <td>项目架构、编码标准、构建命令</td>
+          <td>中高</td>
+      </tr>
+      <tr>
+          <td><strong>L4</strong></td>
+          <td><code>./CLAUDE.local.md</code></td>
+          <td>本地级</td>
+          <td>个人沙盒 URL、测试数据路径</td>
+          <td>最高</td>
+      </tr>
+  </tbody>
 </table>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>CLAUDE.md 加载顺序（优先级从低到高）：
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>CLAUDE.md 加载顺序（优先级从低到高）：
 </span></span><span style="display:flex;"><span>  1. Managed Settings <span style="color:#f92672">(</span>组织管理员设置<span style="color:#f92672">)</span>
 </span></span><span style="display:flex;"><span>  2. ~/.claude/CLAUDE.md <span style="color:#f92672">(</span>用户全局配置<span style="color:#f92672">)</span>
 </span></span><span style="display:flex;"><span>  3. ./CLAUDE.md <span style="color:#f92672">(</span>项目配置<span style="color:#f92672">)</span>
@@ -7921,47 +7968,47 @@ graph LR
 </div>
 
 <table>
-	<thead>
-			<tr>
-					<th>Hook 类型</th>
-					<th>触发时机</th>
-					<th>典型用途</th>
-					<th>返回值</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>PreToolUse</strong></td>
-					<td>工具执行前</td>
-					<td>修改命令参数、拦截危险操作、注入环境变量</td>
-					<td>approve/deny/modify</td>
-			</tr>
-			<tr>
-					<td><strong>PostToolUse</strong></td>
-					<td>工具执行后</td>
-					<td>过滤输出、格式化结果、检测错误模式</td>
-					<td>modified_output</td>
-			</tr>
-			<tr>
-					<td><strong>Notification</strong></td>
-					<td>通知发送前</td>
-					<td>过滤噪声、转发到外部系统</td>
-					<td>modified_notification</td>
-			</tr>
-			<tr>
-					<td><strong>Stop</strong></td>
-					<td>任务停止前</td>
-					<td>清理资源、保存状态、生成报告</td>
-					<td>cleanup_actions</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>Hook 类型</th>
+          <th>触发时机</th>
+          <th>典型用途</th>
+          <th>返回值</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>PreToolUse</strong></td>
+          <td>工具执行前</td>
+          <td>修改命令参数、拦截危险操作、注入环境变量</td>
+          <td>approve/deny/modify</td>
+      </tr>
+      <tr>
+          <td><strong>PostToolUse</strong></td>
+          <td>工具执行后</td>
+          <td>过滤输出、格式化结果、检测错误模式</td>
+          <td>modified_output</td>
+      </tr>
+      <tr>
+          <td><strong>Notification</strong></td>
+          <td>通知发送前</td>
+          <td>过滤噪声、转发到外部系统</td>
+          <td>modified_notification</td>
+      </tr>
+      <tr>
+          <td><strong>Stop</strong></td>
+          <td>任务停止前</td>
+          <td>清理资源、保存状态、生成报告</td>
+          <td>cleanup_actions</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="82-降本案例10000-行日志--100-行">
   8.2 降本案例：10,000 行日志 → 100 行
   <a class="anchor" href="#82-%e9%99%8d%e6%9c%ac%e6%a1%88%e4%be%8b10000-%e8%a1%8c%e6%97%a5%e5%bf%97--100-%e8%a1%8c">#</a>
 </h3>
 <p>Hooks 在降低长程任务 token 消耗方面效果显著。以下是一个经典的 PostToolUse Hook 案例：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#75715e">// .claude/hooks.json
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#75715e">// .claude/hooks.json
 </span></span></span><span style="display:flex;"><span>{
 </span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;hooks&#34;</span>: [
 </span></span><span style="display:flex;"><span>        {
@@ -7973,34 +8020,34 @@ graph LR
 </span></span><span style="display:flex;"><span>}
 </span></span></code></pre></div><p><strong>效果对比</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>场景</th>
-					<th>Hook 前</th>
-					<th>Hook 后</th>
-					<th>节省</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>运行完整测试套件</td>
-					<td>~10,000 行输出 (~50K tokens)</td>
-					<td>~100 行输出 (~500 tokens)</td>
-					<td><strong>~99%</strong></td>
-			</tr>
-			<tr>
-					<td>构建日志</td>
-					<td>~5,000 行输出 (~25K tokens)</td>
-					<td>~50 行输出 (~250 tokens)</td>
-					<td><strong>~99%</strong></td>
-			</tr>
-			<tr>
-					<td>依赖安装输出</td>
-					<td>~500 行输出 (~2.5K tokens)</td>
-					<td>~10 行输出 (~50 tokens)</td>
-					<td><strong>~98%</strong></td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>Hook 前</th>
+          <th>Hook 后</th>
+          <th>节省</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>运行完整测试套件</td>
+          <td>~10,000 行输出 (~50K tokens)</td>
+          <td>~100 行输出 (~500 tokens)</td>
+          <td><strong>~99%</strong></td>
+      </tr>
+      <tr>
+          <td>构建日志</td>
+          <td>~5,000 行输出 (~25K tokens)</td>
+          <td>~50 行输出 (~250 tokens)</td>
+          <td><strong>~99%</strong></td>
+      </tr>
+      <tr>
+          <td>依赖安装输出</td>
+          <td>~500 行输出 (~2.5K tokens)</td>
+          <td>~10 行输出 (~50 tokens)</td>
+          <td><strong>~98%</strong></td>
+      </tr>
+  </tbody>
 </table>
 <p>在长程任务中，如果一个任务涉及 50 次测试运行，Hook 前的 token 消耗为 50 × 50K = 2.5M tokens，而 Hook 后仅为 50 × 500 = 25K tokens。这是一个 <strong>100 倍的成本差异</strong>。</p>
 <h3 id="83-将指令从-claudemd-迁移到-skills">
@@ -8009,42 +8056,42 @@ graph LR
 </h3>
 <p>如第 7 章所述，CLAUDE.md 每次会话加载会消耗大量 token。<a href="https://code.claude.com/docs/en/skills.md">官方 skills.md</a> 提供了一种更高效的替代方案：</p>
 <table>
-	<thead>
-			<tr>
-					<th>对比维度</th>
-					<th>CLAUDE.md</th>
-					<th>Skills</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>加载方式</strong></td>
-					<td>每次会话自动加载</td>
-					<td>按需加载（Claude 自主决定）</td>
-			</tr>
-			<tr>
-					<td><strong>Token 成本</strong></td>
-					<td>每次会话固定消耗</td>
-					<td>仅使用时消耗</td>
-			</tr>
-			<tr>
-					<td><strong>适用内容</strong></td>
-					<td>全局规则、核心指令</td>
-					<td>领域知识、复杂流程、最佳实践</td>
-			</tr>
-			<tr>
-					<td><strong>维护成本</strong></td>
-					<td>容易膨胀</td>
-					<td>模块化，易维护</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>对比维度</th>
+          <th>CLAUDE.md</th>
+          <th>Skills</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>加载方式</strong></td>
+          <td>每次会话自动加载</td>
+          <td>按需加载（Claude 自主决定）</td>
+      </tr>
+      <tr>
+          <td><strong>Token 成本</strong></td>
+          <td>每次会话固定消耗</td>
+          <td>仅使用时消耗</td>
+      </tr>
+      <tr>
+          <td><strong>适用内容</strong></td>
+          <td>全局规则、核心指令</td>
+          <td>领域知识、复杂流程、最佳实践</td>
+      </tr>
+      <tr>
+          <td><strong>维护成本</strong></td>
+          <td>容易膨胀</td>
+          <td>模块化，易维护</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>迁移策略</strong>：</p>
 <pre tabindex="0"><code>Step 1: 分析 CLAUDE.md，识别&#34;不常用&#34;的指令
 Step 2: 将这些指令提取为独立的 Skill 文件
 Step 3: 在 CLAUDE.md 中保留简短的 Skill 引用
 Step 4: 让 Claude 自主决定何时加载 Skill
-</code></pre><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-markdown" data-lang="markdown"><span style="display:flex;"><span><span style="color:#75715e">&lt;!-- .claude/skills/deploy/SKILL.md --&gt;</span>
+</code></pre><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-markdown" data-lang="markdown"><span style="display:flex;"><span>&lt;!-- .claude/skills/deploy/SKILL.md --&gt;
 </span></span><span style="display:flex;"><span>---
 </span></span><span style="display:flex;"><span>description: Deploy the application to staging or production. Use when the user asks to deploy, release, or publish the app.
 </span></span><span style="display:flex;"><span>---
@@ -8063,7 +8110,7 @@ Step 4: 让 Claude 自主决定何时加载 Skill
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">3.</span> Execute <span style="color:#e6db74">`./scripts/deploy.sh production`</span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">4.</span> Run smoke tests
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">5.</span> Notify the team
-</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-markdown" data-lang="markdown"><span style="display:flex;"><span><span style="color:#75715e">&lt;!-- CLAUDE.md (精简版) --&gt;</span>
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-markdown" data-lang="markdown"><span style="display:flex;"><span>&lt;!-- CLAUDE.md (精简版) --&gt;
 </span></span><span style="display:flex;"><span># Project: MyApp
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">-</span> Framework: React 18 + TypeScript
@@ -8077,7 +8124,7 @@ Step 4: 让 Claude 自主决定何时加载 Skill
   <a class="anchor" href="#84-sdk-%e4%b8%ad%e7%9a%84-hooks">#</a>
 </h3>
 <p>在 Claude Agent SDK 中，Hooks 通过编程方式注册：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">import</span> { <span style="color:#a6e22e">query</span>, <span style="color:#a6e22e">HookEvent</span> } <span style="color:#66d9ef">from</span> <span style="color:#e6db74">&#34;@anthropic-ai/claude-agent-sdk&#34;</span>;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">import</span> { <span style="color:#a6e22e">query</span>, <span style="color:#a6e22e">HookEvent</span> } <span style="color:#66d9ef">from</span> <span style="color:#e6db74">&#34;@anthropic-ai/claude-agent-sdk&#34;</span>;
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">// 注册 PreToolUse Hook
 </span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> <span style="color:#66d9ef">await</span> (<span style="color:#66d9ef">const</span> <span style="color:#a6e22e">message</span> <span style="color:#66d9ef">of</span> <span style="color:#a6e22e">query</span>({
@@ -8095,7 +8142,7 @@ Step 4: 让 Claude 自主决定何时加载 Skill
 </span></span><span style="display:flex;"><span>})) {
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">console</span>.<span style="color:#a6e22e">log</span>(<span style="color:#a6e22e">message</span>);
 </span></span><span style="display:flex;"><span>}
-</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> claude_agent_sdk <span style="color:#f92672">import</span> query, ClaudeAgentOptions
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> claude_agent_sdk <span style="color:#f92672">import</span> query, ClaudeAgentOptions
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">pre_tool_use_hook</span>(event):
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> event<span style="color:#f92672">.</span>tool_name <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;Bash&#34;</span> <span style="color:#f92672">and</span> <span style="color:#e6db74">&#34;rm -rf&#34;</span> <span style="color:#f92672">in</span> event<span style="color:#f92672">.</span>input<span style="color:#f92672">.</span>command:
@@ -8145,35 +8192,35 @@ graph TB
 
 <p><strong>关键特性</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>特性</th>
-					<th>说明</th>
-					<th>对稳定性的影响</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>独立上下文</td>
-					<td>每个 teammate 有独立的上下文窗口</td>
-					<td>防止主会话上下文膨胀</td>
-			</tr>
-			<tr>
-					<td>独立 token 预算</td>
-					<td>每个 teammate 有自己的 token 限制</td>
-					<td>控制总体成本</td>
-			</tr>
-			<tr>
-					<td>并行执行</td>
-					<td>teammates 可以同时工作</td>
-					<td>缩短总耗时</td>
-			</tr>
-			<tr>
-					<td>结果聚合</td>
-					<td>Leader 汇总所有 teammate 的结果</td>
-					<td>保持主会话简洁</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>特性</th>
+          <th>说明</th>
+          <th>对稳定性的影响</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>独立上下文</td>
+          <td>每个 teammate 有独立的上下文窗口</td>
+          <td>防止主会话上下文膨胀</td>
+      </tr>
+      <tr>
+          <td>独立 token 预算</td>
+          <td>每个 teammate 有自己的 token 限制</td>
+          <td>控制总体成本</td>
+      </tr>
+      <tr>
+          <td>并行执行</td>
+          <td>teammates 可以同时工作</td>
+          <td>缩短总耗时</td>
+      </tr>
+      <tr>
+          <td>结果聚合</td>
+          <td>Leader 汇总所有 teammate 的结果</td>
+          <td>保持主会话简洁</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>成本公式</strong>：</p>
 <pre tabindex="0"><code>总 Token 消耗 = Leader Token + Σ(Teammate Token)
@@ -8186,48 +8233,48 @@ graph TB
   <a class="anchor" href="#92-%e6%88%90%e6%9c%ac%e6%8e%a7%e5%88%b6%e7%ad%96%e7%95%a5">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>策略</th>
-					<th>说明</th>
-					<th>效果</th>
-					<th>适用场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>使用 Sonnet 作为 teammate</strong></td>
-					<td>teammate 使用 Sonnet 而非 Opus</td>
-					<td>~50% 降本</td>
-					<td>大部分代码任务</td>
-			</tr>
-			<tr>
-					<td><strong>保持小团队</strong></td>
-					<td>减少并发 teammate 数量</td>
-					<td>线性降本</td>
-					<td>成本敏感项目</td>
-			</tr>
-			<tr>
-					<td><strong>Spawn Prompt 精简</strong></td>
-					<td>减少 teammate 的初始上下文</td>
-					<td>10-20% 降本</td>
-					<td>任务明确的场景</td>
-			</tr>
-			<tr>
-					<td><strong>任务完成即清理</strong></td>
-					<td>及时终止空闲 teammate</td>
-					<td>防止持续浪费</td>
-					<td>长程任务</td>
-			</tr>
-			<tr>
-					<td><strong>Haiku 用于子任务</strong></td>
-					<td>简单任务配置 <code>model: haiku</code></td>
-					<td>~80% 降本</td>
-					<td>文档生成、格式检查</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th>说明</th>
+          <th>效果</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>使用 Sonnet 作为 teammate</strong></td>
+          <td>teammate 使用 Sonnet 而非 Opus</td>
+          <td>~50% 降本</td>
+          <td>大部分代码任务</td>
+      </tr>
+      <tr>
+          <td><strong>保持小团队</strong></td>
+          <td>减少并发 teammate 数量</td>
+          <td>线性降本</td>
+          <td>成本敏感项目</td>
+      </tr>
+      <tr>
+          <td><strong>Spawn Prompt 精简</strong></td>
+          <td>减少 teammate 的初始上下文</td>
+          <td>10-20% 降本</td>
+          <td>任务明确的场景</td>
+      </tr>
+      <tr>
+          <td><strong>任务完成即清理</strong></td>
+          <td>及时终止空闲 teammate</td>
+          <td>防止持续浪费</td>
+          <td>长程任务</td>
+      </tr>
+      <tr>
+          <td><strong>Haiku 用于子任务</strong></td>
+          <td>简单任务配置 <code>model: haiku</code></td>
+          <td>~80% 降本</td>
+          <td>文档生成、格式检查</td>
+      </tr>
+  </tbody>
 </table>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#75715e">// .claude/agents/quick-reviewer.md
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#75715e">// .claude/agents/quick-reviewer.md
 </span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">---</span>
 </span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">name:</span> <span style="color:#960050;background-color:#1e0010">quick-reviewer</span>
 </span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">model:</span> <span style="color:#960050;background-color:#1e0010">claude-haiku</span>
@@ -8243,45 +8290,45 @@ graph TB
 </h3>
 <p><a href="https://code.claude.com/docs/en/costs.md">官方 costs.md</a> 提供了针对不同团队规模的速率限制建议：</p>
 <table>
-	<thead>
-			<tr>
-					<th>团队规模</th>
-					<th>TPM/用户 (Tokens Per Minute)</th>
-					<th>RPM/用户 (Requests Per Minute)</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>1-5 人</td>
-					<td>200K-300K</td>
-					<td>5-7</td>
-			</tr>
-			<tr>
-					<td>5-20 人</td>
-					<td>100K-150K</td>
-					<td>2.5-3.5</td>
-			</tr>
-			<tr>
-					<td>20-50 人</td>
-					<td>50K-75K</td>
-					<td>1.25-1.75</td>
-			</tr>
-			<tr>
-					<td>50-100 人</td>
-					<td>25K-35K</td>
-					<td>0.62-0.87</td>
-			</tr>
-			<tr>
-					<td>100-500 人</td>
-					<td>15K-20K</td>
-					<td>0.37-0.47</td>
-			</tr>
-			<tr>
-					<td>500+ 人</td>
-					<td>10K-15K</td>
-					<td>0.25-0.35</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>团队规模</th>
+          <th>TPM/用户 (Tokens Per Minute)</th>
+          <th>RPM/用户 (Requests Per Minute)</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1-5 人</td>
+          <td>200K-300K</td>
+          <td>5-7</td>
+      </tr>
+      <tr>
+          <td>5-20 人</td>
+          <td>100K-150K</td>
+          <td>2.5-3.5</td>
+      </tr>
+      <tr>
+          <td>20-50 人</td>
+          <td>50K-75K</td>
+          <td>1.25-1.75</td>
+      </tr>
+      <tr>
+          <td>50-100 人</td>
+          <td>25K-35K</td>
+          <td>0.62-0.87</td>
+      </tr>
+      <tr>
+          <td>100-500 人</td>
+          <td>15K-20K</td>
+          <td>0.37-0.47</td>
+      </tr>
+      <tr>
+          <td>500+ 人</td>
+          <td>10K-15K</td>
+          <td>0.25-0.35</td>
+      </tr>
+  </tbody>
 </table>
 <p><a href="https://code.claude.com/docs/en/admin-setup.md">官方 admin-setup.md</a> 描述了管理员如何配置和强制执行这些限制。</p>
 <h3 id="94-agent-view-与可观测性">
@@ -8290,32 +8337,32 @@ graph TB
 </h3>
 <p><a href="https://code.claude.com/docs/en/agent-view.md">官方 agent-view.md</a> 提供了多 Agent 协作的可观测性：</p>
 <table>
-	<thead>
-			<tr>
-					<th>维度</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>实时状态</td>
-					<td>查看每个 teammate 的当前操作和进度</td>
-			</tr>
-			<tr>
-					<td>成本追踪</td>
-					<td>每个 teammate 的独立 token 消耗</td>
-			</tr>
-			<tr>
-					<td>工具使用</td>
-					<td>每个 teammate 使用的工具列表</td>
-			</tr>
-			<tr>
-					<td>决策链</td>
-					<td>跟踪 Leader 如何分配任务</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>实时状态</td>
+          <td>查看每个 teammate 的当前操作和进度</td>
+      </tr>
+      <tr>
+          <td>成本追踪</td>
+          <td>每个 teammate 的独立 token 消耗</td>
+      </tr>
+      <tr>
+          <td>工具使用</td>
+          <td>每个 teammate 使用的工具列表</td>
+      </tr>
+      <tr>
+          <td>决策链</td>
+          <td>跟踪 Leader 如何分配任务</td>
+      </tr>
+  </tbody>
 </table>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// SDK 中的成本追踪
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// SDK 中的成本追踪
 </span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> <span style="color:#66d9ef">await</span> (<span style="color:#66d9ef">const</span> <span style="color:#a6e22e">message</span> <span style="color:#66d9ef">of</span> <span style="color:#a6e22e">query</span>({
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">prompt</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Build the feature with 2 teammates&#34;</span>,
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">options</span><span style="color:#f92672">:</span> { <span style="color:#a6e22e">maxTurns</span>: <span style="color:#66d9ef">20</span> }
@@ -8336,7 +8383,7 @@ graph TB
   <a class="anchor" href="#101-35-%e8%a1%8c-store%e9%9b%b6%e4%be%9d%e8%b5%96%e7%8a%b6%e6%80%81%e7%ae%a1%e7%90%86">#</a>
 </h3>
 <p><a href="https://openedclaude.github.io/claude-reviews-claude/zh-CN/overview">openedclaude/claude-reviews-claude</a> 深入分析了 Claude Code 的状态管理架构。令人惊讶的是，Claude Code 没有使用 Redux、Zustand 或任何第三方状态管理库，而是实现了一个仅 35 行的 Store：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 简化的 Store 实现（基于 openedclaude 分析）
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 简化的 Store 实现（基于 openedclaude 分析）
 </span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Listener</span>&lt;<span style="color:#f92672">T</span>&gt; <span style="color:#f92672">=</span> (<span style="color:#a6e22e">state</span>: <span style="color:#66d9ef">T</span>) <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">void</span>;
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Store</span>&lt;<span style="color:#f92672">T</span>&gt; {
@@ -8448,40 +8495,40 @@ graph LR
 </h3>
 <p><a href="https://code.claude.com/docs/en/best-practices.md">官方 best-practices.md</a> 和 <a href="https://code.claude.com/docs/en/common-workflows.md">common-workflows.md</a> 推荐以下四阶段工作流：</p>
 <table>
-	<thead>
-			<tr>
-					<th>阶段</th>
-					<th>模式</th>
-					<th>操作</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>Explore</strong></td>
-					<td>Plan Mode</td>
-					<td>阅读文件，理解代码结构</td>
-					<td>使用 Explore Subagent 进行代码发现</td>
-			</tr>
-			<tr>
-					<td><strong>Plan</strong></td>
-					<td>Plan Mode</td>
-					<td>创建详细的实现计划</td>
-					<td>让 Claude 生成逐步的执行计划</td>
-			</tr>
-			<tr>
-					<td><strong>Implement</strong></td>
-					<td>Default Mode</td>
-					<td>执行计划，运行测试</td>
-					<td>按计划分步执行，每步验证</td>
-			</tr>
-			<tr>
-					<td><strong>Commit</strong></td>
-					<td>Default Mode</td>
-					<td>提交变更，创建 PR</td>
-					<td>使用 <code>/commit</code> 自动生成提交信息</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>阶段</th>
+          <th>模式</th>
+          <th>操作</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Explore</strong></td>
+          <td>Plan Mode</td>
+          <td>阅读文件，理解代码结构</td>
+          <td>使用 Explore Subagent 进行代码发现</td>
+      </tr>
+      <tr>
+          <td><strong>Plan</strong></td>
+          <td>Plan Mode</td>
+          <td>创建详细的实现计划</td>
+          <td>让 Claude 生成逐步的执行计划</td>
+      </tr>
+      <tr>
+          <td><strong>Implement</strong></td>
+          <td>Default Mode</td>
+          <td>执行计划，运行测试</td>
+          <td>按计划分步执行，每步验证</td>
+      </tr>
+      <tr>
+          <td><strong>Commit</strong></td>
+          <td>Default Mode</td>
+          <td>提交变更，创建 PR</td>
+          <td>使用 <code>/commit</code> 自动生成提交信息</td>
+      </tr>
+  </tbody>
 </table>
 
 <div class="mermaid">
@@ -8537,46 +8584,46 @@ graph LR
   <a class="anchor" href="#113-%e4%b8%8a%e4%b8%8b%e6%96%87%e7%ae%a1%e7%90%86%e7%ad%96%e7%95%a5">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>策略</th>
-					<th>命令</th>
-					<th>适用场景</th>
-					<th>效果</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>清空上下文</strong></td>
-					<td><code>/clear</code></td>
-					<td>切换到不相关任务</td>
-					<td>节省后续所有 token</td>
-			</tr>
-			<tr>
-					<td><strong>压缩上下文</strong></td>
-					<td><code>/compact</code></td>
-					<td>保持任务连续性</td>
-					<td>保留核心上下文</td>
-			</tr>
-			<tr>
-					<td><strong>重命名 + 清空</strong></td>
-					<td><code>/rename</code> + <code>/clear</code></td>
-					<td>长期任务分阶段</td>
-					<td>可追溯 + 低成本</td>
-			</tr>
-			<tr>
-					<td><strong>使用 Subagent</strong></td>
-					<td>自动/<code>/agent</code></td>
-					<td>探索性任务</td>
-					<td>30-70% 主会话 token 节省</td>
-			</tr>
-			<tr>
-					<td><strong>MCP 延迟加载</strong></td>
-					<td>配置控制</td>
-					<td>大量工具场景</td>
-					<td>减少初始上下文</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th>命令</th>
+          <th>适用场景</th>
+          <th>效果</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>清空上下文</strong></td>
+          <td><code>/clear</code></td>
+          <td>切换到不相关任务</td>
+          <td>节省后续所有 token</td>
+      </tr>
+      <tr>
+          <td><strong>压缩上下文</strong></td>
+          <td><code>/compact</code></td>
+          <td>保持任务连续性</td>
+          <td>保留核心上下文</td>
+      </tr>
+      <tr>
+          <td><strong>重命名 + 清空</strong></td>
+          <td><code>/rename</code> + <code>/clear</code></td>
+          <td>长期任务分阶段</td>
+          <td>可追溯 + 低成本</td>
+      </tr>
+      <tr>
+          <td><strong>使用 Subagent</strong></td>
+          <td>自动/<code>/agent</code></td>
+          <td>探索性任务</td>
+          <td>30-70% 主会话 token 节省</td>
+      </tr>
+      <tr>
+          <td><strong>MCP 延迟加载</strong></td>
+          <td>配置控制</td>
+          <td>大量工具场景</td>
+          <td>减少初始上下文</td>
+      </tr>
+  </tbody>
 </table>
 <p><a href="https://code.claude.com/docs/en/statusline.md">官方 statusline.md</a> 描述了如何在终端状态栏中实时监控上下文使用情况，帮助你在上下文耗尽之前采取行动。</p>
 <h3 id="114-vs-code-和-jetbrains-中的长程任务">
@@ -8585,30 +8632,30 @@ graph LR
 </h3>
 <p>在 IDE 集成模式下（<a href="https://code.claude.com/docs/en/vs-code.md">vs-code.md</a>、<a href="https://code.claude.com/docs/en/jetbrains.md">jetbrains.md</a>），长程任务的稳定性还受到以下因素影响：</p>
 <table>
-	<thead>
-			<tr>
-					<th>因素</th>
-					<th>影响</th>
-					<th>建议</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>IDE 崩溃</td>
-					<td>可能导致 Claude Code 会话丢失</td>
-					<td>启用 Session 持久化</td>
-			</tr>
-			<tr>
-					<td>文件同步延迟</td>
-					<td>Claude 可能读取过时的文件</td>
-					<td>在修改后等待保存完成</td>
-			</tr>
-			<tr>
-					<td>终端缓冲区限制</td>
-					<td>输出可能被截断</td>
-					<td>使用 PostToolUse Hook 过滤</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>因素</th>
+          <th>影响</th>
+          <th>建议</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>IDE 崩溃</td>
+          <td>可能导致 Claude Code 会话丢失</td>
+          <td>启用 Session 持久化</td>
+      </tr>
+      <tr>
+          <td>文件同步延迟</td>
+          <td>Claude 可能读取过时的文件</td>
+          <td>在修改后等待保存完成</td>
+      </tr>
+      <tr>
+          <td>终端缓冲区限制</td>
+          <td>输出可能被截断</td>
+          <td>使用 PostToolUse Hook 过滤</td>
+      </tr>
+  </tbody>
 </table>
 <hr>
 <h2 id="12-可迁移设计模式构建你自己的长程稳定-agent">
@@ -8621,122 +8668,122 @@ graph LR
 </h3>
 <p>从 Claude Code 的架构和实践中，我们可以提炼出 14 条可迁移的设计模式，适用于任何基于 LLM 的 Agent 系统：</p>
 <table>
-	<thead>
-			<tr>
-					<th>#</th>
-					<th>模式</th>
-					<th>一句话描述</th>
-					<th>适用场景</th>
-					<th>Claude Code 实现</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>1</td>
-					<td><strong>5 级压缩流水线</strong></td>
-					<td>渐进式上下文管理，从轻到重</td>
-					<td>任何 LLM Agent</td>
-					<td>Compaction (L1-L5)</td>
-			</tr>
-			<tr>
-					<td>2</td>
-					<td><strong>上下文隔离 Subagent</strong></td>
-					<td>分而治之，防止上下文污染</td>
-					<td>探索性任务</td>
-					<td>Explore Subagent</td>
-			</tr>
-			<tr>
-					<td>3</td>
-					<td><strong>错误注入自主修复</strong></td>
-					<td>工具失败后注入错误信息</td>
-					<td>工具执行 Agent</td>
-					<td>Tool Result 注入</td>
-			</tr>
-			<tr>
-					<td>4</td>
-					<td><strong>Token 预算硬限制</strong></td>
-					<td>防止无限循环和资源浪费</td>
-					<td>所有 Agent</td>
-					<td>TokenBudget</td>
-			</tr>
-			<tr>
-					<td>5</td>
-					<td><strong>双记忆系统</strong></td>
-					<td>用户指令 + 自动学习</td>
-					<td>跨会话 Agent</td>
-					<td>CLAUDE.md + Auto Memory</td>
-			</tr>
-			<tr>
-					<td>6</td>
-					<td><strong>Hook 预处理</strong></td>
-					<td>在 LLM 看到之前做减法</td>
-					<td>大数据处理</td>
-					<td>PreToolUse / PostToolUse</td>
-			</tr>
-			<tr>
-					<td>7</td>
-					<td><strong>Session 持久化</strong></td>
-					<td>JSONL 连续写入，崩溃恢复</td>
-					<td>所有对话式 Agent</td>
-					<td>JSONL 存储</td>
-			</tr>
-			<tr>
-					<td>8</td>
-					<td><strong>Checkpointing 快照</strong></td>
-					<td>自动快照 + 回滚</td>
-					<td>编程 Agent</td>
-					<td>Checkpoint 系统</td>
-			</tr>
-			<tr>
-					<td>9</td>
-					<td><strong>Session 分支</strong></td>
-					<td>尝试不同方案</td>
-					<td>探索性开发</td>
-					<td>/branch</td>
-			</tr>
-			<tr>
-					<td>10</td>
-					<td><strong>Prompt Cache 锁存</strong></td>
-					<td>重复内容降本</td>
-					<td>API 成本优化</td>
-					<td>Prompt Cache</td>
-			</tr>
-			<tr>
-					<td>11</td>
-					<td><strong>Stale-While-Error</strong></td>
-					<td>局部故障不崩溃</td>
-					<td>复杂 UI</td>
-					<td>渲染容错</td>
-			</tr>
-			<tr>
-					<td>12</td>
-					<td><strong>叶模块模式</strong></td>
-					<td>减少级联故障</td>
-					<td>大型代码库</td>
-					<td>扁平化架构</td>
-			</tr>
-			<tr>
-					<td>13</td>
-					<td><strong>按需 Skill 加载</strong></td>
-					<td>替代全局指令</td>
-					<td>领域知识注入</td>
-					<td>Skills 系统</td>
-			</tr>
-			<tr>
-					<td>14</td>
-					<td><strong>指数退避重试</strong></td>
-					<td>API 限流恢复</td>
-					<td>所有网络请求</td>
-					<td>Rate Limit 处理</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>模式</th>
+          <th>一句话描述</th>
+          <th>适用场景</th>
+          <th>Claude Code 实现</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td><strong>5 级压缩流水线</strong></td>
+          <td>渐进式上下文管理，从轻到重</td>
+          <td>任何 LLM Agent</td>
+          <td>Compaction (L1-L5)</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td><strong>上下文隔离 Subagent</strong></td>
+          <td>分而治之，防止上下文污染</td>
+          <td>探索性任务</td>
+          <td>Explore Subagent</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td><strong>错误注入自主修复</strong></td>
+          <td>工具失败后注入错误信息</td>
+          <td>工具执行 Agent</td>
+          <td>Tool Result 注入</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td><strong>Token 预算硬限制</strong></td>
+          <td>防止无限循环和资源浪费</td>
+          <td>所有 Agent</td>
+          <td>TokenBudget</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td><strong>双记忆系统</strong></td>
+          <td>用户指令 + 自动学习</td>
+          <td>跨会话 Agent</td>
+          <td>CLAUDE.md + Auto Memory</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td><strong>Hook 预处理</strong></td>
+          <td>在 LLM 看到之前做减法</td>
+          <td>大数据处理</td>
+          <td>PreToolUse / PostToolUse</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td><strong>Session 持久化</strong></td>
+          <td>JSONL 连续写入，崩溃恢复</td>
+          <td>所有对话式 Agent</td>
+          <td>JSONL 存储</td>
+      </tr>
+      <tr>
+          <td>8</td>
+          <td><strong>Checkpointing 快照</strong></td>
+          <td>自动快照 + 回滚</td>
+          <td>编程 Agent</td>
+          <td>Checkpoint 系统</td>
+      </tr>
+      <tr>
+          <td>9</td>
+          <td><strong>Session 分支</strong></td>
+          <td>尝试不同方案</td>
+          <td>探索性开发</td>
+          <td>/branch</td>
+      </tr>
+      <tr>
+          <td>10</td>
+          <td><strong>Prompt Cache 锁存</strong></td>
+          <td>重复内容降本</td>
+          <td>API 成本优化</td>
+          <td>Prompt Cache</td>
+      </tr>
+      <tr>
+          <td>11</td>
+          <td><strong>Stale-While-Error</strong></td>
+          <td>局部故障不崩溃</td>
+          <td>复杂 UI</td>
+          <td>渲染容错</td>
+      </tr>
+      <tr>
+          <td>12</td>
+          <td><strong>叶模块模式</strong></td>
+          <td>减少级联故障</td>
+          <td>大型代码库</td>
+          <td>扁平化架构</td>
+      </tr>
+      <tr>
+          <td>13</td>
+          <td><strong>按需 Skill 加载</strong></td>
+          <td>替代全局指令</td>
+          <td>领域知识注入</td>
+          <td>Skills 系统</td>
+      </tr>
+      <tr>
+          <td>14</td>
+          <td><strong>指数退避重试</strong></td>
+          <td>API 限流恢复</td>
+          <td>所有网络请求</td>
+          <td>Rate Limit 处理</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="122-python-最小实现5-级-compaction">
   12.2 Python 最小实现：5 级 Compaction
   <a class="anchor" href="#122-python-%e6%9c%80%e5%b0%8f%e5%ae%9e%e7%8e%b05-%e7%ba%a7-compaction">#</a>
 </h3>
 <p>以下是一个完整的 5 级压缩流水线的最小 Python 实现：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Claude Code 5 级 Compaction 的最小 Python 实现
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">适用于任何基于 LLM 的 Agent 系统
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">&#34;&#34;&#34;</span>
@@ -8907,7 +8954,7 @@ graph LR
   12.3 TypeScript 最小实现：错误恢复降级链
   <a class="anchor" href="#123-typescript-%e6%9c%80%e5%b0%8f%e5%ae%9e%e7%8e%b0%e9%94%99%e8%af%af%e6%81%a2%e5%a4%8d%e9%99%8d%e7%ba%a7%e9%93%be">#</a>
 </h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">/**
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">/**
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * Claude Code 错误恢复降级链的 TypeScript 实现
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
 </span></span><span style="display:flex;"><span>
@@ -9021,52 +9068,52 @@ graph LR
 </h3>
 <p>通过本文对 Claude Code 长程任务稳定性的深度剖析，我们可以总结出以下核心可借鉴点：</p>
 <table>
-	<thead>
-			<tr>
-					<th>可借鉴点</th>
-					<th>核心思想</th>
-					<th>迁移难度</th>
-					<th>影响力</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>5 级压缩流水线</strong></td>
-					<td>渐进式、从轻到重的上下文管理</td>
-					<td>中</td>
-					<td>极高</td>
-			</tr>
-			<tr>
-					<td><strong>上下文隔离</strong></td>
-					<td>探索性任务在独立窗口中执行</td>
-					<td>中</td>
-					<td>极高</td>
-			</tr>
-			<tr>
-					<td><strong>错误注入修复</strong></td>
-					<td>让 LLM 自主处理工具错误</td>
-					<td>低</td>
-					<td>高</td>
-			</tr>
-			<tr>
-					<td><strong>双记忆系统</strong></td>
-					<td>用户指令与自动学习分离</td>
-					<td>低</td>
-					<td>高</td>
-			</tr>
-			<tr>
-					<td><strong>Hook 预处理</strong></td>
-					<td>在 LLM 看到数据之前做减法</td>
-					<td>低</td>
-					<td>中</td>
-			</tr>
-			<tr>
-					<td><strong>JSONL 持久化</strong></td>
-					<td>简单、可靠、可恢复的状态存储</td>
-					<td>低</td>
-					<td>中</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>可借鉴点</th>
+          <th>核心思想</th>
+          <th>迁移难度</th>
+          <th>影响力</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>5 级压缩流水线</strong></td>
+          <td>渐进式、从轻到重的上下文管理</td>
+          <td>中</td>
+          <td>极高</td>
+      </tr>
+      <tr>
+          <td><strong>上下文隔离</strong></td>
+          <td>探索性任务在独立窗口中执行</td>
+          <td>中</td>
+          <td>极高</td>
+      </tr>
+      <tr>
+          <td><strong>错误注入修复</strong></td>
+          <td>让 LLM 自主处理工具错误</td>
+          <td>低</td>
+          <td>高</td>
+      </tr>
+      <tr>
+          <td><strong>双记忆系统</strong></td>
+          <td>用户指令与自动学习分离</td>
+          <td>低</td>
+          <td>高</td>
+      </tr>
+      <tr>
+          <td><strong>Hook 预处理</strong></td>
+          <td>在 LLM 看到数据之前做减法</td>
+          <td>低</td>
+          <td>中</td>
+      </tr>
+      <tr>
+          <td><strong>JSONL 持久化</strong></td>
+          <td>简单、可靠、可恢复的状态存储</td>
+          <td>低</td>
+          <td>中</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="132-通用长程-agent-设计原则">
   13.2 通用长程 Agent 设计原则
@@ -9114,115 +9161,115 @@ graph LR
   <a class="anchor" href="#a-%e4%ba%94%e5%a4%a7%e5%8f%82%e8%80%83%e6%ba%90%e5%af%b9%e5%ba%94%e7%ab%a0%e8%8a%82%e7%b4%a2%e5%bc%95">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>参考源</th>
-					<th>本文引用章节</th>
-					<th>关键贡献</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><a href="https://code.claude.com/docs/">Claude Code 官方文档</a></td>
-					<td>Ch2-Ch12</td>
-					<td>所有机制的官方规范</td>
-			</tr>
-			<tr>
-					<td><a href="https://github.com/oboard/claude-code-rev">oboard/claude-code-rev</a></td>
-					<td>Ch2.3, Ch6.2, Ch10.1</td>
-					<td>12 步状态机、compaction 源码分析</td>
-			</tr>
-			<tr>
-					<td><a href="https://github.com/VILA-Lab/Dive-into-Claude-Code">VILA-Lab/Dive-into-Claude-Code</a></td>
-					<td>Ch2.3, Ch7.4</td>
-					<td>5 级 Compaction、上下文衰减模型</td>
-			</tr>
-			<tr>
-					<td><a href="https://github.com/shareAI-lab/learn-claude-code">shareAI-lab/learn-claude-code</a></td>
-					<td>Ch3, Ch11</td>
-					<td>长程任务最佳实践、上下文管理策略</td>
-			</tr>
-			<tr>
-					<td><a href="https://openedclaude.github.io/claude-reviews-claude/zh-CN/overview">openedclaude/claude-reviews-claude</a></td>
-					<td>Ch6, Ch10, Ch12</td>
-					<td>工程架构分析、可迁移设计模式</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>参考源</th>
+          <th>本文引用章节</th>
+          <th>关键贡献</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><a href="https://code.claude.com/docs/">Claude Code 官方文档</a></td>
+          <td>Ch2-Ch12</td>
+          <td>所有机制的官方规范</td>
+      </tr>
+      <tr>
+          <td><a href="https://github.com/oboard/claude-code-rev">oboard/claude-code-rev</a></td>
+          <td>Ch2.3, Ch6.2, Ch10.1</td>
+          <td>12 步状态机、compaction 源码分析</td>
+      </tr>
+      <tr>
+          <td><a href="https://github.com/VILA-Lab/Dive-into-Claude-Code">VILA-Lab/Dive-into-Claude-Code</a></td>
+          <td>Ch2.3, Ch7.4</td>
+          <td>5 级 Compaction、上下文衰减模型</td>
+      </tr>
+      <tr>
+          <td><a href="https://github.com/shareAI-lab/learn-claude-code">shareAI-lab/learn-claude-code</a></td>
+          <td>Ch3, Ch11</td>
+          <td>长程任务最佳实践、上下文管理策略</td>
+      </tr>
+      <tr>
+          <td><a href="https://openedclaude.github.io/claude-reviews-claude/zh-CN/overview">openedclaude/claude-reviews-claude</a></td>
+          <td>Ch6, Ch10, Ch12</td>
+          <td>工程架构分析、可迁移设计模式</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="b-关键术语表">
   B. 关键术语表
   <a class="anchor" href="#b-%e5%85%b3%e9%94%ae%e6%9c%af%e8%af%ad%e8%a1%a8">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>术语</th>
-					<th>英文</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>上下文窗口</td>
-					<td>Context Window</td>
-					<td>LLM 单次处理的最大 token 数量</td>
-			</tr>
-			<tr>
-					<td>Compaction</td>
-					<td>Compaction</td>
-					<td>上下文压缩，减少上下文占用的 token 数</td>
-			</tr>
-			<tr>
-					<td>Session</td>
-					<td>Session</td>
-					<td>一次完整的对话会话，具有持久化能力</td>
-			</tr>
-			<tr>
-					<td>Subagent</td>
-					<td>Subagent</td>
-					<td>在独立上下文中运行的子代理</td>
-			</tr>
-			<tr>
-					<td>Checkpointing</td>
-					<td>Checkpointing</td>
-					<td>自动创建代码和对话快照</td>
-			</tr>
-			<tr>
-					<td>Token Budget</td>
-					<td>Token Budget</td>
-					<td>单次任务的最大 token 消耗限制</td>
-			</tr>
-			<tr>
-					<td>Prompt Cache</td>
-					<td>Prompt Cache</td>
-					<td>缓存重复的 prompt 内容以降低 API 成本</td>
-			</tr>
-			<tr>
-					<td>CLAUDE.md</td>
-					<td>CLAUDE.md</td>
-					<td>Claude Code 的配置文件，用作跨会话记忆</td>
-			</tr>
-			<tr>
-					<td>Hooks</td>
-					<td>Hooks</td>
-					<td>在工具执行前后拦截和修改的事件处理器</td>
-			</tr>
-			<tr>
-					<td>Skills</td>
-					<td>Skills</td>
-					<td>按需加载的领域知识和操作指南</td>
-			</tr>
-			<tr>
-					<td>熵增</td>
-					<td>Entropy Increase</td>
-					<td>上下文中有效信息密度随时间降低的现象</td>
-			</tr>
-			<tr>
-					<td>Stale-While-Error</td>
-					<td>Stale-While-Error</td>
-					<td>组件故障时显示旧数据而非崩溃的模式</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>术语</th>
+          <th>英文</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>上下文窗口</td>
+          <td>Context Window</td>
+          <td>LLM 单次处理的最大 token 数量</td>
+      </tr>
+      <tr>
+          <td>Compaction</td>
+          <td>Compaction</td>
+          <td>上下文压缩，减少上下文占用的 token 数</td>
+      </tr>
+      <tr>
+          <td>Session</td>
+          <td>Session</td>
+          <td>一次完整的对话会话，具有持久化能力</td>
+      </tr>
+      <tr>
+          <td>Subagent</td>
+          <td>Subagent</td>
+          <td>在独立上下文中运行的子代理</td>
+      </tr>
+      <tr>
+          <td>Checkpointing</td>
+          <td>Checkpointing</td>
+          <td>自动创建代码和对话快照</td>
+      </tr>
+      <tr>
+          <td>Token Budget</td>
+          <td>Token Budget</td>
+          <td>单次任务的最大 token 消耗限制</td>
+      </tr>
+      <tr>
+          <td>Prompt Cache</td>
+          <td>Prompt Cache</td>
+          <td>缓存重复的 prompt 内容以降低 API 成本</td>
+      </tr>
+      <tr>
+          <td>CLAUDE.md</td>
+          <td>CLAUDE.md</td>
+          <td>Claude Code 的配置文件，用作跨会话记忆</td>
+      </tr>
+      <tr>
+          <td>Hooks</td>
+          <td>Hooks</td>
+          <td>在工具执行前后拦截和修改的事件处理器</td>
+      </tr>
+      <tr>
+          <td>Skills</td>
+          <td>Skills</td>
+          <td>按需加载的领域知识和操作指南</td>
+      </tr>
+      <tr>
+          <td>熵增</td>
+          <td>Entropy Increase</td>
+          <td>上下文中有效信息密度随时间降低的现象</td>
+      </tr>
+      <tr>
+          <td>Stale-While-Error</td>
+          <td>Stale-While-Error</td>
+          <td>组件故障时显示旧数据而非崩溃的模式</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="c-官方文档相关链接">
   C. 官方文档相关链接

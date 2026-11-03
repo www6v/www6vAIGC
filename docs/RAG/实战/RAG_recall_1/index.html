@@ -38,34 +38,34 @@ $$
 
 根据Karpukhin等人的实证研究，向量检索的召回失败主要源于三种失配[3]：
 
-	
-			
-					失配类型
-					现象描述
-					典型案例
-					根源
-			
-	
-	
-			
-					语义失配
-					查询与文档语义相似但任务不匹配
-					问&quot;如何退款&quot;，召回&quot;退款政策说明&quot;而非&quot;退款操作步骤&quot;
-					Embedding将相似主题过度聚集
-			
-			
-					粒度失配
-					文档块过大淹没关键信息，或过小丢失上下文
-					问&quot;API超时设置&quot;，召回的chunk只包含类名而无方法体
-					分块策略未对齐查询粒度
-			
-			
-					词汇失配
-					查询使用专业缩写，文档使用全称（或反之）
-					查&quot;K8s部署&quot;，文档中只有&quot;Kubernetes deployment&quot;
-					纯向量检索对术语变体不敏感
-			
-	
+  
+      
+          失配类型
+          现象描述
+          典型案例
+          根源
+      
+  
+  
+      
+          语义失配
+          查询与文档语义相似但任务不匹配
+          问&quot;如何退款&quot;，召回&quot;退款政策说明&quot;而非&quot;退款操作步骤&quot;
+          Embedding将相似主题过度聚集
+      
+      
+          粒度失配
+          文档块过大淹没关键信息，或过小丢失上下文
+          问&quot;API超时设置&quot;，召回的chunk只包含类名而无方法体
+          分块策略未对齐查询粒度
+      
+      
+          词汇失配
+          查询使用专业缩写，文档使用全称（或反之）
+          查&quot;K8s部署&quot;，文档中只有&quot;Kubernetes deployment&quot;
+          纯向量检索对术语变体不敏感
+      
+  
 
 
   1.3 级联影响：召回如何决定生成质量
@@ -90,27 +90,27 @@ RAG是一个流水线系统，召回环节的误差会向下游级联放大。Le
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
 <meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/">
-	<meta property="og:site_name" content="Modern Agent">
-	<meta property="og:title" content="Modern Agent">
-	<meta property="og:description" content="如何提升RAG的召回率：从原理到实战#“RAG系统的天花板往往不在于生成模型有多聪明，而在于检索系统能给它多少正确的上下文。召回不足，再大的模型也只是在黑暗中摸索。” — Lewis et al., Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks, NeurIPS 2020 [1]
-引言#在企业知识库问答、技术文档检索、医疗辅助诊断等场景中，RAG（Retrieval-Augmented Generation）系统常常面临一个核心痛点：用户提出的问题明明在知识库中有答案，但系统却返回了无关的文档片段，导致大模型生成错误或含糊的回答。
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="如何提升RAG的召回率：从原理到实战 # “RAG系统的天花板往往不在于生成模型有多聪明，而在于检索系统能给它多少正确的上下文。召回不足，再大的模型也只是在黑暗中摸索。” — Lewis et al., Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks, NeurIPS 2020 [1]
+引言 # 在企业知识库问答、技术文档检索、医疗辅助诊断等场景中，RAG（Retrieval-Augmented Generation）系统常常面临一个核心痛点：用户提出的问题明明在知识库中有答案，但系统却返回了无关的文档片段，导致大模型生成错误或含糊的回答。
 这种现象的本质是召回率不足——检索系统未能在候选集中包含真正相关的文档。根据Gao等人对RAG系统的系统性综述，检索质量对最终生成准确率的影响权重超过60%，而召回率是检索质量的第一道关卡[2]。
 本文将从原理出发，系统性地拆解提升RAG召回率的五大路径：文档预处理、Embedding模型优化、检索算法升级、索引结构调优、以及评估监控体系。每个章节不仅剖析背后的技术原理，更提供可落地的代码实现和参数调优指南。
-一、理解RAG召回率的本质#1.1 什么是召回率（Recall@K）#在传统信息检索中，召回率定义为：
+一、理解RAG召回率的本质 # 1.1 什么是召回率（Recall@K） # 在传统信息检索中，召回率定义为：
 $$ \text{Recall@K} = \frac{\text{检索到的相关文档数}}{\text{数据集中所有相关文档总数}} $$
 在RAG语境下，它衡量的是：对于用户的查询，Top-K个检索结果中包含了多少真正能回答问题的文档块。如果K=5，而相关知识分散在3个文档块中，系统只召回了1个，则Recall@5 = 1/3 ≈ 33.3%。
-1.2 召回失败的三种典型模式#根据Karpukhin等人的实证研究，向量检索的召回失败主要源于三种失配[3]：
-失配类型 现象描述 典型案例 根源 语义失配 查询与文档语义相似但任务不匹配 问&#34;如何退款&#34;，召回&#34;退款政策说明&#34;而非&#34;退款操作步骤&#34; Embedding将相似主题过度聚集 粒度失配 文档块过大淹没关键信息，或过小丢失上下文 问&#34;API超时设置&#34;，召回的chunk只包含类名而无方法体 分块策略未对齐查询粒度 词汇失配 查询使用专业缩写，文档使用全称（或反之） 查&#34;K8s部署&#34;，文档中只有&#34;Kubernetes deployment&#34; 纯向量检索对术语变体不敏感 1.3 级联影响：召回如何决定生成质量#RAG是一个流水线系统，召回环节的误差会向下游级联放大。Lewis等人的研究表明，当Recall@5从80%降至40%时，即使使用GPT-4级别的生成模型，最终答案的准确率也会下降近50%[1]。这是因为：
-缺失关键上下文时，LLM只能依赖预训练知识，容易产生幻觉 召回噪声文档会引入干扰信息，导致模型注意力分散 多跳推理问题中，任何一个环节的召回失败都会导致推理链断裂 二、文档预处理与分块策略优化#2.1 分块大小的科学选择#分块（Chunking）是RAG系统的第一道工序，也是最容易被低估的环节。分块大小直接影响Recall@K：">
-	<meta property="og:locale" content="en">
-	<meta property="og:type" content="website">
+1.2 召回失败的三种典型模式 # 根据Karpukhin等人的实证研究，向量检索的召回失败主要源于三种失配[3]：
+失配类型 现象描述 典型案例 根源 语义失配 查询与文档语义相似但任务不匹配 问&#34;如何退款&#34;，召回&#34;退款政策说明&#34;而非&#34;退款操作步骤&#34; Embedding将相似主题过度聚集 粒度失配 文档块过大淹没关键信息，或过小丢失上下文 问&#34;API超时设置&#34;，召回的chunk只包含类名而无方法体 分块策略未对齐查询粒度 词汇失配 查询使用专业缩写，文档使用全称（或反之） 查&#34;K8s部署&#34;，文档中只有&#34;Kubernetes deployment&#34; 纯向量检索对术语变体不敏感 1.3 级联影响：召回如何决定生成质量 # RAG是一个流水线系统，召回环节的误差会向下游级联放大。Lewis等人的研究表明，当Recall@5从80%降至40%时，即使使用GPT-4级别的生成模型，最终答案的准确率也会下降近50%[1]。这是因为：
+缺失关键上下文时，LLM只能依赖预训练知识，容易产生幻觉 召回噪声文档会引入干扰信息，导致模型注意力分散 多跳推理问题中，任何一个环节的召回失败都会导致推理链断裂 二、文档预处理与分块策略优化 # 2.1 分块大小的科学选择 # 分块（Chunking）是RAG系统的第一道工序，也是最容易被低估的环节。分块大小直接影响Recall@K：">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
 <title>Rag Recall 1 | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/">
-<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+<link rel="stylesheet" href="/www6vAIGC/book.min.3257a7ce7c061eb5dfc72257c356229b1470dc77ce9b982ac220c02542f9f04f.css" integrity="sha256-MlenznwGHrXfxyJXw1YimxRw3HfOm5gqwiDAJUL58E8=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.b03d70a1a41ebd2598f66475385e5f3acbb00c4c00220e8b32e57e4ea027ff4e.js" integrity="sha256-sD1woaQevSWY9mR1OF5fOsuwDEwAIg6LMuV&#43;TqAn/04=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.9ac9103c9736d6d7fd88e6f79ca53fdabcb398fab716e8ab8092ebfee52b0415.js" integrity="sha256-mskQPJc21tf9iOb3nKU/2ryzmPq3FuirgJLr/uUrBBU=" crossorigin="anonymous"></script>
 <link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/RAG/%E5%AE%9E%E6%88%98/RAG_recall_1/index.xml" title="Modern Agent" />
 <!--
 Made with Book Theme
@@ -163,8 +163,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="toggle" checked />
-    <label for="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="flex justify-between">
+    <input type="checkbox" id="section-8eeae87632e610dbb7fc73d309f4a86d" class="toggle" checked />
+    <label for="section-8eeae87632e610dbb7fc73d309f4a86d" class="flex justify-between">
       <a role="button" class="">RAG</a>
     </label>
   
@@ -179,8 +179,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c551263d461ebff83b9463dc3a94952c" class="toggle"  />
-    <label for="section-c551263d461ebff83b9463dc3a94952c" class="flex justify-between">
+    <input type="checkbox" id="section-098fde1b4be868f62390668d03d7d338" class="toggle"  />
+    <label for="section-098fde1b4be868f62390668d03d7d338" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -290,8 +290,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6d871616372a4994f42a7668d9af7715" class="toggle" checked />
-    <label for="section-6d871616372a4994f42a7668d9af7715" class="flex justify-between">
+    <input type="checkbox" id="section-7c089cd98011270279a8c4693580483e" class="toggle" checked />
+    <label for="section-7c089cd98011270279a8c4693580483e" class="flex justify-between">
       <a role="button" class="">实战 *</a>
     </label>
   
@@ -527,8 +527,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd42bffd52a5c198755daef56da179f9" class="toggle"  />
-    <label for="section-cd42bffd52a5c198755daef56da179f9" class="flex justify-between">
+    <input type="checkbox" id="section-00e0992ed3785617d99441f38424d443" class="toggle"  />
+    <label for="section-00e0992ed3785617d99441f38424d443" class="flex justify-between">
       <a role="button" class="">Pattern</a>
     </label>
   
@@ -728,8 +728,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-afec0c322e2a85b11a48111f0dba315c" class="toggle"  />
-    <label for="section-afec0c322e2a85b11a48111f0dba315c" class="flex justify-between">
+    <input type="checkbox" id="section-5e6438c77671b5eb480dd2c40a29deb4" class="toggle"  />
+    <label for="section-5e6438c77671b5eb480dd2c40a29deb4" class="flex justify-between">
       <a role="button" class="">phase *</a>
     </label>
   
@@ -929,8 +929,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="toggle"  />
-    <label for="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="flex justify-between">
+    <input type="checkbox" id="section-1205a3b6d7d0d892a149b0be18b55680" class="toggle"  />
+    <label for="section-1205a3b6d7d0d892a149b0be18b55680" class="flex justify-between">
       <a role="button" class="">案例</a>
     </label>
   
@@ -991,8 +991,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="toggle"  />
-    <label for="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="flex justify-between">
+    <input type="checkbox" id="section-2853751cf001bfb0dbbd0927de99f326" class="toggle"  />
+    <label for="section-2853751cf001bfb0dbbd0927de99f326" class="flex justify-between">
       <a role="button" class="">Agent Infra</a>
     </label>
   
@@ -1007,8 +1007,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="toggle"  />
-    <label for="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="flex justify-between">
+    <input type="checkbox" id="section-4277410225f2a82b8e3d740cbc19c27a" class="toggle"  />
+    <label for="section-4277410225f2a82b8e3d740cbc19c27a" class="flex justify-between">
       <a role="button" class="">Dify</a>
     </label>
   
@@ -1082,8 +1082,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d35a724145e4438b19d0128310151060" class="toggle"  />
-    <label for="section-d35a724145e4438b19d0128310151060" class="flex justify-between">
+    <input type="checkbox" id="section-21f3c925847a2d764db6eed92d3a72d8" class="toggle"  />
+    <label for="section-21f3c925847a2d764db6eed92d3a72d8" class="flex justify-between">
       <a role="button" class="">产品</a>
     </label>
   
@@ -1121,8 +1121,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d8fb1e2742348190fede849f378398c8" class="toggle"  />
-    <label for="section-d8fb1e2742348190fede849f378398c8" class="flex justify-between">
+    <input type="checkbox" id="section-781abe85b1b1e35a22f023c37cdc2d1e" class="toggle"  />
+    <label for="section-781abe85b1b1e35a22f023c37cdc2d1e" class="flex justify-between">
       <a role="button" class="">API</a>
     </label>
   
@@ -1178,8 +1178,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="toggle"  />
-    <label for="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="flex justify-between">
+    <input type="checkbox" id="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="toggle"  />
+    <label for="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="flex justify-between">
       <a role="button" class="">Sandbox</a>
     </label>
   
@@ -1235,8 +1235,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="toggle"  />
-    <label for="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="flex justify-between">
+    <input type="checkbox" id="section-c1654de4801752aac71344ec5dc9df88" class="toggle"  />
+    <label for="section-c1654de4801752aac71344ec5dc9df88" class="flex justify-between">
       <a role="button" class="">SDK</a>
     </label>
   
@@ -1297,8 +1297,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-465ebbe8c8eae209a571787ecebad2c0" class="toggle"  />
-    <label for="section-465ebbe8c8eae209a571787ecebad2c0" class="flex justify-between">
+    <input type="checkbox" id="section-0883be528cd603181ff8e3bbd53972c2" class="toggle"  />
+    <label for="section-0883be528cd603181ff8e3bbd53972c2" class="flex justify-between">
       <a role="button" class="">Agent</a>
     </label>
   
@@ -1313,8 +1313,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f76aa66a03b4f060262d5e206195edee" class="toggle"  />
-    <label for="section-f76aa66a03b4f060262d5e206195edee" class="flex justify-between">
+    <input type="checkbox" id="section-60cbe7eba0e55272c2f7e88142209eee" class="toggle"  />
+    <label for="section-60cbe7eba0e55272c2f7e88142209eee" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -1370,8 +1370,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d28aa4a73439b10799fd7621d99b09a8" class="toggle"  />
-    <label for="section-d28aa4a73439b10799fd7621d99b09a8" class="flex justify-between">
+    <input type="checkbox" id="section-34b90f1a802a08434ef79ad7e69c7bec" class="toggle"  />
+    <label for="section-34b90f1a802a08434ef79ad7e69c7bec" class="flex justify-between">
       <a role="button" class="">Practice</a>
     </label>
   
@@ -1463,8 +1463,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="toggle"  />
-    <label for="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="flex justify-between">
+    <input type="checkbox" id="section-d23f53c64147d40d7800ad362d50d826" class="toggle"  />
+    <label for="section-d23f53c64147d40d7800ad362d50d826" class="flex justify-between">
       <a role="button" class="">Reflection</a>
     </label>
   
@@ -1502,8 +1502,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c1c7bf1336ea4ad525ce468e5624159f" class="toggle"  />
-    <label for="section-c1c7bf1336ea4ad525ce468e5624159f" class="flex justify-between">
+    <input type="checkbox" id="section-071bdfde77f8dcb0258746094eb4b7ab" class="toggle"  />
+    <label for="section-071bdfde77f8dcb0258746094eb4b7ab" class="flex justify-between">
       <a role="button" class="">Planning</a>
     </label>
   
@@ -1595,8 +1595,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="toggle"  />
-    <label for="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="flex justify-between">
+    <input type="checkbox" id="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="toggle"  />
+    <label for="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1611,8 +1611,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e338773a0b87bd3d5520b81d5b88db62" class="toggle"  />
-    <label for="section-e338773a0b87bd3d5520b81d5b88db62" class="flex justify-between">
+    <input type="checkbox" id="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="toggle"  />
+    <label for="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1676,8 +1676,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9d0fe56670c342283f8f972214b72137" class="toggle"  />
-    <label for="section-9d0fe56670c342283f8f972214b72137" class="flex justify-between">
+    <input type="checkbox" id="section-fb50c7bc07294aad8ab163e5c05043d7" class="toggle"  />
+    <label for="section-fb50c7bc07294aad8ab163e5c05043d7" class="flex justify-between">
       <a role="button" class="">Hermes</a>
     </label>
   
@@ -1751,8 +1751,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a9773226cdddc85ff8f10cae8bdb49a2" class="toggle"  />
-    <label for="section-a9773226cdddc85ff8f10cae8bdb49a2" class="flex justify-between">
+    <input type="checkbox" id="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="toggle"  />
+    <label for="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="flex justify-between">
       <a role="button" class="">managed agents</a>
     </label>
   
@@ -1808,8 +1808,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-041a0b369c13985983a2e78e073f1143" class="toggle"  />
-    <label for="section-041a0b369c13985983a2e78e073f1143" class="flex justify-between">
+    <input type="checkbox" id="section-f0d84b83965f02340d4fc81e88ba04ab" class="toggle"  />
+    <label for="section-f0d84b83965f02340d4fc81e88ba04ab" class="flex justify-between">
       <a role="button" class="">Memory *</a>
     </label>
   
@@ -1966,8 +1966,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-360e9d19bffa35d5db5a46e0c0c05a65" class="toggle"  />
-    <label for="section-360e9d19bffa35d5db5a46e0c0c05a65" class="flex justify-between">
+    <input type="checkbox" id="section-66d86d5f38d04ef58ebb26728c026d4e" class="toggle"  />
+    <label for="section-66d86d5f38d04ef58ebb26728c026d4e" class="flex justify-between">
       <a role="button" class="">Openclaw</a>
     </label>
   
@@ -2005,8 +2005,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="toggle"  />
-    <label for="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="flex justify-between">
+    <input type="checkbox" id="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="toggle"  />
+    <label for="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
@@ -2085,8 +2085,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="toggle"  />
-    <label for="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="flex justify-between">
+    <input type="checkbox" id="section-f9cf8c4489e32d49710bcbde19d88feb" class="toggle"  />
+    <label for="section-f9cf8c4489e32d49710bcbde19d88feb" class="flex justify-between">
       <a role="button" class="">Multi Agent</a>
     </label>
   
@@ -2101,8 +2101,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e496587d113a69d69794ccf2791a9ec7" class="toggle"  />
-    <label for="section-e496587d113a69d69794ccf2791a9ec7" class="flex justify-between">
+    <input type="checkbox" id="section-7eb50204504aa47e2bb008fa842d839e" class="toggle"  />
+    <label for="section-7eb50204504aa47e2bb008fa842d839e" class="flex justify-between">
       <a role="button" class="">Agent编排</a>
     </label>
   
@@ -2158,8 +2158,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-386b9d0b04e254d93a6bcfe648c4dabb" class="toggle"  />
-    <label for="section-386b9d0b04e254d93a6bcfe648c4dabb" class="flex justify-between">
+    <input type="checkbox" id="section-f36497092f145d804086d65929bc2e21" class="toggle"  />
+    <label for="section-f36497092f145d804086d65929bc2e21" class="flex justify-between">
       <a role="button" class="">Multi-agent</a>
     </label>
   
@@ -2251,8 +2251,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3b952b230f5462315a195fb221f48926" class="toggle"  />
-    <label for="section-3b952b230f5462315a195fb221f48926" class="flex justify-between">
+    <input type="checkbox" id="section-68da3356eb5814cf26b079259a3868f0" class="toggle"  />
+    <label for="section-68da3356eb5814cf26b079259a3868f0" class="flex justify-between">
       <a role="button" class="">OpenClaw *</a>
     </label>
   
@@ -2326,8 +2326,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d1f7a2a771a519d5e8b989f2e775ff25" class="toggle"  />
-    <label for="section-d1f7a2a771a519d5e8b989f2e775ff25" class="flex justify-between">
+    <input type="checkbox" id="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="toggle"  />
+    <label for="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="flex justify-between">
       <a role="button" class="">subagent *</a>
     </label>
   
@@ -2383,8 +2383,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b8e7621552172a9013b3c0dae0dba198" class="toggle"  />
-    <label for="section-b8e7621552172a9013b3c0dae0dba198" class="flex justify-between">
+    <input type="checkbox" id="section-88a7a1de323948713dc3ef284015e786" class="toggle"  />
+    <label for="section-88a7a1de323948713dc3ef284015e786" class="flex justify-between">
       <a role="button" class="">Teams *</a>
     </label>
   
@@ -2445,8 +2445,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="toggle"  />
-    <label for="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="flex justify-between">
+    <input type="checkbox" id="section-32002b3a68174992b401de86ca7466b5" class="toggle"  />
+    <label for="section-32002b3a68174992b401de86ca7466b5" class="flex justify-between">
       <a role="button" class="">Tool &amp; Skill</a>
     </label>
   
@@ -2479,8 +2479,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5cca64c106a3667481dd63b47c86e87a" class="toggle"  />
-    <label for="section-5cca64c106a3667481dd63b47c86e87a" class="flex justify-between">
+    <input type="checkbox" id="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="toggle"  />
+    <label for="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="flex justify-between">
       <a role="button" class="">Survey &amp; SFT</a>
     </label>
   
@@ -2572,8 +2572,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c655fd9062845f96cffb72685b2fd696" class="toggle"  />
-    <label for="section-c655fd9062845f96cffb72685b2fd696" class="flex justify-between">
+    <input type="checkbox" id="section-80682025fb6883cc3c0dd48368b5f7e2" class="toggle"  />
+    <label for="section-80682025fb6883cc3c0dd48368b5f7e2" class="flex justify-between">
       <a role="button" class="">Tool 演进</a>
     </label>
   
@@ -2611,8 +2611,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-412785899ca57a1289f566e38e9ac427" class="toggle"  />
-    <label for="section-412785899ca57a1289f566e38e9ac427" class="flex justify-between">
+    <input type="checkbox" id="section-906763a3f2cf8396c71a61e320169919" class="toggle"  />
+    <label for="section-906763a3f2cf8396c71a61e320169919" class="flex justify-between">
       <a role="button" class="">tools</a>
     </label>
   
@@ -2650,8 +2650,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="toggle"  />
-    <label for="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="flex justify-between">
+    <input type="checkbox" id="section-92f9fae5d8ab88847e6e20bd4d125306" class="toggle"  />
+    <label for="section-92f9fae5d8ab88847e6e20bd4d125306" class="flex justify-between">
       <a role="button" class="">MCP *</a>
     </label>
   
@@ -2743,8 +2743,42 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-efd004ff6efd6d01576ed8f1a0e02adf" class="toggle"  />
-    <label for="section-efd004ff6efd6d01576ed8f1a0e02adf" class="flex justify-between">
+    <input type="checkbox" id="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="toggle"  />
+    <label for="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="flex justify-between">
+      <a role="button" class="">integrate *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/integrate/hermes/Agent-Harness-%E5%A6%82%E4%BD%95%E4%B8%8E%E4%BC%81%E4%B8%9A%E5%86%85%E9%83%A8%E7%B3%BB%E7%BB%9F%E9%9B%86%E6%88%90/" class="">Agent Harness 如何与企业内部系统集成</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-10c047fd3087cf2b29cccd85fa867912" class="toggle"  />
+    <label for="section-10c047fd3087cf2b29cccd85fa867912" class="flex justify-between">
       <a role="button" class="">skill *</a>
     </label>
   
@@ -2849,8 +2883,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="toggle"  />
-    <label for="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="flex justify-between">
+    <input type="checkbox" id="section-8f63915fcb39ad7378f7bc5015f45f65" class="toggle"  />
+    <label for="section-8f63915fcb39ad7378f7bc5015f45f65" class="flex justify-between">
       <a role="button" class="">Agent Eval</a>
     </label>
   
@@ -2883,8 +2917,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a89b3f08479487c94e6a45e37e72a862" class="toggle"  />
-    <label for="section-a89b3f08479487c94e6a45e37e72a862" class="flex justify-between">
+    <input type="checkbox" id="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="toggle"  />
+    <label for="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="flex justify-between">
       <a role="button" class="">Demystifying Evals for AI Agents</a>
     </label>
   
@@ -2935,8 +2969,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-83c0821b846e1dac2e8bfc2d8d45e825" class="toggle"  />
-    <label for="section-83c0821b846e1dac2e8bfc2d8d45e825" class="flex justify-between">
+    <input type="checkbox" id="section-6a8786ba009ef23a5dd033a252f02f8b" class="toggle"  />
+    <label for="section-6a8786ba009ef23a5dd033a252f02f8b" class="flex justify-between">
       <a role="button" class="">langfuse</a>
     </label>
   
@@ -2974,8 +3008,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9c20639ed9ed4feb764f4bac9cac218f" class="toggle"  />
-    <label for="section-9c20639ed9ed4feb764f4bac9cac218f" class="flex justify-between">
+    <input type="checkbox" id="section-159965614aff9bed370d992d243d0f28" class="toggle"  />
+    <label for="section-159965614aff9bed370d992d243d0f28" class="flex justify-between">
       <a role="button" class="">ragas</a>
     </label>
   
@@ -3013,8 +3047,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f0f5dda3ea316a50f6d522c3904406d7" class="toggle"  />
-    <label for="section-f0f5dda3ea316a50f6d522c3904406d7" class="flex justify-between">
+    <input type="checkbox" id="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="toggle"  />
+    <label for="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="flex justify-between">
       <a role="button" class="">llm-as-judge</a>
     </label>
   
@@ -3166,8 +3200,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="toggle"  />
-    <label for="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="flex justify-between">
+    <input type="checkbox" id="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="toggle"  />
+    <label for="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="flex justify-between">
       <a role="button" class="">Harness engineering</a>
     </label>
   
@@ -3182,8 +3216,212 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-fba0f3dbc923c98eb8930452d3ded9da" class="toggle"  />
-    <label for="section-fba0f3dbc923c98eb8930452d3ded9da" class="flex justify-between">
+    <input type="checkbox" id="section-104617d101dbf375f60fa698eeb5966a" class="toggle"  />
+    <label for="section-104617d101dbf375f60fa698eeb5966a" class="flex justify-between">
+      <a role="button" class="">Compress *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code/" class="">Claude /compact[A1] *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-compress/" class="">Claude Code - Compact summary</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/codex/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code2/" class="">Claude Code2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code3/" class="">Claude Code3</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f957c352b7370ac61b04758ecb52fade" class="toggle"  />
+    <label for="section-f957c352b7370ac61b04758ecb52fade" class="flex justify-between">
+      <a role="button" class="">可靠性 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/codex/" class="">Codex 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/dsh/" class="">Deepseek harness 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/pi-durable/" class="">Pi Durable</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="toggle"  />
+    <label for="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="flex justify-between">
       <a role="button" class="">Harness</a>
     </label>
   
@@ -3198,7 +3436,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/10-harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
   
 
           
@@ -3216,7 +3454,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/10-harness-enginering/harness/" class="">Harness</a>
   
 
           
@@ -3239,8 +3477,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="toggle"  />
-    <label for="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="flex justify-between">
+    <input type="checkbox" id="section-a0f0941605053d7b5666363df4970351" class="toggle"  />
+    <label for="section-a0f0941605053d7b5666363df4970351" class="flex justify-between">
       <a role="button" class="">OpenClaw</a>
     </label>
   
@@ -3386,8 +3624,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-946abd4062c933c072a8c623969add46" class="toggle"  />
-    <label for="section-946abd4062c933c072a8c623969add46" class="flex justify-between">
+    <input type="checkbox" id="section-7185e230a37938c1265b025f647037ad" class="toggle"  />
+    <label for="section-7185e230a37938c1265b025f647037ad" class="flex justify-between">
       <a role="button" class="">Hermes Agent</a>
     </label>
   
@@ -3497,47 +3735,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e7b0748ad48450dde76b72297d165429" class="toggle"  />
-    <label for="section-e7b0748ad48450dde76b72297d165429" class="flex justify-between">
-      <a role="button" class="">JEV</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/JEV/JEV/" class="">JEV</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-fcf812d87768431bb3ab86201a4222e2" class="toggle"  />
-    <label for="section-fcf812d87768431bb3ab86201a4222e2" class="flex justify-between">
+    <input type="checkbox" id="section-9d52e8079db1067f4a0c448c7b68b11b" class="toggle"  />
+    <label for="section-9d52e8079db1067f4a0c448c7b68b11b" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
@@ -3647,8 +3846,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-02af4685675e68e6f8179d748eeb6c5a" class="toggle"  />
-    <label for="section-02af4685675e68e6f8179d748eeb6c5a" class="flex justify-between">
+    <input type="checkbox" id="section-484bcac8c98a52dc9d58366512e4159a" class="toggle"  />
+    <label for="section-484bcac8c98a52dc9d58366512e4159a" class="flex justify-between">
       <a role="button" class="">Codex</a>
     </label>
   
@@ -3681,137 +3880,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ad440789e1a7ba07eb2b3918829c7257" class="toggle"  />
-    <label for="section-ad440789e1a7ba07eb2b3918829c7257" class="flex justify-between">
-      <a role="button" class="">Compress *</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code/" class="">Claude /compact[A1] *</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-compress/" class="">Claude Code - Compact summary</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/codex/" class="">CodeX 上下文</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code2/" class="">Claude Code2</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code3/" class="">Claude Code3</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-7b4eb57325a2b2a77e7753390fc7d915" class="toggle"  />
-    <label for="section-7b4eb57325a2b2a77e7753390fc7d915" class="flex justify-between">
+    <input type="checkbox" id="section-bb4ccb54455a606ed07ce1fdab4ac532" class="toggle"  />
+    <label for="section-bb4ccb54455a606ed07ce1fdab4ac532" class="flex justify-between">
       <a role="button" class="">Pi Agent</a>
     </label>
   
@@ -3893,83 +3963,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c47c9c73c26a489b07f412d8d4ee4f40" class="toggle"  />
-    <label for="section-c47c9c73c26a489b07f412d8d4ee4f40" class="flex justify-between">
-      <a role="button" class="">可靠性 *</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/codex/" class="">Codex 可靠性</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/dsh/" class="">Deepseek harness 可靠性</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/pi-durable/" class="">Pi Durable</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-eec787204d3e675b4351db6ec0be7bc8" class="toggle"  />
-    <label for="section-eec787204d3e675b4351db6ec0be7bc8" class="flex justify-between">
+    <input type="checkbox" id="section-27894a1d29427c9d52d1df6110020b8e" class="toggle"  />
+    <label for="section-27894a1d29427c9d52d1df6110020b8e" class="flex justify-between">
       <a role="button" class="">实战</a>
     </label>
   
@@ -3985,6 +3980,58 @@ https://github.com/alex-shpak/hugo-book
 
   
     <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8488d215ee4dde3fcb569ebf074c8d99" class="toggle"  />
+    <label for="section-8488d215ee4dde3fcb569ebf074c8d99" class="flex justify-between">
+      <a role="button" class="">JEV</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/100-JEV/hermes/Jev%E5%8E%9F%E7%90%86%E4%B8%8E%E5%BA%94%E7%94%A8/" class="">Jev原理与应用</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/100-JEV/JEV/" class="">JEV</a>
   
 
           
@@ -4030,8 +4077,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b41552d83299a260ffc5181fd5bf1177" class="toggle"  />
-    <label for="section-b41552d83299a260ffc5181fd5bf1177" class="flex justify-between">
+    <input type="checkbox" id="section-1f82435e89939f7232e02729b008213e" class="toggle"  />
+    <label for="section-1f82435e89939f7232e02729b008213e" class="flex justify-between">
       <a role="button" class="">Loops engineering</a>
     </label>
   
@@ -4046,8 +4093,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1a4757bdd1099e1149094c77f1470e5d" class="toggle"  />
-    <label for="section-1a4757bdd1099e1149094c77f1470e5d" class="flex justify-between">
+    <input type="checkbox" id="section-bf010a926485186e47c6ea2d2776a45f" class="toggle"  />
+    <label for="section-bf010a926485186e47c6ea2d2776a45f" class="flex justify-between">
       <a role="button" class="">goal</a>
     </label>
   
@@ -4103,8 +4150,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-eca2bd358c3e27c981a441ba4e158cb3" class="toggle"  />
-    <label for="section-eca2bd358c3e27c981a441ba4e158cb3" class="flex justify-between">
+    <input type="checkbox" id="section-013b791baed028e00c3cd685450d1255" class="toggle"  />
+    <label for="section-013b791baed028e00c3cd685450d1255" class="flex justify-between">
       <a role="button" class="">loop engineering</a>
     </label>
   
@@ -4160,8 +4207,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27d39407dbc0d87e956d19638a0f1da3" class="toggle"  />
-    <label for="section-27d39407dbc0d87e956d19638a0f1da3" class="flex justify-between">
+    <input type="checkbox" id="section-b284ec03b7c672cfde434851c4ea7377" class="toggle"  />
+    <label for="section-b284ec03b7c672cfde434851c4ea7377" class="flex justify-between">
       <a role="button" class="">长程任务</a>
     </label>
   
@@ -4230,8 +4277,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-689fa0c955be06dbb890852c4c2826e8" class="toggle"  />
-    <label for="section-689fa0c955be06dbb890852c4c2826e8" class="flex justify-between">
+    <input type="checkbox" id="section-4211c6654bc32161daa2abe28c73b06e" class="toggle"  />
+    <label for="section-4211c6654bc32161daa2abe28c73b06e" class="flex justify-between">
       <a role="button" class="">Meta Harness</a>
     </label>
   
@@ -4246,8 +4293,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-524d9cf59683da54d7ecc3c0ff6519ce" class="toggle"  />
-    <label for="section-524d9cf59683da54d7ecc3c0ff6519ce" class="flex justify-between">
+    <input type="checkbox" id="section-c81a15018d7ae452140c88ff216be77d" class="toggle"  />
+    <label for="section-c81a15018d7ae452140c88ff216be77d" class="flex justify-between">
       <a role="button" class="">Managed Agent</a>
     </label>
   
@@ -4375,8 +4422,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="toggle"  />
-    <label for="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="flex justify-between">
+    <input type="checkbox" id="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="toggle"  />
+    <label for="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="flex justify-between">
       <a role="button" class="">Omnigent</a>
     </label>
   
@@ -4419,8 +4466,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="toggle"  />
-    <label for="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="flex justify-between">
+    <input type="checkbox" id="section-920c2fa3546aca5261a01784a53ddff3" class="toggle"  />
+    <label for="section-920c2fa3546aca5261a01784a53ddff3" class="flex justify-between">
       <a role="button" class="">Context Engineering</a>
     </label>
   
@@ -4489,8 +4536,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="toggle"  />
-    <label for="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="flex justify-between">
+    <input type="checkbox" id="section-0563b2fd6005bd3ffd431bec1f81b423" class="toggle"  />
+    <label for="section-0563b2fd6005bd3ffd431bec1f81b423" class="flex justify-between">
       <a role="button" class="">Plan mode</a>
     </label>
   
@@ -4546,8 +4593,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-4a730712863635107d9ac9a5d3e3abd6" class="toggle"  />
-    <label for="section-4a730712863635107d9ac9a5d3e3abd6" class="flex justify-between">
+    <input type="checkbox" id="section-ceda1f30ce03531a336a1f1ebb026a63" class="toggle"  />
+    <label for="section-ceda1f30ce03531a336a1f1ebb026a63" class="flex justify-between">
       <a role="button" class="">Prompting caching *</a>
     </label>
   
@@ -4590,8 +4637,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-98dd33716c353fd55829a04c54d5e57e" class="toggle"  />
-    <label for="section-98dd33716c353fd55829a04c54d5e57e" class="flex justify-between">
+    <input type="checkbox" id="section-097abb2131971a92a13c1e53f850eb30" class="toggle"  />
+    <label for="section-097abb2131971a92a13c1e53f850eb30" class="flex justify-between">
       <a role="button" class="">Prompt Engineering</a>
     </label>
   
@@ -4755,8 +4802,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ad26e82e3d025c385444444a93d72502" class="toggle"  />
-    <label for="section-ad26e82e3d025c385444444a93d72502" class="flex justify-between">
+    <input type="checkbox" id="section-951bebaba4a0e7ffcc11ac548251e389" class="toggle"  />
+    <label for="section-951bebaba4a0e7ffcc11ac548251e389" class="flex justify-between">
       <a role="button" class="">DeepResearch</a>
     </label>
   
@@ -4938,8 +4985,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9cc3ec6d88705686bc94595daa8aa25e" class="toggle"  />
-    <label for="section-9cc3ec6d88705686bc94595daa8aa25e" class="flex justify-between">
+    <input type="checkbox" id="section-def011b742c3bb564ed84bad958a8bb9" class="toggle"  />
+    <label for="section-def011b742c3bb564ed84bad958a8bb9" class="flex justify-between">
       <a role="button" class="">FineTuning</a>
     </label>
   
@@ -4954,8 +5001,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-7b3c994f2c17601a215b6b57dc71b7ef" class="toggle"  />
-    <label for="section-7b3c994f2c17601a215b6b57dc71b7ef" class="flex justify-between">
+    <input type="checkbox" id="section-b1c6c40bb101131e4fe5a95225175846" class="toggle"  />
+    <label for="section-b1c6c40bb101131e4fe5a95225175846" class="flex justify-between">
       <a role="button" class="">Instruct Tuning</a>
     </label>
   
@@ -5011,8 +5058,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ebf0a5559cc09bbc171db379534a7dc9" class="toggle"  />
-    <label for="section-ebf0a5559cc09bbc171db379534a7dc9" class="flex justify-between">
+    <input type="checkbox" id="section-a5f257b0a67dc566e55c98245e32a9a3" class="toggle"  />
+    <label for="section-a5f257b0a67dc566e55c98245e32a9a3" class="flex justify-between">
       <a role="button" class="">实践 *</a>
     </label>
   
@@ -5086,8 +5133,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0082251d40c765323fa32be9b3686aa0" class="toggle"  />
-    <label for="section-0082251d40c765323fa32be9b3686aa0" class="flex justify-between">
+    <input type="checkbox" id="section-bc06fe507152e253f2b8fedc786f69f9" class="toggle"  />
+    <label for="section-bc06fe507152e253f2b8fedc786f69f9" class="flex justify-between">
       <a role="button" class="">PEFT *</a>
     </label>
   
@@ -5287,8 +5334,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d763501d6c35330245339b6c8531cf7c" class="toggle"  />
-    <label for="section-d763501d6c35330245339b6c8531cf7c" class="flex justify-between">
+    <input type="checkbox" id="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="toggle"  />
+    <label for="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="flex justify-between">
       <a role="button" class="">Data</a>
     </label>
   
@@ -5547,8 +5594,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-284de0efced75cd016672664a17456be" class="toggle"  />
-    <label for="section-284de0efced75cd016672664a17456be" class="flex justify-between">
+    <input type="checkbox" id="section-ec440fd30b4fccc02d2866bf269d3c1c" class="toggle"  />
+    <label for="section-ec440fd30b4fccc02d2866bf269d3c1c" class="flex justify-between">
       <a role="button" class="">AI Native</a>
     </label>
   
@@ -5658,8 +5705,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a67b63d6d594556c363a35d7d38cd355" class="toggle"  />
-    <label for="section-a67b63d6d594556c363a35d7d38cd355" class="flex justify-between">
+    <input type="checkbox" id="section-c4d50087126f44db07d7a7f0faa67711" class="toggle"  />
+    <label for="section-c4d50087126f44db07d7a7f0faa67711" class="flex justify-between">
       <a role="button" class="">Langchain</a>
     </label>
   
@@ -5751,8 +5798,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3926c431ee2abb31fef9cd9185588ed0" class="toggle"  />
-    <label for="section-3926c431ee2abb31fef9cd9185588ed0" class="flex justify-between">
+    <input type="checkbox" id="section-461a4404ae59395291876d9268139c73" class="toggle"  />
+    <label for="section-461a4404ae59395291876d9268139c73" class="flex justify-between">
       <a role="button" class="">Application</a>
     </label>
   
@@ -5898,8 +5945,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="toggle"  />
-    <label for="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="flex justify-between">
+    <input type="checkbox" id="section-3ce504245d1c08bb826d2f16a7a9180c" class="toggle"  />
+    <label for="section-3ce504245d1c08bb826d2f16a7a9180c" class="flex justify-between">
       <a role="button" class="">其他</a>
     </label>
   
@@ -6110,34 +6157,34 @@ $$</p>
 </h3>
 <p>根据Karpukhin等人的实证研究，向量检索的召回失败主要源于三种失配[3]：</p>
 <table>
-	<thead>
-			<tr>
-					<th>失配类型</th>
-					<th>现象描述</th>
-					<th>典型案例</th>
-					<th>根源</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>语义失配</strong></td>
-					<td>查询与文档语义相似但任务不匹配</td>
-					<td>问&quot;如何退款&quot;，召回&quot;退款政策说明&quot;而非&quot;退款操作步骤&quot;</td>
-					<td>Embedding将相似主题过度聚集</td>
-			</tr>
-			<tr>
-					<td><strong>粒度失配</strong></td>
-					<td>文档块过大淹没关键信息，或过小丢失上下文</td>
-					<td>问&quot;API超时设置&quot;，召回的chunk只包含类名而无方法体</td>
-					<td>分块策略未对齐查询粒度</td>
-			</tr>
-			<tr>
-					<td><strong>词汇失配</strong></td>
-					<td>查询使用专业缩写，文档使用全称（或反之）</td>
-					<td>查&quot;K8s部署&quot;，文档中只有&quot;Kubernetes deployment&quot;</td>
-					<td>纯向量检索对术语变体不敏感</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>失配类型</th>
+          <th>现象描述</th>
+          <th>典型案例</th>
+          <th>根源</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>语义失配</strong></td>
+          <td>查询与文档语义相似但任务不匹配</td>
+          <td>问&quot;如何退款&quot;，召回&quot;退款政策说明&quot;而非&quot;退款操作步骤&quot;</td>
+          <td>Embedding将相似主题过度聚集</td>
+      </tr>
+      <tr>
+          <td><strong>粒度失配</strong></td>
+          <td>文档块过大淹没关键信息，或过小丢失上下文</td>
+          <td>问&quot;API超时设置&quot;，召回的chunk只包含类名而无方法体</td>
+          <td>分块策略未对齐查询粒度</td>
+      </tr>
+      <tr>
+          <td><strong>词汇失配</strong></td>
+          <td>查询使用专业缩写，文档使用全称（或反之）</td>
+          <td>查&quot;K8s部署&quot;，文档中只有&quot;Kubernetes deployment&quot;</td>
+          <td>纯向量检索对术语变体不敏感</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="13-级联影响召回如何决定生成质量">
   1.3 级联影响：召回如何决定生成质量
@@ -6165,40 +6212,40 @@ $$</p>
 </ul>
 <p>根据Chen等人的实证研究[4]，在Technical QA任务中，200-400 token的chunk size能达到最佳的Recall@5平衡点：</p>
 <table>
-	<thead>
-			<tr>
-					<th>Chunk Size</th>
-					<th>Recall@5 (TechQA)</th>
-					<th>Recall@5 (OpenQA)</th>
-					<th>延迟影响</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>128 tokens</td>
-					<td>62.1%</td>
-					<td>58.3%</td>
-					<td>低</td>
-			</tr>
-			<tr>
-					<td>256 tokens</td>
-					<td>71.4%</td>
-					<td>65.8%</td>
-					<td>低</td>
-			</tr>
-			<tr>
-					<td>512 tokens</td>
-					<td>68.9%</td>
-					<td>72.1%</td>
-					<td>中</td>
-			</tr>
-			<tr>
-					<td>1024 tokens</td>
-					<td>59.2%</td>
-					<td>75.6%</td>
-					<td>高</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>Chunk Size</th>
+          <th>Recall@5 (TechQA)</th>
+          <th>Recall@5 (OpenQA)</th>
+          <th>延迟影响</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>128 tokens</td>
+          <td>62.1%</td>
+          <td>58.3%</td>
+          <td>低</td>
+      </tr>
+      <tr>
+          <td>256 tokens</td>
+          <td>71.4%</td>
+          <td>65.8%</td>
+          <td>低</td>
+      </tr>
+      <tr>
+          <td>512 tokens</td>
+          <td>68.9%</td>
+          <td>72.1%</td>
+          <td>中</td>
+      </tr>
+      <tr>
+          <td>1024 tokens</td>
+          <td>59.2%</td>
+          <td>75.6%</td>
+          <td>高</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>关键洞察</strong>：TechQA偏向精确操作，需要小chunk精确定位；OpenQA偏向综合理解，大chunk更有优势。没有银弹，必须根据任务类型调整。</p>
 <h3 id="22-重叠窗口策略overlap">
@@ -6206,7 +6253,7 @@ $$</p>
   <a class="anchor" href="#22-%e9%87%8d%e5%8f%a0%e7%aa%97%e5%8f%a3%e7%ad%96%e7%95%a5overlap">#</a>
 </h3>
 <p>信息往往跨越chunk边界。固定步长切分会导致边界处的关键信息被截断。引入重叠窗口（Overlap）可以缓解这一问题：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">sliding_window_chunk</span>(text: str, chunk_size: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">300</span>, overlap: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">50</span>) <span style="color:#f92672">-&gt;</span> list[str]:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">sliding_window_chunk</span>(text: str, chunk_size: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">300</span>, overlap: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">50</span>) <span style="color:#f92672">-&gt;</span> list[str]:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    滑动窗口分块：保证边界信息不丢失
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    chunk_size: 每个块的token数
@@ -6239,7 +6286,7 @@ $$</p>
 <li>检索时：在child chunks中找到匹配，返回其对应的parent chunk给LLM</li>
 </ul>
 <p>这种策略巧妙解决了粒度失配问题：小chunk保证精确匹配，大chunk保证上下文完整。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># LlamaIndex 父子索引示例</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># LlamaIndex 父子索引示例</span>
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> llama_index.core.node_parser <span style="color:#f92672">import</span> SentenceSplitter, HierarchicalNodeParser
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> llama_index.core <span style="color:#f92672">import</span> VectorStoreIndex
 </span></span><span style="display:flex;"><span>
@@ -6258,7 +6305,7 @@ $$</p>
   <a class="anchor" href="#24-%e5%ae%9e%e6%88%98%e5%ae%9e%e7%8e%b0%e8%af%ad%e4%b9%89%e6%84%9f%e7%9f%a5%e5%88%86%e5%9d%97%e5%99%a8">#</a>
 </h3>
 <p>固定长度分块会粗暴地切断句子。基于NLP工具的语义分块器能保持句子/段落完整性：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> spacy
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> spacy
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> typing <span style="color:#f92672">import</span> List
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>nlp <span style="color:#f92672">=</span> spacy<span style="color:#f92672">.</span>load(<span style="color:#e6db74">&#34;zh_core_web_sm&#34;</span>)  <span style="color:#75715e"># 或 en_core_web_sm</span>
@@ -6297,58 +6344,58 @@ $$</p>
 </h3>
 <p>Embedding模型是RAG检索的&quot;心脏&quot;。不同的模型在语义表示能力上差异巨大。下表基于MTEB（Massive Text Embedding Benchmark）基准测试[6]：</p>
 <table>
-	<thead>
-			<tr>
-					<th>模型</th>
-					<th>维度</th>
-					<th>MTEB平均分</th>
-					<th>中文Retrieval</th>
-					<th>推理速度</th>
-					<th>适用场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>text-embedding-3-large (OpenAI)</td>
-					<td>3072</td>
-					<td>64.6%</td>
-					<td>58.2%</td>
-					<td>快(API)</td>
-					<td>英文为主，预算充足</td>
-			</tr>
-			<tr>
-					<td>bge-large-zh-v1.5 (BAAI)</td>
-					<td>1024</td>
-					<td>64.1%</td>
-					<td>71.5%</td>
-					<td>快(本地)</td>
-					<td>中文场景首选</td>
-			</tr>
-			<tr>
-					<td>e5-large-v2 (Microsoft)</td>
-					<td>1024</td>
-					<td>62.3%</td>
-					<td>55.8%</td>
-					<td>快</td>
-					<td>英文多任务</td>
-			</tr>
-			<tr>
-					<td>jina-embeddings-v3 (Jina AI)</td>
-					<td>1024</td>
-					<td>63.4%</td>
-					<td>66.9%</td>
-					<td>中</td>
-					<td>多语言、长文本</td>
-			</tr>
-			<tr>
-					<td>m3e-base (Moka AI)</td>
-					<td>768</td>
-					<td>58.6%</td>
-					<td>68.3%</td>
-					<td>快</td>
-					<td>轻量中文场景</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>模型</th>
+          <th>维度</th>
+          <th>MTEB平均分</th>
+          <th>中文Retrieval</th>
+          <th>推理速度</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>text-embedding-3-large (OpenAI)</td>
+          <td>3072</td>
+          <td>64.6%</td>
+          <td>58.2%</td>
+          <td>快(API)</td>
+          <td>英文为主，预算充足</td>
+      </tr>
+      <tr>
+          <td>bge-large-zh-v1.5 (BAAI)</td>
+          <td>1024</td>
+          <td>64.1%</td>
+          <td>71.5%</td>
+          <td>快(本地)</td>
+          <td>中文场景首选</td>
+      </tr>
+      <tr>
+          <td>e5-large-v2 (Microsoft)</td>
+          <td>1024</td>
+          <td>62.3%</td>
+          <td>55.8%</td>
+          <td>快</td>
+          <td>英文多任务</td>
+      </tr>
+      <tr>
+          <td>jina-embeddings-v3 (Jina AI)</td>
+          <td>1024</td>
+          <td>63.4%</td>
+          <td>66.9%</td>
+          <td>中</td>
+          <td>多语言、长文本</td>
+      </tr>
+      <tr>
+          <td>m3e-base (Moka AI)</td>
+          <td>768</td>
+          <td>58.6%</td>
+          <td>68.3%</td>
+          <td>快</td>
+          <td>轻量中文场景</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>关键洞察</strong>：中文场景强烈推荐使用专门针对中文优化的模型（如bge-large-zh、m3e）。通用英文模型在中文上的表现通常下降10-15个百分点。</p>
 <h3 id="32-领域适配微调embedding模型">
@@ -6369,7 +6416,7 @@ $$</p>
   完整微调流程
   <a class="anchor" href="#%e5%ae%8c%e6%95%b4%e5%be%ae%e8%b0%83%e6%b5%81%e7%a8%8b">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> sentence_transformers <span style="color:#f92672">import</span> SentenceTransformer, losses, InputExample
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> sentence_transformers <span style="color:#f92672">import</span> SentenceTransformer, losses, InputExample
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> torch.utils.data <span style="color:#f92672">import</span> DataLoader
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 1. 加载预训练模型</span>
@@ -6426,7 +6473,7 @@ $$</p>
 \text{RRF}(d) = \sum_{r \in R} \frac{1}{k + \text{rank}_r(d)}
 $$</p>
 <p>其中$R$是检索器集合，$k$是常数（通常取60），$\text{rank}_r(d)$是文档$d$在检索器$r$中的排名。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">reciprocal_rank_fusion</span>(results: list[list], k: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">60</span>) <span style="color:#f92672">-&gt;</span> dict:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">reciprocal_rank_fusion</span>(results: list[list], k: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">60</span>) <span style="color:#f92672">-&gt;</span> dict:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    RRF融合多个检索结果
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    results: 每个元素是一个检索器返回的有序文档列表
@@ -6444,7 +6491,7 @@ $$</p>
   实战：Elasticsearch混合检索
   <a class="anchor" href="#%e5%ae%9e%e6%88%98elasticsearch%e6%b7%b7%e5%90%88%e6%a3%80%e7%b4%a2">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> elasticsearch <span style="color:#f92672">import</span> Elasticsearch
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> elasticsearch <span style="color:#f92672">import</span> Elasticsearch
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>es <span style="color:#f92672">=</span> Elasticsearch(<span style="color:#e6db74">&#34;http://localhost:9200&#34;</span>)
 </span></span><span style="display:flex;"><span>
@@ -6496,7 +6543,7 @@ $$</p>
 </h4>
 <p>LlamaIndex提出的多查询检索架构[5]：</p>
 <pre tabindex="0"><code>原始查询 → LLM分解为3-5个子查询 → 并行检索 → 结果去重合并
-</code></pre><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> llama_index.core.query_engine <span style="color:#f92672">import</span> MultiQueryRetriever
+</code></pre><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> llama_index.core.query_engine <span style="color:#f92672">import</span> MultiQueryRetriever
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 使用LLM自动生成多角度查询</span>
 </span></span><span style="display:flex;"><span>retriever <span style="color:#f92672">=</span> MultiQueryRetriever<span style="color:#f92672">.</span>from_defaults(
@@ -6529,38 +6576,38 @@ Step-back问题：&#34;MySQL的JOIN算法有哪些？&#34;
   <a class="anchor" href="#cross-encoder-vs-bi-encoder">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>架构</th>
-					<th>计算方式</th>
-					<th>精度</th>
-					<th>延迟</th>
-					<th>适用阶段</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>Bi-Encoder</strong></td>
-					<td>查询和文档分别编码，计算余弦相似度</td>
-					<td>中</td>
-					<td>极低(可缓存)</td>
-					<td>第一阶段召回</td>
-			</tr>
-			<tr>
-					<td><strong>Cross-Encoder</strong></td>
-					<td>查询和文档拼接后一起编码，输出相关性分数</td>
-					<td>高</td>
-					<td>高(需实时计算)</td>
-					<td>第二阶段重排</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>架构</th>
+          <th>计算方式</th>
+          <th>精度</th>
+          <th>延迟</th>
+          <th>适用阶段</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Bi-Encoder</strong></td>
+          <td>查询和文档分别编码，计算余弦相似度</td>
+          <td>中</td>
+          <td>极低(可缓存)</td>
+          <td>第一阶段召回</td>
+      </tr>
+      <tr>
+          <td><strong>Cross-Encoder</strong></td>
+          <td>查询和文档拼接后一起编码，输出相关性分数</td>
+          <td>高</td>
+          <td>高(需实时计算)</td>
+          <td>第二阶段重排</td>
+      </tr>
+  </tbody>
 </table>
 <p>Cross-Encoder让查询和文档在Transformer内部进行交叉注意力计算，能捕捉细粒度交互，精度通常比Bi-Encoder高15-20%。</p>
 <h4 id="实战集成bge-reranker">
   实战：集成BGE-Reranker
   <a class="anchor" href="#%e5%ae%9e%e6%88%98%e9%9b%86%e6%88%90bge-reranker">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> FlagEmbedding <span style="color:#f92672">import</span> FlagReranker
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> FlagEmbedding <span style="color:#f92672">import</span> FlagReranker
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>reranker <span style="color:#f92672">=</span> FlagReranker(<span style="color:#e6db74">&#39;BAAI/bge-reranker-large&#39;</span>, use_fp16<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>)
 </span></span><span style="display:flex;"><span>
@@ -6587,50 +6634,50 @@ Step-back问题：&#34;MySQL的JOIN算法有哪些？&#34;
 </h3>
 <p>向量检索不是暴力扫描，而是近似算法。不同索引算法在召回率和延迟之间有不同的权衡：</p>
 <table>
-	<thead>
-			<tr>
-					<th>算法</th>
-					<th>原理</th>
-					<th>召回率</th>
-					<th>延迟</th>
-					<th>内存</th>
-					<th>适用场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>Flat (暴力)</strong></td>
-					<td>全量计算余弦相似度</td>
-					<td>100%</td>
-					<td>高(O(n))</td>
-					<td>低</td>
-					<td>小规模(&lt;10K)</td>
-			</tr>
-			<tr>
-					<td><strong>HNSW</strong></td>
-					<td>分层可导航小世界图</td>
-					<td>95-99%</td>
-					<td>极低(O(log n))</td>
-					<td>高</td>
-					<td>大规模、低延迟</td>
-			</tr>
-			<tr>
-					<td><strong>IVF</strong></td>
-					<td>倒排文件，聚类划分</td>
-					<td>85-95%</td>
-					<td>低</td>
-					<td>中</td>
-					<td>内存受限场景</td>
-			</tr>
-			<tr>
-					<td><strong>PQ (Product Quantization)</strong></td>
-					<td>向量压缩+近似距离</td>
-					<td>80-90%</td>
-					<td>低</td>
-					<td>极低</td>
-					<td>超大规模(亿级)</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>算法</th>
+          <th>原理</th>
+          <th>召回率</th>
+          <th>延迟</th>
+          <th>内存</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Flat (暴力)</strong></td>
+          <td>全量计算余弦相似度</td>
+          <td>100%</td>
+          <td>高(O(n))</td>
+          <td>低</td>
+          <td>小规模(&lt;10K)</td>
+      </tr>
+      <tr>
+          <td><strong>HNSW</strong></td>
+          <td>分层可导航小世界图</td>
+          <td>95-99%</td>
+          <td>极低(O(log n))</td>
+          <td>高</td>
+          <td>大规模、低延迟</td>
+      </tr>
+      <tr>
+          <td><strong>IVF</strong></td>
+          <td>倒排文件，聚类划分</td>
+          <td>85-95%</td>
+          <td>低</td>
+          <td>中</td>
+          <td>内存受限场景</td>
+      </tr>
+      <tr>
+          <td><strong>PQ (Product Quantization)</strong></td>
+          <td>向量压缩+近似距离</td>
+          <td>80-90%</td>
+          <td>低</td>
+          <td>极低</td>
+          <td>超大规模(亿级)</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>参数调优关键</strong>：</p>
 <ul>
@@ -6677,30 +6724,30 @@ Step-back问题：&#34;MySQL的JOIN算法有哪些？&#34;
 </h3>
 <p>不能衡量就无法优化。RAG系统需要建立持续的评估体系：</p>
 <table>
-	<thead>
-			<tr>
-					<th>指标</th>
-					<th>定义</th>
-					<th>适用场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>Recall@K</strong></td>
-					<td>Top-K中包含相关文档的比例</td>
-					<td>核心指标，直接反映召回能力</td>
-			</tr>
-			<tr>
-					<td><strong>NDCG@K</strong></td>
-					<td>考虑排序质量的归一化折损累计增益</td>
-					<td>关注排序质量</td>
-			</tr>
-			<tr>
-					<td><strong>MRR</strong></td>
-					<td>第一个相关文档排名的倒数均值</td>
-					<td>单答案问题</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>指标</th>
+          <th>定义</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Recall@K</strong></td>
+          <td>Top-K中包含相关文档的比例</td>
+          <td>核心指标，直接反映召回能力</td>
+      </tr>
+      <tr>
+          <td><strong>NDCG@K</strong></td>
+          <td>考虑排序质量的归一化折损累计增益</td>
+          <td>关注排序质量</td>
+      </tr>
+      <tr>
+          <td><strong>MRR</strong></td>
+          <td>第一个相关文档排名的倒数均值</td>
+          <td>单答案问题</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>构建黄金测试集</strong>：</p>
 <ol>
@@ -6713,7 +6760,7 @@ Step-back问题：&#34;MySQL的JOIN算法有哪些？&#34;
   <a class="anchor" href="#62-ragas%e6%a1%86%e6%9e%b6%e5%ae%9e%e6%88%98">#</a>
 </h3>
 <p>RAGAS是专门评估RAG系统的开源框架[12]：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> ragas <span style="color:#f92672">import</span> evaluate
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> ragas <span style="color:#f92672">import</span> evaluate
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> ragas.metrics <span style="color:#f92672">import</span> context_recall
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> datasets <span style="color:#f92672">import</span> Dataset
 </span></span><span style="display:flex;"><span>
@@ -6756,51 +6803,51 @@ Step-back问题：&#34;MySQL的JOIN算法有哪些？&#34;
   <a class="anchor" href="#72-%e6%8a%80%e6%9c%af%e6%a0%88%e9%80%89%e5%9e%8b">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>组件</th>
-					<th>推荐方案</th>
-					<th>理由</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>文档解析</td>
-					<td>Unstructured / LangChain Document Loaders</td>
-					<td>支持PDF/Word/HTML</td>
-			</tr>
-			<tr>
-					<td>分块策略</td>
-					<td>语义分块 + 父子索引</td>
-					<td>平衡精度与上下文</td>
-			</tr>
-			<tr>
-					<td>Embedding</td>
-					<td>BGE-large-zh-v1.5</td>
-					<td>中文Retrieval最优</td>
-			</tr>
-			<tr>
-					<td>向量库</td>
-					<td>Milvus / Qdrant</td>
-					<td>生产级HNSW，支持混合检索</td>
-			</tr>
-			<tr>
-					<td>Re-ranker</td>
-					<td>BGE-Reranker-large</td>
-					<td>开源最强中文重排模型</td>
-			</tr>
-			<tr>
-					<td>评估框架</td>
-					<td>RAGAS</td>
-					<td>专为RAG设计</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>组件</th>
+          <th>推荐方案</th>
+          <th>理由</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>文档解析</td>
+          <td>Unstructured / LangChain Document Loaders</td>
+          <td>支持PDF/Word/HTML</td>
+      </tr>
+      <tr>
+          <td>分块策略</td>
+          <td>语义分块 + 父子索引</td>
+          <td>平衡精度与上下文</td>
+      </tr>
+      <tr>
+          <td>Embedding</td>
+          <td>BGE-large-zh-v1.5</td>
+          <td>中文Retrieval最优</td>
+      </tr>
+      <tr>
+          <td>向量库</td>
+          <td>Milvus / Qdrant</td>
+          <td>生产级HNSW，支持混合检索</td>
+      </tr>
+      <tr>
+          <td>Re-ranker</td>
+          <td>BGE-Reranker-large</td>
+          <td>开源最强中文重排模型</td>
+      </tr>
+      <tr>
+          <td>评估框架</td>
+          <td>RAGAS</td>
+          <td>专为RAG设计</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="73-完整代码实现">
   7.3 完整代码实现
   <a class="anchor" href="#73-%e5%ae%8c%e6%95%b4%e4%bb%a3%e7%a0%81%e5%ae%9e%e7%8e%b0">#</a>
 </h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> os
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> os
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> langchain.text_splitter <span style="color:#f92672">import</span> RecursiveCharacterTextSplitter
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> langchain_community.embeddings <span style="color:#f92672">import</span> HuggingFaceEmbeddings
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> langchain_community.vectorstores <span style="color:#f92672">import</span> FAISS
@@ -6859,46 +6906,46 @@ Step-back问题：&#34;MySQL的JOIN算法有哪些？&#34;
   <a class="anchor" href="#74-%e6%80%a7%e8%83%bd%e5%af%b9%e6%af%94%e5%ae%9e%e9%aa%8c">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>策略</th>
-					<th>Recall@5</th>
-					<th>平均延迟(ms)</th>
-					<th>内存占用</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>Baseline (OpenAI Embedding + 向量检索)</td>
-					<td>58.3%</td>
-					<td>120</td>
-					<td>低</td>
-			</tr>
-			<tr>
-					<td>+ 语义分块 (300 tokens, 50 overlap)</td>
-					<td>64.1%</td>
-					<td>125</td>
-					<td>低</td>
-			</tr>
-			<tr>
-					<td>+ BGE-zh Embedding</td>
-					<td>72.5%</td>
-					<td>115</td>
-					<td>中</td>
-			</tr>
-			<tr>
-					<td>+ 混合检索 (BM25 + 向量, RRF)</td>
-					<td>78.9%</td>
-					<td>140</td>
-					<td>中</td>
-			</tr>
-			<tr>
-					<td>+ Re-ranker (Top-20 → Top-5)</td>
-					<td>85.2%</td>
-					<td>280</td>
-					<td>高</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th>Recall@5</th>
+          <th>平均延迟(ms)</th>
+          <th>内存占用</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Baseline (OpenAI Embedding + 向量检索)</td>
+          <td>58.3%</td>
+          <td>120</td>
+          <td>低</td>
+      </tr>
+      <tr>
+          <td>+ 语义分块 (300 tokens, 50 overlap)</td>
+          <td>64.1%</td>
+          <td>125</td>
+          <td>低</td>
+      </tr>
+      <tr>
+          <td>+ BGE-zh Embedding</td>
+          <td>72.5%</td>
+          <td>115</td>
+          <td>中</td>
+      </tr>
+      <tr>
+          <td>+ 混合检索 (BM25 + 向量, RRF)</td>
+          <td>78.9%</td>
+          <td>140</td>
+          <td>中</td>
+      </tr>
+      <tr>
+          <td>+ Re-ranker (Top-20 → Top-5)</td>
+          <td>85.2%</td>
+          <td>280</td>
+          <td>高</td>
+      </tr>
+  </tbody>
 </table>
 <p>从Baseline到完整优化，Recall@5提升了<strong>46%</strong>，代价是延迟增加约2.3倍。在生产环境中，可通过异步预计算Re-ranker结果来降低用户感知延迟。</p>
 <hr>
@@ -6915,40 +6962,40 @@ Step-back问题：&#34;MySQL的JOIN算法有哪些？&#34;
 </ol>
 <p><strong>不同场景的最佳实践推荐</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>场景</th>
-					<th>优先策略</th>
-					<th>次要策略</th>
-					<th>可跳过</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>英文技术文档</td>
-					<td>混合检索 + Re-ranker</td>
-					<td>HyDE查询扩展</td>
-					<td>领域微调</td>
-			</tr>
-			<tr>
-					<td>中文客服问答</td>
-					<td>BGE-zh Embedding + 混合检索</td>
-					<td>语义分块</td>
-					<td>GraphRAG</td>
-			</tr>
-			<tr>
-					<td>医疗/法律专业</td>
-					<td>领域微调Embedding + Re-ranker</td>
-					<td>父子索引</td>
-					<td>无</td>
-			</tr>
-			<tr>
-					<td>超大规模知识库</td>
-					<td>HNSW调优 + 分层检索</td>
-					<td>查询缓存</td>
-					<td>暴力检索</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>优先策略</th>
+          <th>次要策略</th>
+          <th>可跳过</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>英文技术文档</td>
+          <td>混合检索 + Re-ranker</td>
+          <td>HyDE查询扩展</td>
+          <td>领域微调</td>
+      </tr>
+      <tr>
+          <td>中文客服问答</td>
+          <td>BGE-zh Embedding + 混合检索</td>
+          <td>语义分块</td>
+          <td>GraphRAG</td>
+      </tr>
+      <tr>
+          <td>医疗/法律专业</td>
+          <td>领域微调Embedding + Re-ranker</td>
+          <td>父子索引</td>
+          <td>无</td>
+      </tr>
+      <tr>
+          <td>超大规模知识库</td>
+          <td>HNSW调优 + 分层检索</td>
+          <td>查询缓存</td>
+          <td>暴力检索</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>未来趋势</strong>：End-to-End可微RAG系统正在兴起[13]，将检索和生成统一到一个可微框架中联合训练。但在那之前，掌握本文所述的模块化优化手段，仍是构建高召回RAG系统的必由之路。</p>
 <hr>
@@ -6961,45 +7008,45 @@ Step-back问题：&#34;MySQL的JOIN算法有哪些？&#34;
   <a class="anchor" href="#a-%e5%85%b3%e9%94%ae%e8%b6%85%e5%8f%82%e6%95%b0%e6%8e%a8%e8%8d%90%e8%a1%a8">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>参数</th>
-					<th>推荐值</th>
-					<th>说明</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>chunk_size</td>
-					<td>200-400 tokens</td>
-					<td>根据任务类型调整</td>
-			</tr>
-			<tr>
-					<td>chunk_overlap</td>
-					<td>15%-20% of chunk_size</td>
-					<td>防止边界信息丢失</td>
-			</tr>
-			<tr>
-					<td>HNSW ef_search</td>
-					<td>128-256</td>
-					<td>召回率敏感场景可调至512</td>
-			</tr>
-			<tr>
-					<td>IVF nlist</td>
-					<td>sqrt(总向量数)</td>
-					<td>平衡召回与延迟</td>
-			</tr>
-			<tr>
-					<td>RRF k</td>
-					<td>60</td>
-					<td>固定常数，无需调优</td>
-			</tr>
-			<tr>
-					<td>Re-ranker top-N</td>
-					<td>20-50</td>
-					<td>输入重排器的候选数</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>推荐值</th>
+          <th>说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>chunk_size</td>
+          <td>200-400 tokens</td>
+          <td>根据任务类型调整</td>
+      </tr>
+      <tr>
+          <td>chunk_overlap</td>
+          <td>15%-20% of chunk_size</td>
+          <td>防止边界信息丢失</td>
+      </tr>
+      <tr>
+          <td>HNSW ef_search</td>
+          <td>128-256</td>
+          <td>召回率敏感场景可调至512</td>
+      </tr>
+      <tr>
+          <td>IVF nlist</td>
+          <td>sqrt(总向量数)</td>
+          <td>平衡召回与延迟</td>
+      </tr>
+      <tr>
+          <td>RRF k</td>
+          <td>60</td>
+          <td>固定常数，无需调优</td>
+      </tr>
+      <tr>
+          <td>Re-ranker top-N</td>
+          <td>20-50</td>
+          <td>输入重排器的候选数</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="b-开源工具链速查">
   B. 开源工具链速查

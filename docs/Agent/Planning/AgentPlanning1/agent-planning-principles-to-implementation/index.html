@@ -26,29 +26,28 @@
 
 假设你要求一个 Agent 完成以下任务：
 
-&ldquo;帮我分析 GitHub 上 top 10 的 Python 机器学习仓库，统计它们的 star 数、最近一次 commit 时间、主要贡献者，然后生成一个对比报告并发送邮件。&rdquo;
-">
+&ldquo;帮我分析 GitHub 上 top 10 的 Python 机器学习仓库，统计它们的 star 数、最近一次 commit 时间、主要贡献者，然后生成一个对比报告并发送邮件。&rdquo;">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
 <meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Agent/Planning/AgentPlanning1/agent-planning-principles-to-implementation/">
-	<meta property="og:site_name" content="Modern Agent">
-	<meta property="og:title" content="Modern Agent">
-	<meta property="og:description" content="Agent 是如何做 Plan 的：从原理到实现#“Planning is the art of choosing what to think about before you think.” — 改编自 Judea Pearl, Causality
-一、引言：为什么 Agent 需要 Plan？#2023 年，OpenAI 在 GPT-4 的 system prompt 中悄悄加入了一行指令：
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="Agent 是如何做 Plan 的：从原理到实现 # “Planning is the art of choosing what to think about before you think.” — 改编自 Judea Pearl, Causality
+一、引言：为什么 Agent 需要 Plan？ # 2023 年，OpenAI 在 GPT-4 的 system prompt 中悄悄加入了一行指令：
 “If the user request is complex, break it down into steps before answering.”
 这不是偶然的工程优化，而是 LLM Agent 架构的一次范式转折。在此之前，大多数 Agent 采用的是直接执行（Act-first）模式：接收输入 → 调用工具 → 返回结果。这种模式在单步任务中表现良好，但在多步、跨依赖的复杂场景中迅速暴露出致命缺陷。
-一个失败的具体场景#假设你要求一个 Agent 完成以下任务：
+一个失败的具体场景 # 假设你要求一个 Agent 完成以下任务：
 “帮我分析 GitHub 上 top 10 的 Python 机器学习仓库，统计它们的 star 数、最近一次 commit 时间、主要贡献者，然后生成一个对比报告并发送邮件。”">
-	<meta property="og:locale" content="en">
-	<meta property="og:type" content="article">
-		<meta property="article:section" content="docs">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="docs">
 <title>Agent Planning Principles to Implementation | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Agent/Planning/AgentPlanning1/agent-planning-principles-to-implementation/">
-<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+<link rel="stylesheet" href="/www6vAIGC/book.min.3257a7ce7c061eb5dfc72257c356229b1470dc77ce9b982ac220c02542f9f04f.css" integrity="sha256-MlenznwGHrXfxyJXw1YimxRw3HfOm5gqwiDAJUL58E8=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.b03d70a1a41ebd2598f66475385e5f3acbb00c4c00220e8b32e57e4ea027ff4e.js" integrity="sha256-sD1woaQevSWY9mR1OF5fOsuwDEwAIg6LMuV&#43;TqAn/04=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.9ac9103c9736d6d7fd88e6f79ca53fdabcb398fab716e8ab8092ebfee52b0415.js" integrity="sha256-mskQPJc21tf9iOb3nKU/2ryzmPq3FuirgJLr/uUrBBU=" crossorigin="anonymous"></script>
 <!--
 Made with Book Theme
 https://github.com/alex-shpak/hugo-book
@@ -100,8 +99,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="toggle"  />
-    <label for="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="flex justify-between">
+    <input type="checkbox" id="section-8eeae87632e610dbb7fc73d309f4a86d" class="toggle"  />
+    <label for="section-8eeae87632e610dbb7fc73d309f4a86d" class="flex justify-between">
       <a role="button" class="">RAG</a>
     </label>
   
@@ -116,8 +115,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c551263d461ebff83b9463dc3a94952c" class="toggle"  />
-    <label for="section-c551263d461ebff83b9463dc3a94952c" class="flex justify-between">
+    <input type="checkbox" id="section-098fde1b4be868f62390668d03d7d338" class="toggle"  />
+    <label for="section-098fde1b4be868f62390668d03d7d338" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -227,8 +226,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6d871616372a4994f42a7668d9af7715" class="toggle"  />
-    <label for="section-6d871616372a4994f42a7668d9af7715" class="flex justify-between">
+    <input type="checkbox" id="section-7c089cd98011270279a8c4693580483e" class="toggle"  />
+    <label for="section-7c089cd98011270279a8c4693580483e" class="flex justify-between">
       <a role="button" class="">实战 *</a>
     </label>
   
@@ -464,8 +463,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd42bffd52a5c198755daef56da179f9" class="toggle"  />
-    <label for="section-cd42bffd52a5c198755daef56da179f9" class="flex justify-between">
+    <input type="checkbox" id="section-00e0992ed3785617d99441f38424d443" class="toggle"  />
+    <label for="section-00e0992ed3785617d99441f38424d443" class="flex justify-between">
       <a role="button" class="">Pattern</a>
     </label>
   
@@ -665,8 +664,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-afec0c322e2a85b11a48111f0dba315c" class="toggle"  />
-    <label for="section-afec0c322e2a85b11a48111f0dba315c" class="flex justify-between">
+    <input type="checkbox" id="section-5e6438c77671b5eb480dd2c40a29deb4" class="toggle"  />
+    <label for="section-5e6438c77671b5eb480dd2c40a29deb4" class="flex justify-between">
       <a role="button" class="">phase *</a>
     </label>
   
@@ -866,8 +865,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="toggle"  />
-    <label for="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="flex justify-between">
+    <input type="checkbox" id="section-1205a3b6d7d0d892a149b0be18b55680" class="toggle"  />
+    <label for="section-1205a3b6d7d0d892a149b0be18b55680" class="flex justify-between">
       <a role="button" class="">案例</a>
     </label>
   
@@ -928,8 +927,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="toggle"  />
-    <label for="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="flex justify-between">
+    <input type="checkbox" id="section-2853751cf001bfb0dbbd0927de99f326" class="toggle"  />
+    <label for="section-2853751cf001bfb0dbbd0927de99f326" class="flex justify-between">
       <a role="button" class="">Agent Infra</a>
     </label>
   
@@ -944,8 +943,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="toggle"  />
-    <label for="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="flex justify-between">
+    <input type="checkbox" id="section-4277410225f2a82b8e3d740cbc19c27a" class="toggle"  />
+    <label for="section-4277410225f2a82b8e3d740cbc19c27a" class="flex justify-between">
       <a role="button" class="">Dify</a>
     </label>
   
@@ -1019,8 +1018,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d35a724145e4438b19d0128310151060" class="toggle"  />
-    <label for="section-d35a724145e4438b19d0128310151060" class="flex justify-between">
+    <input type="checkbox" id="section-21f3c925847a2d764db6eed92d3a72d8" class="toggle"  />
+    <label for="section-21f3c925847a2d764db6eed92d3a72d8" class="flex justify-between">
       <a role="button" class="">产品</a>
     </label>
   
@@ -1058,8 +1057,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d8fb1e2742348190fede849f378398c8" class="toggle"  />
-    <label for="section-d8fb1e2742348190fede849f378398c8" class="flex justify-between">
+    <input type="checkbox" id="section-781abe85b1b1e35a22f023c37cdc2d1e" class="toggle"  />
+    <label for="section-781abe85b1b1e35a22f023c37cdc2d1e" class="flex justify-between">
       <a role="button" class="">API</a>
     </label>
   
@@ -1115,8 +1114,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="toggle"  />
-    <label for="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="flex justify-between">
+    <input type="checkbox" id="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="toggle"  />
+    <label for="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="flex justify-between">
       <a role="button" class="">Sandbox</a>
     </label>
   
@@ -1172,8 +1171,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="toggle"  />
-    <label for="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="flex justify-between">
+    <input type="checkbox" id="section-c1654de4801752aac71344ec5dc9df88" class="toggle"  />
+    <label for="section-c1654de4801752aac71344ec5dc9df88" class="flex justify-between">
       <a role="button" class="">SDK</a>
     </label>
   
@@ -1234,8 +1233,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-465ebbe8c8eae209a571787ecebad2c0" class="toggle" checked />
-    <label for="section-465ebbe8c8eae209a571787ecebad2c0" class="flex justify-between">
+    <input type="checkbox" id="section-0883be528cd603181ff8e3bbd53972c2" class="toggle" checked />
+    <label for="section-0883be528cd603181ff8e3bbd53972c2" class="flex justify-between">
       <a role="button" class="">Agent</a>
     </label>
   
@@ -1250,8 +1249,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f76aa66a03b4f060262d5e206195edee" class="toggle"  />
-    <label for="section-f76aa66a03b4f060262d5e206195edee" class="flex justify-between">
+    <input type="checkbox" id="section-60cbe7eba0e55272c2f7e88142209eee" class="toggle"  />
+    <label for="section-60cbe7eba0e55272c2f7e88142209eee" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -1307,8 +1306,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d28aa4a73439b10799fd7621d99b09a8" class="toggle"  />
-    <label for="section-d28aa4a73439b10799fd7621d99b09a8" class="flex justify-between">
+    <input type="checkbox" id="section-34b90f1a802a08434ef79ad7e69c7bec" class="toggle"  />
+    <label for="section-34b90f1a802a08434ef79ad7e69c7bec" class="flex justify-between">
       <a role="button" class="">Practice</a>
     </label>
   
@@ -1400,8 +1399,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="toggle"  />
-    <label for="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="flex justify-between">
+    <input type="checkbox" id="section-d23f53c64147d40d7800ad362d50d826" class="toggle"  />
+    <label for="section-d23f53c64147d40d7800ad362d50d826" class="flex justify-between">
       <a role="button" class="">Reflection</a>
     </label>
   
@@ -1439,8 +1438,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c1c7bf1336ea4ad525ce468e5624159f" class="toggle" checked />
-    <label for="section-c1c7bf1336ea4ad525ce468e5624159f" class="flex justify-between">
+    <input type="checkbox" id="section-071bdfde77f8dcb0258746094eb4b7ab" class="toggle" checked />
+    <label for="section-071bdfde77f8dcb0258746094eb4b7ab" class="flex justify-between">
       <a role="button" class="">Planning</a>
     </label>
   
@@ -1532,8 +1531,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="toggle"  />
-    <label for="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="flex justify-between">
+    <input type="checkbox" id="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="toggle"  />
+    <label for="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1548,8 +1547,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e338773a0b87bd3d5520b81d5b88db62" class="toggle"  />
-    <label for="section-e338773a0b87bd3d5520b81d5b88db62" class="flex justify-between">
+    <input type="checkbox" id="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="toggle"  />
+    <label for="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1613,8 +1612,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9d0fe56670c342283f8f972214b72137" class="toggle"  />
-    <label for="section-9d0fe56670c342283f8f972214b72137" class="flex justify-between">
+    <input type="checkbox" id="section-fb50c7bc07294aad8ab163e5c05043d7" class="toggle"  />
+    <label for="section-fb50c7bc07294aad8ab163e5c05043d7" class="flex justify-between">
       <a role="button" class="">Hermes</a>
     </label>
   
@@ -1688,8 +1687,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a9773226cdddc85ff8f10cae8bdb49a2" class="toggle"  />
-    <label for="section-a9773226cdddc85ff8f10cae8bdb49a2" class="flex justify-between">
+    <input type="checkbox" id="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="toggle"  />
+    <label for="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="flex justify-between">
       <a role="button" class="">managed agents</a>
     </label>
   
@@ -1745,8 +1744,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-041a0b369c13985983a2e78e073f1143" class="toggle"  />
-    <label for="section-041a0b369c13985983a2e78e073f1143" class="flex justify-between">
+    <input type="checkbox" id="section-f0d84b83965f02340d4fc81e88ba04ab" class="toggle"  />
+    <label for="section-f0d84b83965f02340d4fc81e88ba04ab" class="flex justify-between">
       <a role="button" class="">Memory *</a>
     </label>
   
@@ -1903,8 +1902,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-360e9d19bffa35d5db5a46e0c0c05a65" class="toggle"  />
-    <label for="section-360e9d19bffa35d5db5a46e0c0c05a65" class="flex justify-between">
+    <input type="checkbox" id="section-66d86d5f38d04ef58ebb26728c026d4e" class="toggle"  />
+    <label for="section-66d86d5f38d04ef58ebb26728c026d4e" class="flex justify-between">
       <a role="button" class="">Openclaw</a>
     </label>
   
@@ -1942,8 +1941,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="toggle"  />
-    <label for="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="flex justify-between">
+    <input type="checkbox" id="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="toggle"  />
+    <label for="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
@@ -2022,8 +2021,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="toggle"  />
-    <label for="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="flex justify-between">
+    <input type="checkbox" id="section-f9cf8c4489e32d49710bcbde19d88feb" class="toggle"  />
+    <label for="section-f9cf8c4489e32d49710bcbde19d88feb" class="flex justify-between">
       <a role="button" class="">Multi Agent</a>
     </label>
   
@@ -2038,8 +2037,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e496587d113a69d69794ccf2791a9ec7" class="toggle"  />
-    <label for="section-e496587d113a69d69794ccf2791a9ec7" class="flex justify-between">
+    <input type="checkbox" id="section-7eb50204504aa47e2bb008fa842d839e" class="toggle"  />
+    <label for="section-7eb50204504aa47e2bb008fa842d839e" class="flex justify-between">
       <a role="button" class="">Agent编排</a>
     </label>
   
@@ -2095,8 +2094,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-386b9d0b04e254d93a6bcfe648c4dabb" class="toggle"  />
-    <label for="section-386b9d0b04e254d93a6bcfe648c4dabb" class="flex justify-between">
+    <input type="checkbox" id="section-f36497092f145d804086d65929bc2e21" class="toggle"  />
+    <label for="section-f36497092f145d804086d65929bc2e21" class="flex justify-between">
       <a role="button" class="">Multi-agent</a>
     </label>
   
@@ -2188,8 +2187,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3b952b230f5462315a195fb221f48926" class="toggle"  />
-    <label for="section-3b952b230f5462315a195fb221f48926" class="flex justify-between">
+    <input type="checkbox" id="section-68da3356eb5814cf26b079259a3868f0" class="toggle"  />
+    <label for="section-68da3356eb5814cf26b079259a3868f0" class="flex justify-between">
       <a role="button" class="">OpenClaw *</a>
     </label>
   
@@ -2263,8 +2262,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d1f7a2a771a519d5e8b989f2e775ff25" class="toggle"  />
-    <label for="section-d1f7a2a771a519d5e8b989f2e775ff25" class="flex justify-between">
+    <input type="checkbox" id="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="toggle"  />
+    <label for="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="flex justify-between">
       <a role="button" class="">subagent *</a>
     </label>
   
@@ -2320,8 +2319,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b8e7621552172a9013b3c0dae0dba198" class="toggle"  />
-    <label for="section-b8e7621552172a9013b3c0dae0dba198" class="flex justify-between">
+    <input type="checkbox" id="section-88a7a1de323948713dc3ef284015e786" class="toggle"  />
+    <label for="section-88a7a1de323948713dc3ef284015e786" class="flex justify-between">
       <a role="button" class="">Teams *</a>
     </label>
   
@@ -2382,8 +2381,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="toggle"  />
-    <label for="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="flex justify-between">
+    <input type="checkbox" id="section-32002b3a68174992b401de86ca7466b5" class="toggle"  />
+    <label for="section-32002b3a68174992b401de86ca7466b5" class="flex justify-between">
       <a role="button" class="">Tool &amp; Skill</a>
     </label>
   
@@ -2416,8 +2415,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5cca64c106a3667481dd63b47c86e87a" class="toggle"  />
-    <label for="section-5cca64c106a3667481dd63b47c86e87a" class="flex justify-between">
+    <input type="checkbox" id="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="toggle"  />
+    <label for="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="flex justify-between">
       <a role="button" class="">Survey &amp; SFT</a>
     </label>
   
@@ -2509,8 +2508,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c655fd9062845f96cffb72685b2fd696" class="toggle"  />
-    <label for="section-c655fd9062845f96cffb72685b2fd696" class="flex justify-between">
+    <input type="checkbox" id="section-80682025fb6883cc3c0dd48368b5f7e2" class="toggle"  />
+    <label for="section-80682025fb6883cc3c0dd48368b5f7e2" class="flex justify-between">
       <a role="button" class="">Tool 演进</a>
     </label>
   
@@ -2548,8 +2547,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-412785899ca57a1289f566e38e9ac427" class="toggle"  />
-    <label for="section-412785899ca57a1289f566e38e9ac427" class="flex justify-between">
+    <input type="checkbox" id="section-906763a3f2cf8396c71a61e320169919" class="toggle"  />
+    <label for="section-906763a3f2cf8396c71a61e320169919" class="flex justify-between">
       <a role="button" class="">tools</a>
     </label>
   
@@ -2587,8 +2586,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="toggle"  />
-    <label for="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="flex justify-between">
+    <input type="checkbox" id="section-92f9fae5d8ab88847e6e20bd4d125306" class="toggle"  />
+    <label for="section-92f9fae5d8ab88847e6e20bd4d125306" class="flex justify-between">
       <a role="button" class="">MCP *</a>
     </label>
   
@@ -2680,8 +2679,42 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-efd004ff6efd6d01576ed8f1a0e02adf" class="toggle"  />
-    <label for="section-efd004ff6efd6d01576ed8f1a0e02adf" class="flex justify-between">
+    <input type="checkbox" id="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="toggle"  />
+    <label for="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="flex justify-between">
+      <a role="button" class="">integrate *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/integrate/hermes/Agent-Harness-%E5%A6%82%E4%BD%95%E4%B8%8E%E4%BC%81%E4%B8%9A%E5%86%85%E9%83%A8%E7%B3%BB%E7%BB%9F%E9%9B%86%E6%88%90/" class="">Agent Harness 如何与企业内部系统集成</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-10c047fd3087cf2b29cccd85fa867912" class="toggle"  />
+    <label for="section-10c047fd3087cf2b29cccd85fa867912" class="flex justify-between">
       <a role="button" class="">skill *</a>
     </label>
   
@@ -2786,8 +2819,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="toggle"  />
-    <label for="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="flex justify-between">
+    <input type="checkbox" id="section-8f63915fcb39ad7378f7bc5015f45f65" class="toggle"  />
+    <label for="section-8f63915fcb39ad7378f7bc5015f45f65" class="flex justify-between">
       <a role="button" class="">Agent Eval</a>
     </label>
   
@@ -2820,8 +2853,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a89b3f08479487c94e6a45e37e72a862" class="toggle"  />
-    <label for="section-a89b3f08479487c94e6a45e37e72a862" class="flex justify-between">
+    <input type="checkbox" id="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="toggle"  />
+    <label for="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="flex justify-between">
       <a role="button" class="">Demystifying Evals for AI Agents</a>
     </label>
   
@@ -2872,8 +2905,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-83c0821b846e1dac2e8bfc2d8d45e825" class="toggle"  />
-    <label for="section-83c0821b846e1dac2e8bfc2d8d45e825" class="flex justify-between">
+    <input type="checkbox" id="section-6a8786ba009ef23a5dd033a252f02f8b" class="toggle"  />
+    <label for="section-6a8786ba009ef23a5dd033a252f02f8b" class="flex justify-between">
       <a role="button" class="">langfuse</a>
     </label>
   
@@ -2911,8 +2944,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9c20639ed9ed4feb764f4bac9cac218f" class="toggle"  />
-    <label for="section-9c20639ed9ed4feb764f4bac9cac218f" class="flex justify-between">
+    <input type="checkbox" id="section-159965614aff9bed370d992d243d0f28" class="toggle"  />
+    <label for="section-159965614aff9bed370d992d243d0f28" class="flex justify-between">
       <a role="button" class="">ragas</a>
     </label>
   
@@ -2950,8 +2983,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f0f5dda3ea316a50f6d522c3904406d7" class="toggle"  />
-    <label for="section-f0f5dda3ea316a50f6d522c3904406d7" class="flex justify-between">
+    <input type="checkbox" id="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="toggle"  />
+    <label for="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="flex justify-between">
       <a role="button" class="">llm-as-judge</a>
     </label>
   
@@ -3103,8 +3136,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="toggle"  />
-    <label for="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="flex justify-between">
+    <input type="checkbox" id="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="toggle"  />
+    <label for="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="flex justify-between">
       <a role="button" class="">Harness engineering</a>
     </label>
   
@@ -3119,8 +3152,212 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-fba0f3dbc923c98eb8930452d3ded9da" class="toggle"  />
-    <label for="section-fba0f3dbc923c98eb8930452d3ded9da" class="flex justify-between">
+    <input type="checkbox" id="section-104617d101dbf375f60fa698eeb5966a" class="toggle"  />
+    <label for="section-104617d101dbf375f60fa698eeb5966a" class="flex justify-between">
+      <a role="button" class="">Compress *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code/" class="">Claude /compact[A1] *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-compress/" class="">Claude Code - Compact summary</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/codex/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code2/" class="">Claude Code2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code3/" class="">Claude Code3</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f957c352b7370ac61b04758ecb52fade" class="toggle"  />
+    <label for="section-f957c352b7370ac61b04758ecb52fade" class="flex justify-between">
+      <a role="button" class="">可靠性 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/codex/" class="">Codex 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/dsh/" class="">Deepseek harness 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/pi-durable/" class="">Pi Durable</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="toggle"  />
+    <label for="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="flex justify-between">
       <a role="button" class="">Harness</a>
     </label>
   
@@ -3135,7 +3372,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/10-harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
   
 
           
@@ -3153,7 +3390,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/10-harness-enginering/harness/" class="">Harness</a>
   
 
           
@@ -3176,8 +3413,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="toggle"  />
-    <label for="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="flex justify-between">
+    <input type="checkbox" id="section-a0f0941605053d7b5666363df4970351" class="toggle"  />
+    <label for="section-a0f0941605053d7b5666363df4970351" class="flex justify-between">
       <a role="button" class="">OpenClaw</a>
     </label>
   
@@ -3323,8 +3560,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-946abd4062c933c072a8c623969add46" class="toggle"  />
-    <label for="section-946abd4062c933c072a8c623969add46" class="flex justify-between">
+    <input type="checkbox" id="section-7185e230a37938c1265b025f647037ad" class="toggle"  />
+    <label for="section-7185e230a37938c1265b025f647037ad" class="flex justify-between">
       <a role="button" class="">Hermes Agent</a>
     </label>
   
@@ -3434,47 +3671,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e7b0748ad48450dde76b72297d165429" class="toggle"  />
-    <label for="section-e7b0748ad48450dde76b72297d165429" class="flex justify-between">
-      <a role="button" class="">JEV</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/JEV/JEV/" class="">JEV</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-fcf812d87768431bb3ab86201a4222e2" class="toggle"  />
-    <label for="section-fcf812d87768431bb3ab86201a4222e2" class="flex justify-between">
+    <input type="checkbox" id="section-9d52e8079db1067f4a0c448c7b68b11b" class="toggle"  />
+    <label for="section-9d52e8079db1067f4a0c448c7b68b11b" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
@@ -3584,8 +3782,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-02af4685675e68e6f8179d748eeb6c5a" class="toggle"  />
-    <label for="section-02af4685675e68e6f8179d748eeb6c5a" class="flex justify-between">
+    <input type="checkbox" id="section-484bcac8c98a52dc9d58366512e4159a" class="toggle"  />
+    <label for="section-484bcac8c98a52dc9d58366512e4159a" class="flex justify-between">
       <a role="button" class="">Codex</a>
     </label>
   
@@ -3618,137 +3816,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ad440789e1a7ba07eb2b3918829c7257" class="toggle"  />
-    <label for="section-ad440789e1a7ba07eb2b3918829c7257" class="flex justify-between">
-      <a role="button" class="">Compress *</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code/" class="">Claude /compact[A1] *</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-compress/" class="">Claude Code - Compact summary</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/codex/" class="">CodeX 上下文</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code2/" class="">Claude Code2</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code3/" class="">Claude Code3</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-7b4eb57325a2b2a77e7753390fc7d915" class="toggle"  />
-    <label for="section-7b4eb57325a2b2a77e7753390fc7d915" class="flex justify-between">
+    <input type="checkbox" id="section-bb4ccb54455a606ed07ce1fdab4ac532" class="toggle"  />
+    <label for="section-bb4ccb54455a606ed07ce1fdab4ac532" class="flex justify-between">
       <a role="button" class="">Pi Agent</a>
     </label>
   
@@ -3830,83 +3899,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c47c9c73c26a489b07f412d8d4ee4f40" class="toggle"  />
-    <label for="section-c47c9c73c26a489b07f412d8d4ee4f40" class="flex justify-between">
-      <a role="button" class="">可靠性 *</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/codex/" class="">Codex 可靠性</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/dsh/" class="">Deepseek harness 可靠性</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/pi-durable/" class="">Pi Durable</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-eec787204d3e675b4351db6ec0be7bc8" class="toggle"  />
-    <label for="section-eec787204d3e675b4351db6ec0be7bc8" class="flex justify-between">
+    <input type="checkbox" id="section-27894a1d29427c9d52d1df6110020b8e" class="toggle"  />
+    <label for="section-27894a1d29427c9d52d1df6110020b8e" class="flex justify-between">
       <a role="button" class="">实战</a>
     </label>
   
@@ -3922,6 +3916,58 @@ https://github.com/alex-shpak/hugo-book
 
   
     <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8488d215ee4dde3fcb569ebf074c8d99" class="toggle"  />
+    <label for="section-8488d215ee4dde3fcb569ebf074c8d99" class="flex justify-between">
+      <a role="button" class="">JEV</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/100-JEV/hermes/Jev%E5%8E%9F%E7%90%86%E4%B8%8E%E5%BA%94%E7%94%A8/" class="">Jev原理与应用</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/100-JEV/JEV/" class="">JEV</a>
   
 
           
@@ -3967,8 +4013,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b41552d83299a260ffc5181fd5bf1177" class="toggle"  />
-    <label for="section-b41552d83299a260ffc5181fd5bf1177" class="flex justify-between">
+    <input type="checkbox" id="section-1f82435e89939f7232e02729b008213e" class="toggle"  />
+    <label for="section-1f82435e89939f7232e02729b008213e" class="flex justify-between">
       <a role="button" class="">Loops engineering</a>
     </label>
   
@@ -3983,8 +4029,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1a4757bdd1099e1149094c77f1470e5d" class="toggle"  />
-    <label for="section-1a4757bdd1099e1149094c77f1470e5d" class="flex justify-between">
+    <input type="checkbox" id="section-bf010a926485186e47c6ea2d2776a45f" class="toggle"  />
+    <label for="section-bf010a926485186e47c6ea2d2776a45f" class="flex justify-between">
       <a role="button" class="">goal</a>
     </label>
   
@@ -4040,8 +4086,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-eca2bd358c3e27c981a441ba4e158cb3" class="toggle"  />
-    <label for="section-eca2bd358c3e27c981a441ba4e158cb3" class="flex justify-between">
+    <input type="checkbox" id="section-013b791baed028e00c3cd685450d1255" class="toggle"  />
+    <label for="section-013b791baed028e00c3cd685450d1255" class="flex justify-between">
       <a role="button" class="">loop engineering</a>
     </label>
   
@@ -4097,8 +4143,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27d39407dbc0d87e956d19638a0f1da3" class="toggle"  />
-    <label for="section-27d39407dbc0d87e956d19638a0f1da3" class="flex justify-between">
+    <input type="checkbox" id="section-b284ec03b7c672cfde434851c4ea7377" class="toggle"  />
+    <label for="section-b284ec03b7c672cfde434851c4ea7377" class="flex justify-between">
       <a role="button" class="">长程任务</a>
     </label>
   
@@ -4167,8 +4213,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-689fa0c955be06dbb890852c4c2826e8" class="toggle"  />
-    <label for="section-689fa0c955be06dbb890852c4c2826e8" class="flex justify-between">
+    <input type="checkbox" id="section-4211c6654bc32161daa2abe28c73b06e" class="toggle"  />
+    <label for="section-4211c6654bc32161daa2abe28c73b06e" class="flex justify-between">
       <a role="button" class="">Meta Harness</a>
     </label>
   
@@ -4183,8 +4229,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-524d9cf59683da54d7ecc3c0ff6519ce" class="toggle"  />
-    <label for="section-524d9cf59683da54d7ecc3c0ff6519ce" class="flex justify-between">
+    <input type="checkbox" id="section-c81a15018d7ae452140c88ff216be77d" class="toggle"  />
+    <label for="section-c81a15018d7ae452140c88ff216be77d" class="flex justify-between">
       <a role="button" class="">Managed Agent</a>
     </label>
   
@@ -4312,8 +4358,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="toggle"  />
-    <label for="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="flex justify-between">
+    <input type="checkbox" id="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="toggle"  />
+    <label for="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="flex justify-between">
       <a role="button" class="">Omnigent</a>
     </label>
   
@@ -4356,8 +4402,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="toggle"  />
-    <label for="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="flex justify-between">
+    <input type="checkbox" id="section-920c2fa3546aca5261a01784a53ddff3" class="toggle"  />
+    <label for="section-920c2fa3546aca5261a01784a53ddff3" class="flex justify-between">
       <a role="button" class="">Context Engineering</a>
     </label>
   
@@ -4426,8 +4472,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="toggle"  />
-    <label for="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="flex justify-between">
+    <input type="checkbox" id="section-0563b2fd6005bd3ffd431bec1f81b423" class="toggle"  />
+    <label for="section-0563b2fd6005bd3ffd431bec1f81b423" class="flex justify-between">
       <a role="button" class="">Plan mode</a>
     </label>
   
@@ -4483,8 +4529,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-4a730712863635107d9ac9a5d3e3abd6" class="toggle"  />
-    <label for="section-4a730712863635107d9ac9a5d3e3abd6" class="flex justify-between">
+    <input type="checkbox" id="section-ceda1f30ce03531a336a1f1ebb026a63" class="toggle"  />
+    <label for="section-ceda1f30ce03531a336a1f1ebb026a63" class="flex justify-between">
       <a role="button" class="">Prompting caching *</a>
     </label>
   
@@ -4527,8 +4573,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-98dd33716c353fd55829a04c54d5e57e" class="toggle"  />
-    <label for="section-98dd33716c353fd55829a04c54d5e57e" class="flex justify-between">
+    <input type="checkbox" id="section-097abb2131971a92a13c1e53f850eb30" class="toggle"  />
+    <label for="section-097abb2131971a92a13c1e53f850eb30" class="flex justify-between">
       <a role="button" class="">Prompt Engineering</a>
     </label>
   
@@ -4692,8 +4738,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ad26e82e3d025c385444444a93d72502" class="toggle"  />
-    <label for="section-ad26e82e3d025c385444444a93d72502" class="flex justify-between">
+    <input type="checkbox" id="section-951bebaba4a0e7ffcc11ac548251e389" class="toggle"  />
+    <label for="section-951bebaba4a0e7ffcc11ac548251e389" class="flex justify-between">
       <a role="button" class="">DeepResearch</a>
     </label>
   
@@ -4875,8 +4921,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9cc3ec6d88705686bc94595daa8aa25e" class="toggle"  />
-    <label for="section-9cc3ec6d88705686bc94595daa8aa25e" class="flex justify-between">
+    <input type="checkbox" id="section-def011b742c3bb564ed84bad958a8bb9" class="toggle"  />
+    <label for="section-def011b742c3bb564ed84bad958a8bb9" class="flex justify-between">
       <a role="button" class="">FineTuning</a>
     </label>
   
@@ -4891,8 +4937,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-7b3c994f2c17601a215b6b57dc71b7ef" class="toggle"  />
-    <label for="section-7b3c994f2c17601a215b6b57dc71b7ef" class="flex justify-between">
+    <input type="checkbox" id="section-b1c6c40bb101131e4fe5a95225175846" class="toggle"  />
+    <label for="section-b1c6c40bb101131e4fe5a95225175846" class="flex justify-between">
       <a role="button" class="">Instruct Tuning</a>
     </label>
   
@@ -4948,8 +4994,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ebf0a5559cc09bbc171db379534a7dc9" class="toggle"  />
-    <label for="section-ebf0a5559cc09bbc171db379534a7dc9" class="flex justify-between">
+    <input type="checkbox" id="section-a5f257b0a67dc566e55c98245e32a9a3" class="toggle"  />
+    <label for="section-a5f257b0a67dc566e55c98245e32a9a3" class="flex justify-between">
       <a role="button" class="">实践 *</a>
     </label>
   
@@ -5023,8 +5069,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0082251d40c765323fa32be9b3686aa0" class="toggle"  />
-    <label for="section-0082251d40c765323fa32be9b3686aa0" class="flex justify-between">
+    <input type="checkbox" id="section-bc06fe507152e253f2b8fedc786f69f9" class="toggle"  />
+    <label for="section-bc06fe507152e253f2b8fedc786f69f9" class="flex justify-between">
       <a role="button" class="">PEFT *</a>
     </label>
   
@@ -5224,8 +5270,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d763501d6c35330245339b6c8531cf7c" class="toggle"  />
-    <label for="section-d763501d6c35330245339b6c8531cf7c" class="flex justify-between">
+    <input type="checkbox" id="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="toggle"  />
+    <label for="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="flex justify-between">
       <a role="button" class="">Data</a>
     </label>
   
@@ -5484,8 +5530,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-284de0efced75cd016672664a17456be" class="toggle"  />
-    <label for="section-284de0efced75cd016672664a17456be" class="flex justify-between">
+    <input type="checkbox" id="section-ec440fd30b4fccc02d2866bf269d3c1c" class="toggle"  />
+    <label for="section-ec440fd30b4fccc02d2866bf269d3c1c" class="flex justify-between">
       <a role="button" class="">AI Native</a>
     </label>
   
@@ -5595,8 +5641,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a67b63d6d594556c363a35d7d38cd355" class="toggle"  />
-    <label for="section-a67b63d6d594556c363a35d7d38cd355" class="flex justify-between">
+    <input type="checkbox" id="section-c4d50087126f44db07d7a7f0faa67711" class="toggle"  />
+    <label for="section-c4d50087126f44db07d7a7f0faa67711" class="flex justify-between">
       <a role="button" class="">Langchain</a>
     </label>
   
@@ -5688,8 +5734,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3926c431ee2abb31fef9cd9185588ed0" class="toggle"  />
-    <label for="section-3926c431ee2abb31fef9cd9185588ed0" class="flex justify-between">
+    <input type="checkbox" id="section-461a4404ae59395291876d9268139c73" class="toggle"  />
+    <label for="section-461a4404ae59395291876d9268139c73" class="flex justify-between">
       <a role="button" class="">Application</a>
     </label>
   
@@ -5835,8 +5881,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="toggle"  />
-    <label for="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="flex justify-between">
+    <input type="checkbox" id="section-3ce504245d1c08bb826d2f16a7a9180c" class="toggle"  />
+    <label for="section-3ce504245d1c08bb826d2f16a7a9180c" class="flex justify-between">
       <a role="button" class="">其他</a>
     </label>
   
@@ -6086,30 +6132,30 @@ https://github.com/alex-shpak/hugo-book
 </blockquote>
 <p>在 Agent 架构中，Plan 扮演的是<strong>中间表示</strong>（Intermediate Representation）的角色。它介于&quot;意图&quot;和&quot;行动&quot;之间，提供三个关键能力：</p>
 <table>
-	<thead>
-			<tr>
-					<th>能力</th>
-					<th>说明</th>
-					<th>价值</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>分解</strong>（Decomposition）</td>
-					<td>将复杂目标拆为可执行的子任务</td>
-					<td>降低单步认知负荷</td>
-			</tr>
-			<tr>
-					<td><strong>排序</strong>（Ordering）</td>
-					<td>确定子任务的执行顺序和依赖关系</td>
-					<td>避免无效执行</td>
-			</tr>
-			<tr>
-					<td><strong>容错</strong>（Fault Tolerance）</td>
-					<td>为每个步骤预设失败处理策略</td>
-					<td>提高端到端成功率</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>能力</th>
+          <th>说明</th>
+          <th>价值</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>分解</strong>（Decomposition）</td>
+          <td>将复杂目标拆为可执行的子任务</td>
+          <td>降低单步认知负荷</td>
+      </tr>
+      <tr>
+          <td><strong>排序</strong>（Ordering）</td>
+          <td>确定子任务的执行顺序和依赖关系</td>
+          <td>避免无效执行</td>
+      </tr>
+      <tr>
+          <td><strong>容错</strong>（Fault Tolerance）</td>
+          <td>为每个步骤预设失败处理策略</td>
+          <td>提高端到端成功率</td>
+      </tr>
+  </tbody>
 </table>
 <p>这三个能力不是 LLM 天然具备的。GPT-4 在零样本条件下直接执行复杂任务的成功率不足 40%（据 GAIA benchmark 报告），而引入 planning 后成功率提升至 65-75%。这不是因为模型&quot;更聪明&quot;了，而是因为<strong>结构化的执行路径减少了错误传播的表面积</strong>。</p>
 <h3 id="本文结构">
@@ -6151,30 +6197,30 @@ stack(X,Y) — 如果手持 X 且 Y 上无物，将 X 放在 Y 上
 unstack(X,Y) — 如果 X 在 Y 上且机械臂空，拿起 X
 </code></pre><p>STRIPS 用<strong>一阶逻辑</strong>表示状态和操作。每个操作有三个部分：</p>
 <table>
-	<thead>
-			<tr>
-					<th>组成部分</th>
-					<th>含义</th>
-					<th>Blocks World 示例</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>Precondition</strong></td>
-					<td>执行前必须满足的条件</td>
-					<td><code>Clear(A) ∧ Holding(arm)</code></td>
-			</tr>
-			<tr>
-					<td><strong>Add List</strong></td>
-					<td>执行后为真的事实</td>
-					<td><code>On(A,B) ∧ Clear(C)</code></td>
-			</tr>
-			<tr>
-					<td><strong>Delete List</strong></td>
-					<td>执行后为假的事实</td>
-					<td><code>Clear(B) ∧ Holding(arm)</code></td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>组成部分</th>
+          <th>含义</th>
+          <th>Blocks World 示例</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Precondition</strong></td>
+          <td>执行前必须满足的条件</td>
+          <td><code>Clear(A) ∧ Holding(arm)</code></td>
+      </tr>
+      <tr>
+          <td><strong>Add List</strong></td>
+          <td>执行后为真的事实</td>
+          <td><code>On(A,B) ∧ Clear(C)</code></td>
+      </tr>
+      <tr>
+          <td><strong>Delete List</strong></td>
+          <td>执行后为假的事实</td>
+          <td><code>Clear(B) ∧ Holding(arm)</code></td>
+      </tr>
+  </tbody>
 </table>
 <p>这种表示的精妙之处在于：它把&quot;世界状态&quot;抽象为<strong>一组布尔事实的集合</strong>。规划问题变成了<strong>从初始事实集合到目标事实集合的状态空间搜索</strong>。</p>
 <h4 id="搜索策略的三角">
@@ -6216,34 +6262,34 @@ unstack(X,Y) — 如果 X 在 Y 上且机械臂空，拿起 X
     style Backward fill:#fff3e0
     style Heuristic fill:#e3f2fd</pre>
 <table>
-	<thead>
-			<tr>
-					<th>策略</th>
-					<th>核心思想</th>
-					<th>适用场景</th>
-					<th>复杂度</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>前向搜索</strong></td>
-					<td>从初始状态出发，应用所有可用操作，直到达到目标</td>
-					<td>操作少、状态空间小的封闭世界</td>
-					<td>O(b^d)，b 为分支因子，d 为深度</td>
-			</tr>
-			<tr>
-					<td><strong>后向搜索</strong></td>
-					<td>从目标状态出发，寻找能达成目标的子目标，递归回溯</td>
-					<td>目标明确、初始状态复杂的场景</td>
-					<td>可能生成不可达子目标</td>
-			</tr>
-			<tr>
-					<td><strong>启发式搜索</strong></td>
-					<td>用启发函数 h(s) 估计当前状态到目标的距离，优先扩展最有希望的节点</td>
-					<td>大规模状态空间，需要剪枝</td>
-					<td>O(b^(d/2)) 双向搜索更优</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th>核心思想</th>
+          <th>适用场景</th>
+          <th>复杂度</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>前向搜索</strong></td>
+          <td>从初始状态出发，应用所有可用操作，直到达到目标</td>
+          <td>操作少、状态空间小的封闭世界</td>
+          <td>O(b^d)，b 为分支因子，d 为深度</td>
+      </tr>
+      <tr>
+          <td><strong>后向搜索</strong></td>
+          <td>从目标状态出发，寻找能达成目标的子目标，递归回溯</td>
+          <td>目标明确、初始状态复杂的场景</td>
+          <td>可能生成不可达子目标</td>
+      </tr>
+      <tr>
+          <td><strong>启发式搜索</strong></td>
+          <td>用启发函数 h(s) 估计当前状态到目标的距离，优先扩展最有希望的节点</td>
+          <td>大规模状态空间，需要剪枝</td>
+          <td>O(b^(d/2)) 双向搜索更优</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>FastForward (FF)</strong> 是 2001 年 Hoffmann 提出的启发式规划器 [2]，它通过<strong>松弛规划任务</strong>（忽略 delete list）快速计算启发值。FF 在 IPC（International Planning Competition）中连续多年夺冠，至今仍是经典规划的标杆。</p>
 <h3 id="22-htn分层任务网络">
@@ -6283,34 +6329,34 @@ unstack(X,Y) — 如果 X 在 Y 上且机械臂空，拿起 X
 </h3>
 <p>经典规划在封闭世界（Closed World）中表现卓越，但在开放域（Open Domain）中面临三个根本性挑战：</p>
 <table>
-	<thead>
-			<tr>
-					<th>挑战</th>
-					<th>经典规划的假设</th>
-					<th>开放域的现实</th>
-					<th>影响</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>完全可观测性</strong></td>
-					<td>世界状态完全已知</td>
-					<td>信息需要主动获取（搜索、API 调用）</td>
-					<td>无法预知所有前置条件</td>
-			</tr>
-			<tr>
-					<td><strong>确定性执行</strong></td>
-					<td>操作结果确定</td>
-					<td>工具调用可能失败、API 可能限流</td>
-					<td>plan 可能中途失效</td>
-			</tr>
-			<tr>
-					<td><strong>有限操作集</strong></td>
-					<td>操作集合固定且有限</td>
-					<td>可用工具动态变化（新 API、新技能）</td>
-					<td>无法穷举所有可能动作</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>挑战</th>
+          <th>经典规划的假设</th>
+          <th>开放域的现实</th>
+          <th>影响</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>完全可观测性</strong></td>
+          <td>世界状态完全已知</td>
+          <td>信息需要主动获取（搜索、API 调用）</td>
+          <td>无法预知所有前置条件</td>
+      </tr>
+      <tr>
+          <td><strong>确定性执行</strong></td>
+          <td>操作结果确定</td>
+          <td>工具调用可能失败、API 可能限流</td>
+          <td>plan 可能中途失效</td>
+      </tr>
+      <tr>
+          <td><strong>有限操作集</strong></td>
+          <td>操作集合固定且有限</td>
+          <td>可用工具动态变化（新 API、新技能）</td>
+          <td>无法穷举所有可能动作</td>
+      </tr>
+  </tbody>
 </table>
 <p>STRIPS 和 HTN 依赖的<strong>形式化表示</strong>在开放域中无法维持。你无法用一阶逻辑完整描述&quot;调用 GitHub API 获取仓库信息&quot;的前置条件（网络是否通畅？token 是否过期？rate limit 是否触发？）。</p>
 <p>这就是为什么 LLM Agent 的 planning 转向了<strong>基于自然语言的神经规划</strong>（Neural Planning）：</p>
@@ -6365,7 +6411,7 @@ unstack(X,Y) — 如果 X 在 Y 上且机械臂空，拿起 X
     A-&gt;&gt;A: Thought 3: 综合信息
     A-&gt;&gt;U: Final Answer</pre>
 <p><strong>ReAct 的执行循环</strong>：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">react_loop</span>(question, max_steps<span style="color:#f92672">=</span><span style="color:#ae81ff">10</span>):
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">react_loop</span>(question, max_steps<span style="color:#f92672">=</span><span style="color:#ae81ff">10</span>):
 </span></span><span style="display:flex;"><span>    prompt <span style="color:#f92672">=</span> <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Question: </span><span style="color:#e6db74">{</span>question<span style="color:#e6db74">}</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>
 </span></span><span style="display:flex;"><span>    history <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;&#34;</span>
 </span></span><span style="display:flex;"><span>    
@@ -6388,30 +6434,30 @@ unstack(X,Y) — 如果 X 在 Y 上且机械臂空，拿起 X
 </span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> llm(prompt <span style="color:#f92672">+</span> history <span style="color:#f92672">+</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">Force finish based on above.&#34;</span>)
 </span></span></code></pre></div><p><strong>ReAct 的关键设计选择</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>选择</th>
-					<th>说明</th>
-					<th>权衡</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>Thought 必须写在 Action 之前</strong></td>
-					<td>强制模型先推理再行动</td>
-					<td>增加了 token 开销，但显著减少无效调用</td>
-			</tr>
-			<tr>
-					<td><strong>Observation 直接追加到 prompt</strong></td>
-					<td>上下文作为唯一状态</td>
-					<td>简单但受 context window 限制</td>
-			</tr>
-			<tr>
-					<td><strong>无显式 plan 结构</strong></td>
-					<td>plan 隐含在对话历史中</td>
-					<td>灵活性高但难以调试和复用</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>选择</th>
+          <th>说明</th>
+          <th>权衡</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Thought 必须写在 Action 之前</strong></td>
+          <td>强制模型先推理再行动</td>
+          <td>增加了 token 开销，但显著减少无效调用</td>
+      </tr>
+      <tr>
+          <td><strong>Observation 直接追加到 prompt</strong></td>
+          <td>上下文作为唯一状态</td>
+          <td>简单但受 context window 限制</td>
+      </tr>
+      <tr>
+          <td><strong>无显式 plan 结构</strong></td>
+          <td>plan 隐含在对话历史中</td>
+          <td>灵活性高但难以调试和复用</td>
+      </tr>
+  </tbody>
 </table>
 <p>ReAct 的成功在于它的<strong>极简性</strong>。它没有引入复杂的规划数据结构，而是利用 LLM 的对话能力天然地实现了&quot;计划-执行-观察&quot;的循环。但这也带来了问题：<strong>plan 无法持久化、无法共享、无法版本化</strong>。</p>
 <h3 id="32-tree-of-thoughts-tot多路径探索">
@@ -6482,35 +6528,35 @@ unstack(X,Y) — 如果 X 在 Y 上且机械臂空，拿起 X
     class Select,Expand,Simulate,Backprop phase</pre>
 <p><strong>LATS 的关键创新</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>组件</th>
-					<th>传统 MCTS</th>
-					<th>LATS 适配</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>选择策略</strong></td>
-					<td>UCB1 = v_i + C * sqrt(ln N / n_i)</td>
-					<td>LLM 替代 UCB1，用语义评估</td>
-			</tr>
-			<tr>
-					<td><strong>扩展策略</strong></td>
-					<td>随机 rollout</td>
-					<td>LLM 生成高质量候选</td>
-			</tr>
-			<tr>
-					<td><strong>模拟策略</strong></td>
-					<td>随机策略评估</td>
-					<td>LLM 快速评分（无需完整执行）</td>
-			</tr>
-			<tr>
-					<td><strong>回传策略</strong></td>
-					<td>胜负结果累加</td>
-					<td>语义质量分数累加</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>组件</th>
+          <th>传统 MCTS</th>
+          <th>LATS 适配</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>选择策略</strong></td>
+          <td>UCB1 = v_i + C * sqrt(ln N / n_i)</td>
+          <td>LLM 替代 UCB1，用语义评估</td>
+      </tr>
+      <tr>
+          <td><strong>扩展策略</strong></td>
+          <td>随机 rollout</td>
+          <td>LLM 生成高质量候选</td>
+      </tr>
+      <tr>
+          <td><strong>模拟策略</strong></td>
+          <td>随机策略评估</td>
+          <td>LLM 快速评分（无需完整执行）</td>
+      </tr>
+      <tr>
+          <td><strong>回传策略</strong></td>
+          <td>胜负结果累加</td>
+          <td>语义质量分数累加</td>
+      </tr>
+  </tbody>
 </table>
 <p>LATS 的优势在于<strong>兼顾探索与利用</strong>：</p>
 <ul>
@@ -6538,7 +6584,7 @@ unstack(X,Y) — 如果 X 在 Y 上且机械臂空，拿起 X
     class Result success
     class Reflect,Memory failure</pre>
 <p><strong>Reflexion 的记忆结构</strong>：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ReflexionMemory</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ReflexionMemory</span>:
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self):
 </span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>trials <span style="color:#f92672">=</span> []  <span style="color:#75715e"># 每次尝试的完整轨迹</span>
 </span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>reflections <span style="color:#f92672">=</span> []  <span style="color:#75715e"># 反思文本</span>
@@ -6591,88 +6637,88 @@ A3: 济宁市不是首都，问题前提错误。
 最终答案: 问题包含错误前提。济宁市是中国山东省的地级市，不是任何国家的首都。
 </code></pre><p>Self-Ask 的独特之处在于它<strong>显式地生成中间问题</strong>，并通过搜索引擎获取答案。这与 ReAct 的隐式推理不同：</p>
 <table>
-	<thead>
-			<tr>
-					<th>维度</th>
-					<th>ReAct</th>
-					<th>Self-Ask</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>分解方式</strong></td>
-					<td>隐式（在 Thought 中）</td>
-					<td>显式（生成 Follow-up Questions）</td>
-			</tr>
-			<tr>
-					<td><strong>信息获取</strong></td>
-					<td>工具调用嵌入在推理中</td>
-					<td>先问后答，结构化</td>
-			</tr>
-			<tr>
-					<td><strong>适用场景</strong></td>
-					<td>多步骤操作</td>
-					<td>多跳问答、事实查询</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>ReAct</th>
+          <th>Self-Ask</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>分解方式</strong></td>
+          <td>隐式（在 Thought 中）</td>
+          <td>显式（生成 Follow-up Questions）</td>
+      </tr>
+      <tr>
+          <td><strong>信息获取</strong></td>
+          <td>工具调用嵌入在推理中</td>
+          <td>先问后答，结构化</td>
+      </tr>
+      <tr>
+          <td><strong>适用场景</strong></td>
+          <td>多步骤操作</td>
+          <td>多跳问答、事实查询</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="36-范式横向对比">
   3.6 范式横向对比
   <a class="anchor" href="#36-%e8%8c%83%e5%bc%8f%e6%a8%aa%e5%90%91%e5%af%b9%e6%af%94">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>范式</th>
-					<th>核心机制</th>
-					<th>适用场景</th>
-					<th>计算开销</th>
-					<th>容错能力</th>
-					<th>代表实现</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>ReAct</strong></td>
-					<td>Thought-Action-Observation 循环</td>
-					<td>通用多步任务</td>
-					<td>低</td>
-					<td>中（可重试）</td>
-					<td>LangChain Agent</td>
-			</tr>
-			<tr>
-					<td><strong>ToT</strong></td>
-					<td>树状多路径探索</td>
-					<td>数学推理、创意生成</td>
-					<td>中</td>
-					<td>高（可回溯）</td>
-					<td>ToT 开源实现</td>
-			</tr>
-			<tr>
-					<td><strong>LATS</strong></td>
-					<td>MCTS + LLM 评估</td>
-					<td>代码生成、复杂规划</td>
-					<td>高</td>
-					<td>极高</td>
-					<td>LATS 论文代码</td>
-			</tr>
-			<tr>
-					<td><strong>Reflexion</strong></td>
-					<td>反思记忆累积</td>
-					<td>环境交互、试错学习</td>
-					<td>中</td>
-					<td>极高</td>
-					<td>Reflexion GitHub</td>
-			</tr>
-			<tr>
-					<td><strong>Self-Ask</strong></td>
-					<td>显式追问分解</td>
-					<td>多跳问答、事实核查</td>
-					<td>低</td>
-					<td>中</td>
-					<td>self-ask 库</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>范式</th>
+          <th>核心机制</th>
+          <th>适用场景</th>
+          <th>计算开销</th>
+          <th>容错能力</th>
+          <th>代表实现</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>ReAct</strong></td>
+          <td>Thought-Action-Observation 循环</td>
+          <td>通用多步任务</td>
+          <td>低</td>
+          <td>中（可重试）</td>
+          <td>LangChain Agent</td>
+      </tr>
+      <tr>
+          <td><strong>ToT</strong></td>
+          <td>树状多路径探索</td>
+          <td>数学推理、创意生成</td>
+          <td>中</td>
+          <td>高（可回溯）</td>
+          <td>ToT 开源实现</td>
+      </tr>
+      <tr>
+          <td><strong>LATS</strong></td>
+          <td>MCTS + LLM 评估</td>
+          <td>代码生成、复杂规划</td>
+          <td>高</td>
+          <td>极高</td>
+          <td>LATS 论文代码</td>
+      </tr>
+      <tr>
+          <td><strong>Reflexion</strong></td>
+          <td>反思记忆累积</td>
+          <td>环境交互、试错学习</td>
+          <td>中</td>
+          <td>极高</td>
+          <td>Reflexion GitHub</td>
+      </tr>
+      <tr>
+          <td><strong>Self-Ask</strong></td>
+          <td>显式追问分解</td>
+          <td>多跳问答、事实核查</td>
+          <td>低</td>
+          <td>中</td>
+          <td>self-ask 库</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>关键洞察</strong>：没有银弹。选择 planning 范式取决于三个维度：</p>
 <ol>
@@ -6707,7 +6753,7 @@ A3: 济宁市不是首都，问题前提错误。
   模式一：Zero-shot Plan（一次性输出）
   <a class="anchor" href="#%e6%a8%a1%e5%bc%8f%e4%b8%80zero-shot-plan%e4%b8%80%e6%ac%a1%e6%80%a7%e8%be%93%e5%87%ba">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>You are a planning agent. Given the following task, create a detailed plan
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>You are a planning agent. Given the following task, create a detailed plan
 </span></span><span style="display:flex;"><span>with steps, dependencies, and success criteria.
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>Task: {user_task}
@@ -6725,7 +6771,7 @@ A3: 济宁市不是首都，问题前提错误。
   模式二：Step-by-step Plan（逐步细化）
   <a class="anchor" href="#%e6%a8%a1%e5%bc%8f%e4%ba%8cstep-by-step-plan%e9%80%90%e6%ad%a5%e7%bb%86%e5%8c%96">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Task: {user_task}
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Task: {user_task}
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>Let&#39;s think step by step. First, identify the main phases of this task.
 </span></span><span style="display:flex;"><span>Then, for each phase, break it down into specific actions.
@@ -6741,7 +6787,7 @@ A3: 济宁市不是首都，问题前提错误。
   模式三：Interactive Plan（动态调整）
   <a class="anchor" href="#%e6%a8%a1%e5%bc%8f%e4%b8%89interactive-plan%e5%8a%a8%e6%80%81%e8%b0%83%e6%95%b4">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>You are an adaptive planner. Create an initial plan for the task below.
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>You are an adaptive planner. Create an initial plan for the task below.
 </span></span><span style="display:flex;"><span>After each step execution, you will receive feedback. Update the plan
 </span></span><span style="display:flex;"><span>based on what actually happened, not just what you expected.
 </span></span><span style="display:flex;"><span>
@@ -6756,38 +6802,38 @@ A3: 济宁市不是首都，问题前提错误。
 </h3>
 <p>我们对三种模式在同一任务集（n=50，来自 GAIA benchmark 的子集）上进行了测试：</p>
 <table>
-	<thead>
-			<tr>
-					<th>模式</th>
-					<th>平均步骤数</th>
-					<th>步骤可执行率</th>
-					<th>端到端成功率</th>
-					<th>平均 Token 消耗</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>Zero-shot</td>
-					<td>4.2</td>
-					<td>68%</td>
-					<td>38%</td>
-					<td>1,200</td>
-			</tr>
-			<tr>
-					<td>Step-by-step</td>
-					<td>5.8</td>
-					<td>79%</td>
-					<td>52%</td>
-					<td>2,800</td>
-			</tr>
-			<tr>
-					<td>Interactive</td>
-					<td>6.3</td>
-					<td>85%</td>
-					<td>67%</td>
-					<td>4,500（含反思）</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>平均步骤数</th>
+          <th>步骤可执行率</th>
+          <th>端到端成功率</th>
+          <th>平均 Token 消耗</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Zero-shot</td>
+          <td>4.2</td>
+          <td>68%</td>
+          <td>38%</td>
+          <td>1,200</td>
+      </tr>
+      <tr>
+          <td>Step-by-step</td>
+          <td>5.8</td>
+          <td>79%</td>
+          <td>52%</td>
+          <td>2,800</td>
+      </tr>
+      <tr>
+          <td>Interactive</td>
+          <td>6.3</td>
+          <td>85%</td>
+          <td>67%</td>
+          <td>4,500（含反思）</td>
+      </tr>
+  </tbody>
 </table>
 <p>结论很清晰：<strong>越复杂的 planning 模式，成功率越高，但代价是更多的 token 和更高的延迟</strong>。这是一个经典的 trade-off：在实时性要求高的场景（如对话式 Agent）中，zero-shot 或 step-by-step 更合适；在批量处理或高价值任务中，interactive 模式值得额外的开销。</p>
 <h3 id="43-context-管理plan-如何在多轮中保持">
@@ -6817,37 +6863,37 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#%e8%a7%a3%e5%86%b3%e6%96%b9%e6%a1%88plan-as-state-vs-plan-as-context">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>策略</th>
-					<th>机制</th>
-					<th>优点</th>
-					<th>缺点</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>Plan-as-Context</strong></td>
-					<td>Plan 作为 prompt 的一部分，每次完整传入</td>
-					<td>简单，LLM 天然理解</td>
-					<td>受 context window 限制；中间部分利用率低</td>
-			</tr>
-			<tr>
-					<td><strong>Plan-as-State</strong></td>
-					<td>Plan 作为独立数据结构，只传入当前步骤</td>
-					<td>不受长度限制；当前步骤聚焦</td>
-					<td>需要额外的状态管理代码</td>
-			</tr>
-			<tr>
-					<td><strong>混合策略</strong></td>
-					<td>Plan 摘要放头部，当前步骤放尾部</td>
-					<td>兼顾全局和局部</td>
-					<td>实现复杂度最高</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th>机制</th>
+          <th>优点</th>
+          <th>缺点</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Plan-as-Context</strong></td>
+          <td>Plan 作为 prompt 的一部分，每次完整传入</td>
+          <td>简单，LLM 天然理解</td>
+          <td>受 context window 限制；中间部分利用率低</td>
+      </tr>
+      <tr>
+          <td><strong>Plan-as-State</strong></td>
+          <td>Plan 作为独立数据结构，只传入当前步骤</td>
+          <td>不受长度限制；当前步骤聚焦</td>
+          <td>需要额外的状态管理代码</td>
+      </tr>
+      <tr>
+          <td><strong>混合策略</strong></td>
+          <td>Plan 摘要放头部，当前步骤放尾部</td>
+          <td>兼顾全局和局部</td>
+          <td>实现复杂度最高</td>
+      </tr>
+  </tbody>
 </table>
 <p>在实践中，<strong>混合策略</strong>是生产环境的首选。具体做法是：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">build_prompt</span>(plan, current_step, observations):
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">build_prompt</span>(plan, current_step, observations):
 </span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 头部：plan 摘要（全局上下文）</span>
 </span></span><span style="display:flex;"><span>    head <span style="color:#f92672">=</span> <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Overall Plan: </span><span style="color:#e6db74">{</span>plan<span style="color:#f92672">.</span>summary<span style="color:#e6db74">}</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>
 </span></span><span style="display:flex;"><span>    
@@ -6872,37 +6918,37 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#%e4%b8%89%e4%b8%aa%e8%af%84%e4%bc%b0%e7%bb%b4%e5%ba%a6">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>维度</th>
-					<th>定义</th>
-					<th>评估方法</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>可行性</strong>（Feasibility）</td>
-					<td>每个步骤在技术上是否可执行</td>
-					<td>检查工具可用性、API 可达性、权限</td>
-			</tr>
-			<tr>
-					<td><strong>完整性</strong>（Completeness）</td>
-					<td>Plan 是否覆盖了达成目标所需的所有步骤</td>
-					<td>对比目标条件与 Plan 的最终状态</td>
-			</tr>
-			<tr>
-					<td><strong>可执行性</strong>（Executability）</td>
-					<td>步骤之间的依赖关系是否合理</td>
-					<td>检查是否有循环依赖、缺失前置</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>定义</th>
+          <th>评估方法</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>可行性</strong>（Feasibility）</td>
+          <td>每个步骤在技术上是否可执行</td>
+          <td>检查工具可用性、API 可达性、权限</td>
+      </tr>
+      <tr>
+          <td><strong>完整性</strong>（Completeness）</td>
+          <td>Plan 是否覆盖了达成目标所需的所有步骤</td>
+          <td>对比目标条件与 Plan 的最终状态</td>
+      </tr>
+      <tr>
+          <td><strong>可执行性</strong>（Executability）</td>
+          <td>步骤之间的依赖关系是否合理</td>
+          <td>检查是否有循环依赖、缺失前置</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="self-evaluation让-llm-自己评分">
   Self-Evaluation：让 LLM 自己评分
   <a class="anchor" href="#self-evaluation%e8%ae%a9-llm-%e8%87%aa%e5%b7%b1%e8%af%84%e5%88%86">#</a>
 </h4>
 <p>最简单的方法是让 LLM 给自己生成的 Plan 打分：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Rate the following plan on these dimensions (1-10):
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Rate the following plan on these dimensions (1-10):
 </span></span><span style="display:flex;"><span>1. Feasibility: Are all steps technically executable?
 </span></span><span style="display:flex;"><span>2. Completeness: Does the plan cover all requirements?
 </span></span><span style="display:flex;"><span>3. Executability: Are dependencies logical and achievable?
@@ -6916,7 +6962,7 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#external-verification%e7%94%a8%e5%a4%96%e9%83%a8%e8%a7%84%e5%88%99%e6%a3%80%e6%9f%a5">#</a>
 </h4>
 <p>更可靠的方法是引入<strong>确定性的规则检查器</strong>：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">verify_plan</span>(plan, available_tools, environment):
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">verify_plan</span>(plan, available_tools, environment):
 </span></span><span style="display:flex;"><span>    issues <span style="color:#f92672">=</span> []
 </span></span><span style="display:flex;"><span>    
 </span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 1. 检查工具可用性</span>
@@ -6966,7 +7012,7 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#%e5%8f%82%e6%95%b0%e8%a7%a3%e6%9e%90%e6%9c%80%e5%ae%b9%e6%98%93%e8%a2%ab%e5%bf%bd%e8%a7%86%e7%9a%84%e9%9a%be%e7%82%b9">#</a>
 </h4>
 <p>Plan 中的步骤通常是抽象的，比如&quot;获取仓库信息&rdquo;。执行时需要将它转化为具体的 API 调用：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># Plan 中的抽象步骤</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># Plan 中的抽象步骤</span>
 </span></span><span style="display:flex;"><span>step <span style="color:#f92672">=</span> {
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;action&#34;</span>: <span style="color:#e6db74">&#34;fetch_repo_info&#34;</span>,
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;params&#34;</span>: {<span style="color:#e6db74">&#34;repo&#34;</span>: <span style="color:#e6db74">&#34;{{user_input.repo}}&#34;</span>},  <span style="color:#75715e"># 占位符</span>
@@ -6986,30 +7032,30 @@ A3: 济宁市不是首都，问题前提错误。
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> resolved
 </span></span></code></pre></div><p>如果参数解析失败（比如 <code>user_input.repo</code> 不存在），执行引擎必须决定：<strong>是报错终止，还是尝试推断？</strong> 这是一个设计选择：</p>
 <table>
-	<thead>
-			<tr>
-					<th>策略</th>
-					<th>行为</th>
-					<th>适用场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>严格模式</strong></td>
-					<td>参数缺失即报错</td>
-					<td>生产环境，要求确定性</td>
-			</tr>
-			<tr>
-					<td><strong>宽松模式</strong></td>
-					<td>尝试从上下文推断</td>
-					<td>对话式 Agent，追求流畅性</td>
-			</tr>
-			<tr>
-					<td><strong>询问模式</strong></td>
-					<td>暂停执行，询问用户</td>
-					<td>交互式场景</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>策略</th>
+          <th>行为</th>
+          <th>适用场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>严格模式</strong></td>
+          <td>参数缺失即报错</td>
+          <td>生产环境，要求确定性</td>
+      </tr>
+      <tr>
+          <td><strong>宽松模式</strong></td>
+          <td>尝试从上下文推断</td>
+          <td>对话式 Agent，追求流畅性</td>
+      </tr>
+      <tr>
+          <td><strong>询问模式</strong></td>
+          <td>暂停执行，询问用户</td>
+          <td>交互式场景</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="52-失败处理机制">
   5.2 失败处理机制
@@ -7040,7 +7086,7 @@ A3: 济宁市不是首都，问题前提错误。
     class L3 l3</pre>
 <p><strong>Level 1：单步重试</strong></p>
 <p>最简单的策略：失败了再试一次。但这需要配合<strong>退避机制</strong>（Backoff），否则会在同样的错误上无限循环。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">execute_with_retry</span>(step, max_retries<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span>, backoff<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span>):
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">execute_with_retry</span>(step, max_retries<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span>, backoff<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span>):
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> attempt <span style="color:#f92672">in</span> range(max_retries):
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">try</span>:
 </span></span><span style="display:flex;"><span>            result <span style="color:#f92672">=</span> execute(step)
@@ -7056,7 +7102,7 @@ A3: 济宁市不是首都，问题前提错误。
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">None</span>
 </span></span></code></pre></div><p><strong>Level 2：Plan 回滚</strong></p>
 <p>当单步重试无效时，需要回退到之前的某个状态。这要求执行引擎维护一个<strong>状态快照</strong>（Checkpoint）：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ExecutionState</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">ExecutionState</span>:
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self):
 </span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>checkpoints <span style="color:#f92672">=</span> []  <span style="color:#75715e"># [(step_id, context_snapshot), ...]</span>
 </span></span><span style="display:flex;"><span>    
@@ -7077,7 +7123,7 @@ A3: 济宁市不是首都，问题前提错误。
 </ol>
 <p><strong>Level 3：Plan 重生成</strong></p>
 <p>当回滚也无法恢复时，唯一的办法是<strong>放弃当前 Plan，基于当前状态重新规划</strong>。这是 Reflexion 的核心机制。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">replan_on_failure</span>(current_plan, execution_trace, error):
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">replan_on_failure</span>(current_plan, execution_trace, error):
 </span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 构建反思 prompt</span>
 </span></span><span style="display:flex;"><span>    prompt <span style="color:#f92672">=</span> <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;&#34;&#34;
 </span></span></span><span style="display:flex;"><span><span style="color:#e6db74">Previous Plan:
@@ -7106,7 +7152,7 @@ A3: 济宁市不是首都，问题前提错误。
   错误记忆库的构建
   <a class="anchor" href="#%e9%94%99%e8%af%af%e8%ae%b0%e5%bf%86%e5%ba%93%e7%9a%84%e6%9e%84%e5%bb%ba">#</a>
 </h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">FailureMemory</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">FailureMemory</span>:
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self):
 </span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>patterns <span style="color:#f92672">=</span> []  <span style="color:#75715e"># [(error_pattern, solution, count), ...]</span>
 </span></span><span style="display:flex;"><span>    
@@ -7132,22 +7178,22 @@ A3: 济宁市不是首都，问题前提错误。
 </h4>
 <p>一个好的反思 prompt 必须引导 LLM 做<strong>深度分析</strong>，而不是简单描述。对比两种设计：</p>
 <table>
-	<thead>
-			<tr>
-					<th>差的 Prompt</th>
-					<th>好的 Prompt</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>&ldquo;为什么失败了？&rdquo;</td>
-					<td>&ldquo;分析失败的根本原因。区分是工具问题、数据问题、还是逻辑问题。给出 3 条具体的改进建议。&rdquo;</td>
-			</tr>
-			<tr>
-					<td>&ldquo;下次怎么做？&rdquo;</td>
-					<td>&ldquo;如果重新执行，你会在哪个步骤做不同的决定？为什么？列出需要额外检查的 2 个前置条件。&rdquo;</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>差的 Prompt</th>
+          <th>好的 Prompt</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>&ldquo;为什么失败了？&rdquo;</td>
+          <td>&ldquo;分析失败的根本原因。区分是工具问题、数据问题、还是逻辑问题。给出 3 条具体的改进建议。&rdquo;</td>
+      </tr>
+      <tr>
+          <td>&ldquo;下次怎么做？&rdquo;</td>
+          <td>&ldquo;如果重新执行，你会在哪个步骤做不同的决定？为什么？列出需要额外检查的 2 个前置条件。&rdquo;</td>
+      </tr>
+  </tbody>
 </table>
 <p>好的 Prompt 强制 LLM 进行<strong>结构化反思</strong>，而不是泛泛而谈。</p>
 <h4 id="经验如何影响下一次-planning">
@@ -7155,7 +7201,7 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#%e7%bb%8f%e9%aa%8c%e5%a6%82%e4%bd%95%e5%bd%b1%e5%93%8d%e4%b8%8b%e4%b8%80%e6%ac%a1-planning">#</a>
 </h4>
 <p>Reflexion 的关键洞察是：<strong>历史经验应该改变未来 Plan 的生成方式</strong>。具体做法是在 Plan 生成的 prompt 中注入历史模式：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>You are planning a task. Here are some lessons from previous attempts:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>You are planning a task. Here are some lessons from previous attempts:
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>Lesson 1: When calling GitHub API, always check rate limit first.
 </span></span><span style="display:flex;"><span>  - Context: API returned 403 after 60 unauthenticated requests
@@ -7203,7 +7249,7 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#lats-%e7%9a%84%e8%af%84%e5%88%86%e5%87%bd%e6%95%b0%e8%ae%be%e8%ae%a1">#</a>
 </h4>
 <p>评分函数决定了搜索的方向。一个好的评分函数需要平衡多个维度：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">score_node</span>(node, weights<span style="color:#f92672">=</span>{<span style="color:#e6db74">&#34;correctness&#34;</span>: <span style="color:#ae81ff">0.4</span>, <span style="color:#e6db74">&#34;efficiency&#34;</span>: <span style="color:#ae81ff">0.3</span>, <span style="color:#e6db74">&#34;safety&#34;</span>: <span style="color:#ae81ff">0.3</span>}):
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">score_node</span>(node, weights<span style="color:#f92672">=</span>{<span style="color:#e6db74">&#34;correctness&#34;</span>: <span style="color:#ae81ff">0.4</span>, <span style="color:#e6db74">&#34;efficiency&#34;</span>: <span style="color:#ae81ff">0.3</span>, <span style="color:#e6db74">&#34;safety&#34;</span>: <span style="color:#ae81ff">0.3</span>}):
 </span></span><span style="display:flex;"><span>    <span style="color:#75715e"># 正确性：输出是否符合预期</span>
 </span></span><span style="display:flex;"><span>    correctness <span style="color:#f92672">=</span> llm_evaluate(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Is this output correct? </span><span style="color:#e6db74">{</span>node<span style="color:#f92672">.</span>output<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
 </span></span><span style="display:flex;"><span>    
@@ -7249,7 +7295,7 @@ A3: 济宁市不是首都，问题前提错误。
     HasMore --&gt;|是| Execute
     HasMore --&gt;|否| End[END]</pre>
 <p><strong>LangGraph 的 Plan 数据结构</strong>：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> langgraph.graph <span style="color:#f92672">import</span> StateGraph
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> langgraph.graph <span style="color:#f92672">import</span> StateGraph
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">AgentState</span>(TypedDict):
 </span></span><span style="display:flex;"><span>    plan: List[Step]        <span style="color:#75715e"># 当前计划</span>
@@ -7300,7 +7346,7 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#63-crewai%e8%a7%92%e8%89%b2%e5%88%86%e5%b7%a5--%e6%b5%81%e7%a8%8b">#</a>
 </h3>
 <p>CrewAI 的设计哲学是：<strong>通过角色定义来隐式规划</strong>。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> crewai <span style="color:#f92672">import</span> Agent, Task, Crew
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> crewai <span style="color:#f92672">import</span> Agent, Task, Crew
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 定义角色</span>
 </span></span><span style="display:flex;"><span>researcher <span style="color:#f92672">=</span> Agent(
@@ -7330,7 +7376,7 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#64-dspy%e5%a3%b0%e6%98%8e%e5%bc%8f%e7%bc%96%e7%a8%8b">#</a>
 </h3>
 <p>DSPy 采用了一种完全不同的范式：<strong>用声明式的方式定义规划逻辑，由优化器自动生成执行计划</strong>。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> dspy
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> dspy
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">MultiStepPlanner</span>(dspy<span style="color:#f92672">.</span>Module):
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self):
@@ -7351,91 +7397,91 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#65-%e6%a1%86%e6%9e%b6%e5%af%b9%e6%af%94%e6%80%bb%e7%bb%93">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>维度</th>
-					<th>LangGraph</th>
-					<th>AutoGen</th>
-					<th>CrewAI</th>
-					<th>DSPy</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>规划方式</strong></td>
-					<td>显式图结构</td>
-					<td>隐式对话</td>
-					<td>角色+任务顺序</td>
-					<td>声明式模块</td>
-			</tr>
-			<tr>
-					<td><strong>控制流</strong></td>
-					<td>确定性</td>
-					<td>动态</td>
-					<td>线性</td>
-					<td>优化器生成</td>
-			</tr>
-			<tr>
-					<td><strong>调试难度</strong></td>
-					<td>低（图可视化）</td>
-					<td>高（对话链）</td>
-					<td>中</td>
-					<td>中（需看优化过程）</td>
-			</tr>
-			<tr>
-					<td><strong>灵活性</strong></td>
-					<td>中</td>
-					<td>极高</td>
-					<td>低</td>
-					<td>中</td>
-			</tr>
-			<tr>
-					<td><strong>适用场景</strong></td>
-					<td>生产工作流</td>
-					<td>多 Agent 协作</td>
-					<td>快速原型</td>
-					<td>可优化管道</td>
-			</tr>
-			<tr>
-					<td><strong>学习曲线</strong></td>
-					<td>中</td>
-					<td>高</td>
-					<td>低</td>
-					<td>高</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>维度</th>
+          <th>LangGraph</th>
+          <th>AutoGen</th>
+          <th>CrewAI</th>
+          <th>DSPy</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>规划方式</strong></td>
+          <td>显式图结构</td>
+          <td>隐式对话</td>
+          <td>角色+任务顺序</td>
+          <td>声明式模块</td>
+      </tr>
+      <tr>
+          <td><strong>控制流</strong></td>
+          <td>确定性</td>
+          <td>动态</td>
+          <td>线性</td>
+          <td>优化器生成</td>
+      </tr>
+      <tr>
+          <td><strong>调试难度</strong></td>
+          <td>低（图可视化）</td>
+          <td>高（对话链）</td>
+          <td>中</td>
+          <td>中（需看优化过程）</td>
+      </tr>
+      <tr>
+          <td><strong>灵活性</strong></td>
+          <td>中</td>
+          <td>极高</td>
+          <td>低</td>
+          <td>中</td>
+      </tr>
+      <tr>
+          <td><strong>适用场景</strong></td>
+          <td>生产工作流</td>
+          <td>多 Agent 协作</td>
+          <td>快速原型</td>
+          <td>可优化管道</td>
+      </tr>
+      <tr>
+          <td><strong>学习曲线</strong></td>
+          <td>中</td>
+          <td>高</td>
+          <td>低</td>
+          <td>高</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>选择建议</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>场景</th>
-					<th>推荐框架</th>
-					<th>原因</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>生产环境，需要可观测性</td>
-					<td>LangGraph</td>
-					<td>显式控制流，易于监控</td>
-			</tr>
-			<tr>
-					<td>多专家协作场景</td>
-					<td>AutoGen</td>
-					<td>天然支持多 Agent 对话</td>
-			</tr>
-			<tr>
-					<td>快速原型、POC</td>
-					<td>CrewAI</td>
-					<td>API 最简单</td>
-			</tr>
-			<tr>
-					<td>需要持续优化的管道</td>
-					<td>DSPy</td>
-					<td>优化器自动调优</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>推荐框架</th>
+          <th>原因</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>生产环境，需要可观测性</td>
+          <td>LangGraph</td>
+          <td>显式控制流，易于监控</td>
+      </tr>
+      <tr>
+          <td>多专家协作场景</td>
+          <td>AutoGen</td>
+          <td>天然支持多 Agent 对话</td>
+      </tr>
+      <tr>
+          <td>快速原型、POC</td>
+          <td>CrewAI</td>
+          <td>API 最简单</td>
+      </tr>
+      <tr>
+          <td>需要持续优化的管道</td>
+          <td>DSPy</td>
+          <td>优化器自动调优</td>
+      </tr>
+  </tbody>
 </table>
 <hr>
 <blockquote>
@@ -7453,7 +7499,7 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#71-plan-%e7%9a%84%e5%88%9b%e5%bb%ba%e4%bb%8e%e7%94%a8%e6%88%b7%e8%be%93%e5%85%a5%e5%88%b0%e7%bb%93%e6%9e%84%e5%8c%96-plan">#</a>
 </h3>
 <p>当用户输入一个复杂任务时，LangGraph 的第一步是调用 LLM 生成初始 Plan：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># nodes.py — Plan 生成节点</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># nodes.py — Plan 生成节点</span>
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> pydantic <span style="color:#f92672">import</span> BaseModel, Field
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> typing <span style="color:#f92672">import</span> List, Optional
 </span></span><span style="display:flex;"><span>
@@ -7491,7 +7537,7 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#72-plan-%e7%9a%84%e5%ba%8f%e5%88%97%e5%8c%96json-schema-%e7%9a%84%e5%8a%9b%e9%87%8f">#</a>
 </h3>
 <p>LangGraph 使用 JSON Schema 来约束 LLM 的输出格式：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;$schema&#34;</span>: <span style="color:#e6db74">&#34;http://json-schema.org/draft-07/schema#&#34;</span>,
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;title&#34;</span>: <span style="color:#e6db74">&#34;Plan&#34;</span>,
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;type&#34;</span>: <span style="color:#e6db74">&#34;object&#34;</span>,
@@ -7528,7 +7574,7 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#73-plan-%e7%9a%84%e6%89%a7%e8%a1%8c%e5%be%aa%e7%8e%afwhile-%e5%be%aa%e7%8e%af--%e7%8a%b6%e6%80%81%e6%a3%80%e6%9f%a5">#</a>
 </h3>
 <p>执行节点是 LangGraph 的核心循环：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">execute_node</span>(state: AgentState):
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">execute_node</span>(state: AgentState):
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;执行当前步骤&#34;&#34;&#34;</span>
 </span></span><span style="display:flex;"><span>    plan <span style="color:#f92672">=</span> state[<span style="color:#e6db74">&#34;plan&#34;</span>]
 </span></span><span style="display:flex;"><span>    step_idx <span style="color:#f92672">=</span> state[<span style="color:#e6db74">&#34;current_step&#34;</span>]
@@ -7580,7 +7626,7 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#74-plan-%e7%9a%84%e6%8c%81%e4%b9%85%e5%8c%96checkpointresumefork">#</a>
 </h3>
 <p>生产环境中的 Agent 需要支持<strong>中断恢复</strong>。LangGraph 通过 Checkpointer 实现：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> langgraph.checkpoint.sqlite <span style="color:#f92672">import</span> SqliteSaver
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> langgraph.checkpoint.sqlite <span style="color:#f92672">import</span> SqliteSaver
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 配置持久化</span>
 </span></span><span style="display:flex;"><span>memory <span style="color:#f92672">=</span> SqliteSaver<span style="color:#f92672">.</span>from_conn_string(<span style="color:#e6db74">&#34;:memory:&#34;</span>)  <span style="color:#75715e"># 生产环境用 PostgreSQL</span>
@@ -7596,7 +7642,7 @@ A3: 济宁市不是首都，问题前提错误。
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 如果中断，可以从 checkpoint 恢复</span>
 </span></span><span style="display:flex;"><span>result <span style="color:#f92672">=</span> app<span style="color:#f92672">.</span>invoke(<span style="color:#66d9ef">None</span>, config)  <span style="color:#75715e"># 从上次中断处继续</span>
 </span></span></code></pre></div><p>Checkpoint 的数据结构：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;thread_id&#34;</span>: <span style="color:#e6db74">&#34;user-123&#34;</span>,
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;checkpoint_id&#34;</span>: <span style="color:#e6db74">&#34;abc123&#34;</span>,
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;state&#34;</span>: {
@@ -7609,30 +7655,30 @@ A3: 济宁市不是首都，问题前提错误。
 </span></span><span style="display:flex;"><span>}
 </span></span></code></pre></div><p>这种设计支持三个关键场景：</p>
 <table>
-	<thead>
-			<tr>
-					<th>场景</th>
-					<th>实现方式</th>
-					<th>用户价值</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>中断恢复</strong></td>
-					<td>从最后一个 checkpoint 加载状态</td>
-					<td>网络断开、服务重启后无需重头开始</td>
-			</tr>
-			<tr>
-					<td><strong>多会话隔离</strong></td>
-					<td>不同 thread_id 对应不同用户</td>
-					<td>并发用户互不干扰</td>
-			</tr>
-			<tr>
-					<td><strong>Plan Fork</strong></td>
-					<td>从某个 checkpoint 创建新 thread_id</td>
-					<td>尝试不同的执行路径</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>实现方式</th>
+          <th>用户价值</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>中断恢复</strong></td>
+          <td>从最后一个 checkpoint 加载状态</td>
+          <td>网络断开、服务重启后无需重头开始</td>
+      </tr>
+      <tr>
+          <td><strong>多会话隔离</strong></td>
+          <td>不同 thread_id 对应不同用户</td>
+          <td>并发用户互不干扰</td>
+      </tr>
+      <tr>
+          <td><strong>Plan Fork</strong></td>
+          <td>从某个 checkpoint 创建新 thread_id</td>
+          <td>尝试不同的执行路径</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="75-关键代码路径跟踪">
   7.5 关键代码路径跟踪
@@ -7711,35 +7757,35 @@ A3: 济宁市不是首都，问题前提错误。
 </h4>
 <p>当多个 Agent 需要协作完成一个任务时，规划问题变得指数级复杂：</p>
 <table>
-	<thead>
-			<tr>
-					<th>挑战</th>
-					<th>描述</th>
-					<th>当前状态</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>计划同步</strong></td>
-					<td>Agent A 的 Plan 步骤 3 依赖 Agent B 的步骤 2</td>
-					<td>大部分框架不支持跨 Agent 依赖</td>
-			</tr>
-			<tr>
-					<td><strong>冲突解决</strong></td>
-					<td>Agent A 和 B 同时要修改同一资源</td>
-					<td>靠人工编排或简单锁机制</td>
-			</tr>
-			<tr>
-					<td><strong>责任分配</strong></td>
-					<td>任务如何最优地分配给不同能力的 Agent</td>
-					<td>启发式规则，无理论保证</td>
-			</tr>
-			<tr>
-					<td><strong>通信开销</strong></td>
-					<td>Agent 之间交换 Plan 状态的成本</td>
-					<td>隐式（通过对话）或无</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>挑战</th>
+          <th>描述</th>
+          <th>当前状态</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>计划同步</strong></td>
+          <td>Agent A 的 Plan 步骤 3 依赖 Agent B 的步骤 2</td>
+          <td>大部分框架不支持跨 Agent 依赖</td>
+      </tr>
+      <tr>
+          <td><strong>冲突解决</strong></td>
+          <td>Agent A 和 B 同时要修改同一资源</td>
+          <td>靠人工编排或简单锁机制</td>
+      </tr>
+      <tr>
+          <td><strong>责任分配</strong></td>
+          <td>任务如何最优地分配给不同能力的 Agent</td>
+          <td>启发式规则，无理论保证</td>
+      </tr>
+      <tr>
+          <td><strong>通信开销</strong></td>
+          <td>Agent 之间交换 Plan 状态的成本</td>
+          <td>隐式（通过对话）或无</td>
+      </tr>
+  </tbody>
 </table>
 <p>AutoGen 和 CrewAI 提供了多 Agent 协作的基础设施，但<strong>协同规划</strong>（Co-planning）仍然是一个开放问题。</p>
 <h3 id="82-前沿方向">
@@ -7830,46 +7876,46 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#83-%e8%a1%8c%e4%b8%9a%e5%88%a4%e6%96%ad%e5%93%aa%e4%ba%9b%e6%96%b9%e5%90%91%e5%80%bc%e5%be%97%e6%8a%95%e5%85%a5%e5%93%aa%e4%ba%9b%e6%98%af-hype">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>方向</th>
-					<th>成熟度</th>
-					<th>投入建议</th>
-					<th>理由</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>Neuro-symbolic</strong></td>
-					<td>早期但有进展</td>
-					<td>值得投入</td>
-					<td>理论上最合理，已有初步成功案例</td>
-			</tr>
-			<tr>
-					<td><strong>世界模型</strong></td>
-					<td>研究阶段</td>
-					<td>关注但谨慎投入</td>
-					<td>需要大量数据和算力，短期难落地</td>
-			</tr>
-			<tr>
-					<td><strong>多模态 Planning</strong></td>
-					<td>快速发展</td>
-					<td>值得投入</td>
-					<td>GPT-4V 已展示初步能力，需求明确</td>
-			</tr>
-			<tr>
-					<td><strong>可验证 Planning</strong></td>
-					<td>学术成熟、工业冷门</td>
-					<td>视场景而定</td>
-					<td>仅安全关键场景需要，通用场景过度</td>
-			</tr>
-			<tr>
-					<td><strong>纯 LLM Scaling</strong></td>
-					<td>主流但边际递减</td>
-					<td>减少投入</td>
-					<td>单靠 scaling 无法解决累积误差问题</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>方向</th>
+          <th>成熟度</th>
+          <th>投入建议</th>
+          <th>理由</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>Neuro-symbolic</strong></td>
+          <td>早期但有进展</td>
+          <td>值得投入</td>
+          <td>理论上最合理，已有初步成功案例</td>
+      </tr>
+      <tr>
+          <td><strong>世界模型</strong></td>
+          <td>研究阶段</td>
+          <td>关注但谨慎投入</td>
+          <td>需要大量数据和算力，短期难落地</td>
+      </tr>
+      <tr>
+          <td><strong>多模态 Planning</strong></td>
+          <td>快速发展</td>
+          <td>值得投入</td>
+          <td>GPT-4V 已展示初步能力，需求明确</td>
+      </tr>
+      <tr>
+          <td><strong>可验证 Planning</strong></td>
+          <td>学术成熟、工业冷门</td>
+          <td>视场景而定</td>
+          <td>仅安全关键场景需要，通用场景过度</td>
+      </tr>
+      <tr>
+          <td><strong>纯 LLM Scaling</strong></td>
+          <td>主流但边际递减</td>
+          <td>减少投入</td>
+          <td>单靠 scaling 无法解决累积误差问题</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>核心判断</strong>：未来 2-3 年，最有生产力的路径是 <strong>Neuro-symbolic + Contract-based</strong> 的混合方案。纯 LLM 的方法会在简单场景中继续主导，但在复杂、高可靠性要求的场景中，符号方法的严谨性是不可或缺的。</p>
 <hr>
@@ -7905,7 +7951,7 @@ A3: 济宁市不是首都，问题前提错误。
   9.2 核心数据结构
   <a class="anchor" href="#92-%e6%a0%b8%e5%bf%83%e6%95%b0%e6%8d%ae%e7%bb%93%e6%9e%84">#</a>
 </h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> dataclasses <span style="color:#f92672">import</span> dataclass, field
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> dataclasses <span style="color:#f92672">import</span> dataclass, field
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> typing <span style="color:#f92672">import</span> List, Dict, Optional, Callable
 </span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> enum <span style="color:#f92672">import</span> Enum
 </span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> json
@@ -7973,7 +8019,7 @@ A3: 济宁市不是首都，问题前提错误。
   9.3 任务分解器（Decomposer）
   <a class="anchor" href="#93-%e4%bb%bb%e5%8a%a1%e5%88%86%e8%a7%a3%e5%99%a8decomposer">#</a>
 </h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Decomposer</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Decomposer</span>:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;将用户输入分解为结构化 Plan&#34;&#34;&#34;</span>
 </span></span><span style="display:flex;"><span>    
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, llm_client):
@@ -8019,7 +8065,7 @@ A3: 济宁市不是首都，问题前提错误。
   9.4 执行器（Executor）
   <a class="anchor" href="#94-%e6%89%a7%e8%a1%8c%e5%99%a8executor">#</a>
 </h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Executor</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Executor</span>:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;按依赖顺序执行 Plan 中的步骤&#34;&#34;&#34;</span>
 </span></span><span style="display:flex;"><span>    
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, tools: Dict[str, Callable]):
@@ -8080,7 +8126,7 @@ A3: 济宁市不是首都，问题前提错误。
   9.5 反思模块（Reflector）
   <a class="anchor" href="#95-%e5%8f%8d%e6%80%9d%e6%a8%a1%e5%9d%97reflector">#</a>
 </h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Reflector</span>:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Reflector</span>:
 </span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;分析失败原因，调整 Plan&#34;&#34;&#34;</span>
 </span></span><span style="display:flex;"><span>    
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">__init__</span>(self, llm_client):
@@ -8136,7 +8182,7 @@ A3: 济宁市不是首都，问题前提错误。
   <a class="anchor" href="#96-%e6%b5%8b%e8%af%95%e7%94%a8%e4%be%8b">#</a>
 </h3>
 <p>让我们用三个不同难度的任务来验证这个 Mini Planner：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 模拟工具集</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># 模拟工具集</span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">mock_search_tool</span>(query: str) <span style="color:#f92672">-&gt;</span> str:
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Search results for: </span><span style="color:#e6db74">{</span>query<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
 </span></span><span style="display:flex;"><span>
@@ -8247,40 +8293,40 @@ Test 3: Complex Task
   <a class="anchor" href="#%e6%a0%b8%e5%bf%83%e5%8e%9f%e5%88%99">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>#</th>
-					<th>原则</th>
-					<th>解释</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>1</td>
-					<td><strong>Plan 是中间表示，不是最终目标</strong></td>
-					<td>Plan 的价值不在于&quot;正确&quot;，而在于&quot;可控&quot;——它让错误可追踪、可恢复</td>
-			</tr>
-			<tr>
-					<td>2</td>
-					<td><strong>没有通用的最佳范式</strong></td>
-					<td>ReAct 适合通用任务，ToT 适合数学推理，LATS 适合代码生成，Reflexion 适合环境交互</td>
-			</tr>
-			<tr>
-					<td>3</td>
-					<td><strong>Lost in the Middle 是规划杀手</strong></td>
-					<td>必须将关键信息放在 context 的头部或尾部，混合策略是生产首选</td>
-			</tr>
-			<tr>
-					<td>4</td>
-					<td><strong>失败处理比成功执行更重要</strong></td>
-					<td>三级失败处理（重试 → 回滚 → 重规划）是 Agent 鲁棒性的关键</td>
-			</tr>
-			<tr>
-					<td>5</td>
-					<td><strong>经验注入优于模型微调</strong></td>
-					<td>Reflexion 通过 prompt 注入历史经验，成本远低于 fine-tuning</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>原则</th>
+          <th>解释</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td><strong>Plan 是中间表示，不是最终目标</strong></td>
+          <td>Plan 的价值不在于&quot;正确&quot;，而在于&quot;可控&quot;——它让错误可追踪、可恢复</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td><strong>没有通用的最佳范式</strong></td>
+          <td>ReAct 适合通用任务，ToT 适合数学推理，LATS 适合代码生成，Reflexion 适合环境交互</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td><strong>Lost in the Middle 是规划杀手</strong></td>
+          <td>必须将关键信息放在 context 的头部或尾部，混合策略是生产首选</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td><strong>失败处理比成功执行更重要</strong></td>
+          <td>三级失败处理（重试 → 回滚 → 重规划）是 Agent 鲁棒性的关键</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td><strong>经验注入优于模型微调</strong></td>
+          <td>Reflexion 通过 prompt 注入历史经验，成本远低于 fine-tuning</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="范式选择决策树">
   范式选择决策树
@@ -8308,65 +8354,65 @@ Test 3: Complex Task
   <a class="anchor" href="#%e6%9c%80%e4%bd%b3%e5%ae%9e%e8%b7%b5%e6%b8%85%e5%8d%95">#</a>
 </h3>
 <table>
-	<thead>
-			<tr>
-					<th>#</th>
-					<th>最佳实践</th>
-					<th>适用阶段</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>1</td>
-					<td>用 Pydantic / JSON Schema 约束 Plan 输出格式</td>
-					<td>Plan 生成</td>
-			</tr>
-			<tr>
-					<td>2</td>
-					<td>混合策略管理 context（摘要放头，当前步骤放尾）</td>
-					<td>Context 管理</td>
-			</tr>
-			<tr>
-					<td>3</td>
-					<td>每个步骤设置独立超时和重试次数</td>
-					<td>执行</td>
-			</tr>
-			<tr>
-					<td>4</td>
-					<td>维护 Checkpoint 支持中断恢复</td>
-					<td>持久化</td>
-			</tr>
-			<tr>
-					<td>5</td>
-					<td>记录失败模式到记忆库，注入后续 plan</td>
-					<td>反思</td>
-			</tr>
-			<tr>
-					<td>6</td>
-					<td>用外部规则检查器验证 Plan 结构正确性</td>
-					<td>验证</td>
-			</tr>
-			<tr>
-					<td>7</td>
-					<td>限制最大反思次数（通常 3 次），避免死循环</td>
-					<td>容错</td>
-			</tr>
-			<tr>
-					<td>8</td>
-					<td>对关键步骤添加人工审核环节（human-in-the-loop）</td>
-					<td>生产部署</td>
-			</tr>
-			<tr>
-					<td>9</td>
-					<td>定期清理过期 Checkpoint 节省存储</td>
-					<td>运维</td>
-			</tr>
-			<tr>
-					<td>10</td>
-					<td>用指标追踪 Plan 成功率、平均步数、反思次数</td>
-					<td>监控</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>最佳实践</th>
+          <th>适用阶段</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td>用 Pydantic / JSON Schema 约束 Plan 输出格式</td>
+          <td>Plan 生成</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td>混合策略管理 context（摘要放头，当前步骤放尾）</td>
+          <td>Context 管理</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td>每个步骤设置独立超时和重试次数</td>
+          <td>执行</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td>维护 Checkpoint 支持中断恢复</td>
+          <td>持久化</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td>记录失败模式到记忆库，注入后续 plan</td>
+          <td>反思</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td>用外部规则检查器验证 Plan 结构正确性</td>
+          <td>验证</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td>限制最大反思次数（通常 3 次），避免死循环</td>
+          <td>容错</td>
+      </tr>
+      <tr>
+          <td>8</td>
+          <td>对关键步骤添加人工审核环节（human-in-the-loop）</td>
+          <td>生产部署</td>
+      </tr>
+      <tr>
+          <td>9</td>
+          <td>定期清理过期 Checkpoint 节省存储</td>
+          <td>运维</td>
+      </tr>
+      <tr>
+          <td>10</td>
+          <td>用指标追踪 Plan 成功率、平均步数、反思次数</td>
+          <td>监控</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="未来展望">
   未来展望

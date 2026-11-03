@@ -20,63 +20,63 @@ LLM 的无状态性 vs. 业务知识的累积性。
 每开启一个新 session，Agent 就像经历了一次「脑叶切除术」——SOP 要重新讲一遍、项目背景要重新铺垫、输出格式要重新约定。人类用户被迫成了 Agent 的「记忆外挂」，一遍又一遍地重复那些本该被记住的事情。
 现有的 RAG（检索增强生成）方案在「找到什么」这个问题上已经做得足够好，但它无法回答更关键的问题：
 
-	
-			
-					问题
-					RAG 的回答
-					实际需要的回答
-			
-	
-	
-			
-					这条信息该给哪个 Agent？
-					❌ 不感知 Agent 身份
-					✅ 按角色精确分发
-			
-			
-					哪个版本的知识是当前有效的？
-					❌ Chunk 没有版本概念
-					✅ 带版本号、带状态
-			
-			
-					这段经验是用户偏好还是事实约束？
-					❌ 扁平文本块，语义模糊
-					✅ 分层结构，类型明确
-			
-			
-					这段记忆谁能看、谁能改？
-					❌ 无权限模型
-					✅ 四级 ACL 体系
-			
-			
-					改这个代码文件会影响哪些模块？
-					❌ 文本匹配，无调用关系
-					✅ 符号级调用图
-			
-	
+  
+      
+          问题
+          RAG 的回答
+          实际需要的回答
+      
+  
+  
+      
+          这条信息该给哪个 Agent？
+          ❌ 不感知 Agent 身份
+          ✅ 按角色精确分发
+      
+      
+          哪个版本的知识是当前有效的？
+          ❌ Chunk 没有版本概念
+          ✅ 带版本号、带状态
+      
+      
+          这段经验是用户偏好还是事实约束？
+          ❌ 扁平文本块，语义模糊
+          ✅ 分层结构，类型明确
+      
+      
+          这段记忆谁能看、谁能改？
+          ❌ 无权限模型
+          ✅ 四级 ACL 体系
+      
+      
+          改这个代码文件会影响哪些模块？
+          ❌ 文本匹配，无调用关系
+          ✅ 符号级调用图
+      
+  
 
 TencentDB Agent Memory 的定位恰恰在此：它不是要「存更多」，而是要「存得对、取得准、管得好」。">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
 <meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--openclaw/tencentdb-agent-memory-full/">
-	<meta property="og:site_name" content="Modern Agent">
-	<meta property="og:title" content="Modern Agent">
-	<meta property="og:description" content="TencentDB Agent Memory 源码解读 —— 让 Agent 团队拥有「继承式记忆」#公司可以很小，经验可以无限复利。
-0. 引言：Agent 的记忆之痛#当前 Agent 落地过程中，几乎所有团队都会遇到同一个根本性矛盾：
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Modern Agent">
+  <meta property="og:description" content="TencentDB Agent Memory 源码解读 —— 让 Agent 团队拥有「继承式记忆」 # 公司可以很小，经验可以无限复利。
+0. 引言：Agent 的记忆之痛 # 当前 Agent 落地过程中，几乎所有团队都会遇到同一个根本性矛盾：
 LLM 的无状态性 vs. 业务知识的累积性。
 每开启一个新 session，Agent 就像经历了一次「脑叶切除术」——SOP 要重新讲一遍、项目背景要重新铺垫、输出格式要重新约定。人类用户被迫成了 Agent 的「记忆外挂」，一遍又一遍地重复那些本该被记住的事情。
 现有的 RAG（检索增强生成）方案在「找到什么」这个问题上已经做得足够好，但它无法回答更关键的问题：
 问题 RAG 的回答 实际需要的回答 这条信息该给哪个 Agent？ ❌ 不感知 Agent 身份 ✅ 按角色精确分发 哪个版本的知识是当前有效的？ ❌ Chunk 没有版本概念 ✅ 带版本号、带状态 这段经验是用户偏好还是事实约束？ ❌ 扁平文本块，语义模糊 ✅ 分层结构，类型明确 这段记忆谁能看、谁能改？ ❌ 无权限模型 ✅ 四级 ACL 体系 改这个代码文件会影响哪些模块？ ❌ 文本匹配，无调用关系 ✅ 符号级调用图 TencentDB Agent Memory 的定位恰恰在此：它不是要「存更多」，而是要「存得对、取得准、管得好」。">
-	<meta property="og:locale" content="en">
-	<meta property="og:type" content="article">
-		<meta property="article:section" content="docs">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="docs">
 <title>Tencentdb Agent Memory Full | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Agent-Memory/independent/Tencent-Agent-memory--openclaw/tencentdb-agent-memory-full/">
-<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+<link rel="stylesheet" href="/www6vAIGC/book.min.3257a7ce7c061eb5dfc72257c356229b1470dc77ce9b982ac220c02542f9f04f.css" integrity="sha256-MlenznwGHrXfxyJXw1YimxRw3HfOm5gqwiDAJUL58E8=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.b03d70a1a41ebd2598f66475385e5f3acbb00c4c00220e8b32e57e4ea027ff4e.js" integrity="sha256-sD1woaQevSWY9mR1OF5fOsuwDEwAIg6LMuV&#43;TqAn/04=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.9ac9103c9736d6d7fd88e6f79ca53fdabcb398fab716e8ab8092ebfee52b0415.js" integrity="sha256-mskQPJc21tf9iOb3nKU/2ryzmPq3FuirgJLr/uUrBBU=" crossorigin="anonymous"></script>
 <!--
 Made with Book Theme
 https://github.com/alex-shpak/hugo-book
@@ -128,8 +128,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="toggle"  />
-    <label for="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="flex justify-between">
+    <input type="checkbox" id="section-8eeae87632e610dbb7fc73d309f4a86d" class="toggle"  />
+    <label for="section-8eeae87632e610dbb7fc73d309f4a86d" class="flex justify-between">
       <a role="button" class="">RAG</a>
     </label>
   
@@ -144,8 +144,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c551263d461ebff83b9463dc3a94952c" class="toggle"  />
-    <label for="section-c551263d461ebff83b9463dc3a94952c" class="flex justify-between">
+    <input type="checkbox" id="section-098fde1b4be868f62390668d03d7d338" class="toggle"  />
+    <label for="section-098fde1b4be868f62390668d03d7d338" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -255,8 +255,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6d871616372a4994f42a7668d9af7715" class="toggle"  />
-    <label for="section-6d871616372a4994f42a7668d9af7715" class="flex justify-between">
+    <input type="checkbox" id="section-7c089cd98011270279a8c4693580483e" class="toggle"  />
+    <label for="section-7c089cd98011270279a8c4693580483e" class="flex justify-between">
       <a role="button" class="">实战 *</a>
     </label>
   
@@ -492,8 +492,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd42bffd52a5c198755daef56da179f9" class="toggle"  />
-    <label for="section-cd42bffd52a5c198755daef56da179f9" class="flex justify-between">
+    <input type="checkbox" id="section-00e0992ed3785617d99441f38424d443" class="toggle"  />
+    <label for="section-00e0992ed3785617d99441f38424d443" class="flex justify-between">
       <a role="button" class="">Pattern</a>
     </label>
   
@@ -693,8 +693,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-afec0c322e2a85b11a48111f0dba315c" class="toggle"  />
-    <label for="section-afec0c322e2a85b11a48111f0dba315c" class="flex justify-between">
+    <input type="checkbox" id="section-5e6438c77671b5eb480dd2c40a29deb4" class="toggle"  />
+    <label for="section-5e6438c77671b5eb480dd2c40a29deb4" class="flex justify-between">
       <a role="button" class="">phase *</a>
     </label>
   
@@ -894,8 +894,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="toggle"  />
-    <label for="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="flex justify-between">
+    <input type="checkbox" id="section-1205a3b6d7d0d892a149b0be18b55680" class="toggle"  />
+    <label for="section-1205a3b6d7d0d892a149b0be18b55680" class="flex justify-between">
       <a role="button" class="">案例</a>
     </label>
   
@@ -956,8 +956,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="toggle"  />
-    <label for="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="flex justify-between">
+    <input type="checkbox" id="section-2853751cf001bfb0dbbd0927de99f326" class="toggle"  />
+    <label for="section-2853751cf001bfb0dbbd0927de99f326" class="flex justify-between">
       <a role="button" class="">Agent Infra</a>
     </label>
   
@@ -972,8 +972,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="toggle"  />
-    <label for="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="flex justify-between">
+    <input type="checkbox" id="section-4277410225f2a82b8e3d740cbc19c27a" class="toggle"  />
+    <label for="section-4277410225f2a82b8e3d740cbc19c27a" class="flex justify-between">
       <a role="button" class="">Dify</a>
     </label>
   
@@ -1047,8 +1047,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d35a724145e4438b19d0128310151060" class="toggle"  />
-    <label for="section-d35a724145e4438b19d0128310151060" class="flex justify-between">
+    <input type="checkbox" id="section-21f3c925847a2d764db6eed92d3a72d8" class="toggle"  />
+    <label for="section-21f3c925847a2d764db6eed92d3a72d8" class="flex justify-between">
       <a role="button" class="">产品</a>
     </label>
   
@@ -1086,8 +1086,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d8fb1e2742348190fede849f378398c8" class="toggle"  />
-    <label for="section-d8fb1e2742348190fede849f378398c8" class="flex justify-between">
+    <input type="checkbox" id="section-781abe85b1b1e35a22f023c37cdc2d1e" class="toggle"  />
+    <label for="section-781abe85b1b1e35a22f023c37cdc2d1e" class="flex justify-between">
       <a role="button" class="">API</a>
     </label>
   
@@ -1143,8 +1143,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="toggle"  />
-    <label for="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="flex justify-between">
+    <input type="checkbox" id="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="toggle"  />
+    <label for="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="flex justify-between">
       <a role="button" class="">Sandbox</a>
     </label>
   
@@ -1200,8 +1200,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="toggle"  />
-    <label for="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="flex justify-between">
+    <input type="checkbox" id="section-c1654de4801752aac71344ec5dc9df88" class="toggle"  />
+    <label for="section-c1654de4801752aac71344ec5dc9df88" class="flex justify-between">
       <a role="button" class="">SDK</a>
     </label>
   
@@ -1262,8 +1262,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-465ebbe8c8eae209a571787ecebad2c0" class="toggle"  />
-    <label for="section-465ebbe8c8eae209a571787ecebad2c0" class="flex justify-between">
+    <input type="checkbox" id="section-0883be528cd603181ff8e3bbd53972c2" class="toggle"  />
+    <label for="section-0883be528cd603181ff8e3bbd53972c2" class="flex justify-between">
       <a role="button" class="">Agent</a>
     </label>
   
@@ -1278,8 +1278,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f76aa66a03b4f060262d5e206195edee" class="toggle"  />
-    <label for="section-f76aa66a03b4f060262d5e206195edee" class="flex justify-between">
+    <input type="checkbox" id="section-60cbe7eba0e55272c2f7e88142209eee" class="toggle"  />
+    <label for="section-60cbe7eba0e55272c2f7e88142209eee" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -1335,8 +1335,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d28aa4a73439b10799fd7621d99b09a8" class="toggle"  />
-    <label for="section-d28aa4a73439b10799fd7621d99b09a8" class="flex justify-between">
+    <input type="checkbox" id="section-34b90f1a802a08434ef79ad7e69c7bec" class="toggle"  />
+    <label for="section-34b90f1a802a08434ef79ad7e69c7bec" class="flex justify-between">
       <a role="button" class="">Practice</a>
     </label>
   
@@ -1428,8 +1428,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="toggle"  />
-    <label for="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="flex justify-between">
+    <input type="checkbox" id="section-d23f53c64147d40d7800ad362d50d826" class="toggle"  />
+    <label for="section-d23f53c64147d40d7800ad362d50d826" class="flex justify-between">
       <a role="button" class="">Reflection</a>
     </label>
   
@@ -1467,8 +1467,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c1c7bf1336ea4ad525ce468e5624159f" class="toggle"  />
-    <label for="section-c1c7bf1336ea4ad525ce468e5624159f" class="flex justify-between">
+    <input type="checkbox" id="section-071bdfde77f8dcb0258746094eb4b7ab" class="toggle"  />
+    <label for="section-071bdfde77f8dcb0258746094eb4b7ab" class="flex justify-between">
       <a role="button" class="">Planning</a>
     </label>
   
@@ -1560,8 +1560,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="toggle" checked />
-    <label for="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="flex justify-between">
+    <input type="checkbox" id="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="toggle" checked />
+    <label for="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1576,8 +1576,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e338773a0b87bd3d5520b81d5b88db62" class="toggle"  />
-    <label for="section-e338773a0b87bd3d5520b81d5b88db62" class="flex justify-between">
+    <input type="checkbox" id="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="toggle"  />
+    <label for="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1641,8 +1641,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9d0fe56670c342283f8f972214b72137" class="toggle"  />
-    <label for="section-9d0fe56670c342283f8f972214b72137" class="flex justify-between">
+    <input type="checkbox" id="section-fb50c7bc07294aad8ab163e5c05043d7" class="toggle"  />
+    <label for="section-fb50c7bc07294aad8ab163e5c05043d7" class="flex justify-between">
       <a role="button" class="">Hermes</a>
     </label>
   
@@ -1716,8 +1716,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a9773226cdddc85ff8f10cae8bdb49a2" class="toggle"  />
-    <label for="section-a9773226cdddc85ff8f10cae8bdb49a2" class="flex justify-between">
+    <input type="checkbox" id="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="toggle"  />
+    <label for="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="flex justify-between">
       <a role="button" class="">managed agents</a>
     </label>
   
@@ -1773,8 +1773,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-041a0b369c13985983a2e78e073f1143" class="toggle" checked />
-    <label for="section-041a0b369c13985983a2e78e073f1143" class="flex justify-between">
+    <input type="checkbox" id="section-f0d84b83965f02340d4fc81e88ba04ab" class="toggle" checked />
+    <label for="section-f0d84b83965f02340d4fc81e88ba04ab" class="flex justify-between">
       <a role="button" class="">Memory *</a>
     </label>
   
@@ -1931,8 +1931,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-360e9d19bffa35d5db5a46e0c0c05a65" class="toggle"  />
-    <label for="section-360e9d19bffa35d5db5a46e0c0c05a65" class="flex justify-between">
+    <input type="checkbox" id="section-66d86d5f38d04ef58ebb26728c026d4e" class="toggle"  />
+    <label for="section-66d86d5f38d04ef58ebb26728c026d4e" class="flex justify-between">
       <a role="button" class="">Openclaw</a>
     </label>
   
@@ -1970,8 +1970,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="toggle"  />
-    <label for="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="flex justify-between">
+    <input type="checkbox" id="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="toggle"  />
+    <label for="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
@@ -2050,8 +2050,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="toggle"  />
-    <label for="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="flex justify-between">
+    <input type="checkbox" id="section-f9cf8c4489e32d49710bcbde19d88feb" class="toggle"  />
+    <label for="section-f9cf8c4489e32d49710bcbde19d88feb" class="flex justify-between">
       <a role="button" class="">Multi Agent</a>
     </label>
   
@@ -2066,8 +2066,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e496587d113a69d69794ccf2791a9ec7" class="toggle"  />
-    <label for="section-e496587d113a69d69794ccf2791a9ec7" class="flex justify-between">
+    <input type="checkbox" id="section-7eb50204504aa47e2bb008fa842d839e" class="toggle"  />
+    <label for="section-7eb50204504aa47e2bb008fa842d839e" class="flex justify-between">
       <a role="button" class="">Agent编排</a>
     </label>
   
@@ -2123,8 +2123,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-386b9d0b04e254d93a6bcfe648c4dabb" class="toggle"  />
-    <label for="section-386b9d0b04e254d93a6bcfe648c4dabb" class="flex justify-between">
+    <input type="checkbox" id="section-f36497092f145d804086d65929bc2e21" class="toggle"  />
+    <label for="section-f36497092f145d804086d65929bc2e21" class="flex justify-between">
       <a role="button" class="">Multi-agent</a>
     </label>
   
@@ -2216,8 +2216,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3b952b230f5462315a195fb221f48926" class="toggle"  />
-    <label for="section-3b952b230f5462315a195fb221f48926" class="flex justify-between">
+    <input type="checkbox" id="section-68da3356eb5814cf26b079259a3868f0" class="toggle"  />
+    <label for="section-68da3356eb5814cf26b079259a3868f0" class="flex justify-between">
       <a role="button" class="">OpenClaw *</a>
     </label>
   
@@ -2291,8 +2291,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d1f7a2a771a519d5e8b989f2e775ff25" class="toggle"  />
-    <label for="section-d1f7a2a771a519d5e8b989f2e775ff25" class="flex justify-between">
+    <input type="checkbox" id="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="toggle"  />
+    <label for="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="flex justify-between">
       <a role="button" class="">subagent *</a>
     </label>
   
@@ -2348,8 +2348,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b8e7621552172a9013b3c0dae0dba198" class="toggle"  />
-    <label for="section-b8e7621552172a9013b3c0dae0dba198" class="flex justify-between">
+    <input type="checkbox" id="section-88a7a1de323948713dc3ef284015e786" class="toggle"  />
+    <label for="section-88a7a1de323948713dc3ef284015e786" class="flex justify-between">
       <a role="button" class="">Teams *</a>
     </label>
   
@@ -2410,8 +2410,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="toggle"  />
-    <label for="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="flex justify-between">
+    <input type="checkbox" id="section-32002b3a68174992b401de86ca7466b5" class="toggle"  />
+    <label for="section-32002b3a68174992b401de86ca7466b5" class="flex justify-between">
       <a role="button" class="">Tool &amp; Skill</a>
     </label>
   
@@ -2444,8 +2444,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5cca64c106a3667481dd63b47c86e87a" class="toggle"  />
-    <label for="section-5cca64c106a3667481dd63b47c86e87a" class="flex justify-between">
+    <input type="checkbox" id="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="toggle"  />
+    <label for="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="flex justify-between">
       <a role="button" class="">Survey &amp; SFT</a>
     </label>
   
@@ -2537,8 +2537,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c655fd9062845f96cffb72685b2fd696" class="toggle"  />
-    <label for="section-c655fd9062845f96cffb72685b2fd696" class="flex justify-between">
+    <input type="checkbox" id="section-80682025fb6883cc3c0dd48368b5f7e2" class="toggle"  />
+    <label for="section-80682025fb6883cc3c0dd48368b5f7e2" class="flex justify-between">
       <a role="button" class="">Tool 演进</a>
     </label>
   
@@ -2576,8 +2576,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-412785899ca57a1289f566e38e9ac427" class="toggle"  />
-    <label for="section-412785899ca57a1289f566e38e9ac427" class="flex justify-between">
+    <input type="checkbox" id="section-906763a3f2cf8396c71a61e320169919" class="toggle"  />
+    <label for="section-906763a3f2cf8396c71a61e320169919" class="flex justify-between">
       <a role="button" class="">tools</a>
     </label>
   
@@ -2615,8 +2615,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="toggle"  />
-    <label for="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="flex justify-between">
+    <input type="checkbox" id="section-92f9fae5d8ab88847e6e20bd4d125306" class="toggle"  />
+    <label for="section-92f9fae5d8ab88847e6e20bd4d125306" class="flex justify-between">
       <a role="button" class="">MCP *</a>
     </label>
   
@@ -2708,8 +2708,42 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-efd004ff6efd6d01576ed8f1a0e02adf" class="toggle"  />
-    <label for="section-efd004ff6efd6d01576ed8f1a0e02adf" class="flex justify-between">
+    <input type="checkbox" id="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="toggle"  />
+    <label for="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="flex justify-between">
+      <a role="button" class="">integrate *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/ToolSkill/integrate/hermes/Agent-Harness-%E5%A6%82%E4%BD%95%E4%B8%8E%E4%BC%81%E4%B8%9A%E5%86%85%E9%83%A8%E7%B3%BB%E7%BB%9F%E9%9B%86%E6%88%90/" class="">Agent Harness 如何与企业内部系统集成</a>
+  
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-10c047fd3087cf2b29cccd85fa867912" class="toggle"  />
+    <label for="section-10c047fd3087cf2b29cccd85fa867912" class="flex justify-between">
       <a role="button" class="">skill *</a>
     </label>
   
@@ -2814,8 +2848,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="toggle"  />
-    <label for="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="flex justify-between">
+    <input type="checkbox" id="section-8f63915fcb39ad7378f7bc5015f45f65" class="toggle"  />
+    <label for="section-8f63915fcb39ad7378f7bc5015f45f65" class="flex justify-between">
       <a role="button" class="">Agent Eval</a>
     </label>
   
@@ -2848,8 +2882,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a89b3f08479487c94e6a45e37e72a862" class="toggle"  />
-    <label for="section-a89b3f08479487c94e6a45e37e72a862" class="flex justify-between">
+    <input type="checkbox" id="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="toggle"  />
+    <label for="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="flex justify-between">
       <a role="button" class="">Demystifying Evals for AI Agents</a>
     </label>
   
@@ -2900,8 +2934,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-83c0821b846e1dac2e8bfc2d8d45e825" class="toggle"  />
-    <label for="section-83c0821b846e1dac2e8bfc2d8d45e825" class="flex justify-between">
+    <input type="checkbox" id="section-6a8786ba009ef23a5dd033a252f02f8b" class="toggle"  />
+    <label for="section-6a8786ba009ef23a5dd033a252f02f8b" class="flex justify-between">
       <a role="button" class="">langfuse</a>
     </label>
   
@@ -2939,8 +2973,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9c20639ed9ed4feb764f4bac9cac218f" class="toggle"  />
-    <label for="section-9c20639ed9ed4feb764f4bac9cac218f" class="flex justify-between">
+    <input type="checkbox" id="section-159965614aff9bed370d992d243d0f28" class="toggle"  />
+    <label for="section-159965614aff9bed370d992d243d0f28" class="flex justify-between">
       <a role="button" class="">ragas</a>
     </label>
   
@@ -2978,8 +3012,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f0f5dda3ea316a50f6d522c3904406d7" class="toggle"  />
-    <label for="section-f0f5dda3ea316a50f6d522c3904406d7" class="flex justify-between">
+    <input type="checkbox" id="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="toggle"  />
+    <label for="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="flex justify-between">
       <a role="button" class="">llm-as-judge</a>
     </label>
   
@@ -3131,8 +3165,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="toggle"  />
-    <label for="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="flex justify-between">
+    <input type="checkbox" id="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="toggle"  />
+    <label for="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="flex justify-between">
       <a role="button" class="">Harness engineering</a>
     </label>
   
@@ -3147,8 +3181,212 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-fba0f3dbc923c98eb8930452d3ded9da" class="toggle"  />
-    <label for="section-fba0f3dbc923c98eb8930452d3ded9da" class="flex justify-between">
+    <input type="checkbox" id="section-104617d101dbf375f60fa698eeb5966a" class="toggle"  />
+    <label for="section-104617d101dbf375f60fa698eeb5966a" class="flex justify-between">
+      <a role="button" class="">Compress *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code/" class="">Claude /compact[A1] *</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-compress/" class="">Claude Code - Compact summary</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/codex/" class="">CodeX 上下文</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code2/" class="">Claude Code2</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/1-compress/claude-code3/" class="">Claude Code3</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-f957c352b7370ac61b04758ecb52fade" class="toggle"  />
+    <label for="section-f957c352b7370ac61b04758ecb52fade" class="flex justify-between">
+      <a role="button" class="">可靠性 *</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/codex/" class="">Codex 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/dsh/" class="">Deepseek harness 可靠性</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/2-reliable/pi-durable/" class="">Pi Durable</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="toggle"  />
+    <label for="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="flex justify-between">
       <a role="button" class="">Harness</a>
     </label>
   
@@ -3163,7 +3401,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/10-harness-enginering/harness-%E8%8C%83%E5%BC%8F/" class="">Harness 范式[A1]</a>
   
 
           
@@ -3181,7 +3419,7 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <a href="/www6vAIGC/docs/Harness-engineering/harness-enginering/harness/" class="">Harness</a>
+    <a href="/www6vAIGC/docs/Harness-engineering/10-harness-enginering/harness/" class="">Harness</a>
   
 
           
@@ -3204,8 +3442,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="toggle"  />
-    <label for="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="flex justify-between">
+    <input type="checkbox" id="section-a0f0941605053d7b5666363df4970351" class="toggle"  />
+    <label for="section-a0f0941605053d7b5666363df4970351" class="flex justify-between">
       <a role="button" class="">OpenClaw</a>
     </label>
   
@@ -3351,8 +3589,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-946abd4062c933c072a8c623969add46" class="toggle"  />
-    <label for="section-946abd4062c933c072a8c623969add46" class="flex justify-between">
+    <input type="checkbox" id="section-7185e230a37938c1265b025f647037ad" class="toggle"  />
+    <label for="section-7185e230a37938c1265b025f647037ad" class="flex justify-between">
       <a role="button" class="">Hermes Agent</a>
     </label>
   
@@ -3462,47 +3700,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e7b0748ad48450dde76b72297d165429" class="toggle"  />
-    <label for="section-e7b0748ad48450dde76b72297d165429" class="flex justify-between">
-      <a role="button" class="">JEV</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/JEV/JEV/" class="">JEV</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-fcf812d87768431bb3ab86201a4222e2" class="toggle"  />
-    <label for="section-fcf812d87768431bb3ab86201a4222e2" class="flex justify-between">
+    <input type="checkbox" id="section-9d52e8079db1067f4a0c448c7b68b11b" class="toggle"  />
+    <label for="section-9d52e8079db1067f4a0c448c7b68b11b" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
@@ -3612,8 +3811,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-02af4685675e68e6f8179d748eeb6c5a" class="toggle"  />
-    <label for="section-02af4685675e68e6f8179d748eeb6c5a" class="flex justify-between">
+    <input type="checkbox" id="section-484bcac8c98a52dc9d58366512e4159a" class="toggle"  />
+    <label for="section-484bcac8c98a52dc9d58366512e4159a" class="flex justify-between">
       <a role="button" class="">Codex</a>
     </label>
   
@@ -3646,137 +3845,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ad440789e1a7ba07eb2b3918829c7257" class="toggle"  />
-    <label for="section-ad440789e1a7ba07eb2b3918829c7257" class="flex justify-between">
-      <a role="button" class="">Compress *</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code/" class="">Claude /compact[A1] *</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-compress/" class="">Claude Code - Compact summary</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code1/" class="">Claude 上下文压缩[A1]*</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/codex/" class="">CodeX 上下文</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code2/" class="">Claude Code2</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/compress/claude-code3/" class="">Claude Code3</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-7b4eb57325a2b2a77e7753390fc7d915" class="toggle"  />
-    <label for="section-7b4eb57325a2b2a77e7753390fc7d915" class="flex justify-between">
+    <input type="checkbox" id="section-bb4ccb54455a606ed07ce1fdab4ac532" class="toggle"  />
+    <label for="section-bb4ccb54455a606ed07ce1fdab4ac532" class="flex justify-between">
       <a role="button" class="">Pi Agent</a>
     </label>
   
@@ -3858,83 +3928,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c47c9c73c26a489b07f412d8d4ee4f40" class="toggle"  />
-    <label for="section-c47c9c73c26a489b07f412d8d4ee4f40" class="flex justify-between">
-      <a role="button" class="">可靠性 *</a>
-    </label>
-  
-
-          
-  <ul>
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/codex/" class="">Codex 可靠性</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/dsh/" class="">Deepseek harness 可靠性</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <a href="/www6vAIGC/docs/Harness-engineering/reliable/pi-durable/" class="">Pi Durable</a>
-  
-
-          
-  <ul>
-    
-  </ul>
-
-        </li>
-      
-    
-  </ul>
-
-        </li>
-      
-    
-      
-        <li>
-          
-  
-  
-
-  
-    <input type="checkbox" id="section-eec787204d3e675b4351db6ec0be7bc8" class="toggle"  />
-    <label for="section-eec787204d3e675b4351db6ec0be7bc8" class="flex justify-between">
+    <input type="checkbox" id="section-27894a1d29427c9d52d1df6110020b8e" class="toggle"  />
+    <label for="section-27894a1d29427c9d52d1df6110020b8e" class="flex justify-between">
       <a role="button" class="">实战</a>
     </label>
   
@@ -3950,6 +3945,58 @@ https://github.com/alex-shpak/hugo-book
 
   
     <a href="/www6vAIGC/docs/Harness-engineering/Practice/Agent-%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" class="">Agent实战经验 kimi [A1]</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <input type="checkbox" id="section-8488d215ee4dde3fcb569ebf074c8d99" class="toggle"  />
+    <label for="section-8488d215ee4dde3fcb569ebf074c8d99" class="flex justify-between">
+      <a role="button" class="">JEV</a>
+    </label>
+  
+
+          
+  <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/100-JEV/hermes/Jev%E5%8E%9F%E7%90%86%E4%B8%8E%E5%BA%94%E7%94%A8/" class="">Jev原理与应用</a>
+  
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/100-JEV/JEV/" class="">JEV</a>
   
 
           
@@ -3995,8 +4042,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b41552d83299a260ffc5181fd5bf1177" class="toggle"  />
-    <label for="section-b41552d83299a260ffc5181fd5bf1177" class="flex justify-between">
+    <input type="checkbox" id="section-1f82435e89939f7232e02729b008213e" class="toggle"  />
+    <label for="section-1f82435e89939f7232e02729b008213e" class="flex justify-between">
       <a role="button" class="">Loops engineering</a>
     </label>
   
@@ -4011,8 +4058,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1a4757bdd1099e1149094c77f1470e5d" class="toggle"  />
-    <label for="section-1a4757bdd1099e1149094c77f1470e5d" class="flex justify-between">
+    <input type="checkbox" id="section-bf010a926485186e47c6ea2d2776a45f" class="toggle"  />
+    <label for="section-bf010a926485186e47c6ea2d2776a45f" class="flex justify-between">
       <a role="button" class="">goal</a>
     </label>
   
@@ -4068,8 +4115,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-eca2bd358c3e27c981a441ba4e158cb3" class="toggle"  />
-    <label for="section-eca2bd358c3e27c981a441ba4e158cb3" class="flex justify-between">
+    <input type="checkbox" id="section-013b791baed028e00c3cd685450d1255" class="toggle"  />
+    <label for="section-013b791baed028e00c3cd685450d1255" class="flex justify-between">
       <a role="button" class="">loop engineering</a>
     </label>
   
@@ -4125,8 +4172,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27d39407dbc0d87e956d19638a0f1da3" class="toggle"  />
-    <label for="section-27d39407dbc0d87e956d19638a0f1da3" class="flex justify-between">
+    <input type="checkbox" id="section-b284ec03b7c672cfde434851c4ea7377" class="toggle"  />
+    <label for="section-b284ec03b7c672cfde434851c4ea7377" class="flex justify-between">
       <a role="button" class="">长程任务</a>
     </label>
   
@@ -4195,8 +4242,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-689fa0c955be06dbb890852c4c2826e8" class="toggle"  />
-    <label for="section-689fa0c955be06dbb890852c4c2826e8" class="flex justify-between">
+    <input type="checkbox" id="section-4211c6654bc32161daa2abe28c73b06e" class="toggle"  />
+    <label for="section-4211c6654bc32161daa2abe28c73b06e" class="flex justify-between">
       <a role="button" class="">Meta Harness</a>
     </label>
   
@@ -4211,8 +4258,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-524d9cf59683da54d7ecc3c0ff6519ce" class="toggle"  />
-    <label for="section-524d9cf59683da54d7ecc3c0ff6519ce" class="flex justify-between">
+    <input type="checkbox" id="section-c81a15018d7ae452140c88ff216be77d" class="toggle"  />
+    <label for="section-c81a15018d7ae452140c88ff216be77d" class="flex justify-between">
       <a role="button" class="">Managed Agent</a>
     </label>
   
@@ -4340,8 +4387,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="toggle"  />
-    <label for="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="flex justify-between">
+    <input type="checkbox" id="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="toggle"  />
+    <label for="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="flex justify-between">
       <a role="button" class="">Omnigent</a>
     </label>
   
@@ -4384,8 +4431,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="toggle"  />
-    <label for="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="flex justify-between">
+    <input type="checkbox" id="section-920c2fa3546aca5261a01784a53ddff3" class="toggle"  />
+    <label for="section-920c2fa3546aca5261a01784a53ddff3" class="flex justify-between">
       <a role="button" class="">Context Engineering</a>
     </label>
   
@@ -4454,8 +4501,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="toggle"  />
-    <label for="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="flex justify-between">
+    <input type="checkbox" id="section-0563b2fd6005bd3ffd431bec1f81b423" class="toggle"  />
+    <label for="section-0563b2fd6005bd3ffd431bec1f81b423" class="flex justify-between">
       <a role="button" class="">Plan mode</a>
     </label>
   
@@ -4511,8 +4558,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-4a730712863635107d9ac9a5d3e3abd6" class="toggle"  />
-    <label for="section-4a730712863635107d9ac9a5d3e3abd6" class="flex justify-between">
+    <input type="checkbox" id="section-ceda1f30ce03531a336a1f1ebb026a63" class="toggle"  />
+    <label for="section-ceda1f30ce03531a336a1f1ebb026a63" class="flex justify-between">
       <a role="button" class="">Prompting caching *</a>
     </label>
   
@@ -4555,8 +4602,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-98dd33716c353fd55829a04c54d5e57e" class="toggle"  />
-    <label for="section-98dd33716c353fd55829a04c54d5e57e" class="flex justify-between">
+    <input type="checkbox" id="section-097abb2131971a92a13c1e53f850eb30" class="toggle"  />
+    <label for="section-097abb2131971a92a13c1e53f850eb30" class="flex justify-between">
       <a role="button" class="">Prompt Engineering</a>
     </label>
   
@@ -4720,8 +4767,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ad26e82e3d025c385444444a93d72502" class="toggle"  />
-    <label for="section-ad26e82e3d025c385444444a93d72502" class="flex justify-between">
+    <input type="checkbox" id="section-951bebaba4a0e7ffcc11ac548251e389" class="toggle"  />
+    <label for="section-951bebaba4a0e7ffcc11ac548251e389" class="flex justify-between">
       <a role="button" class="">DeepResearch</a>
     </label>
   
@@ -4903,8 +4950,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9cc3ec6d88705686bc94595daa8aa25e" class="toggle"  />
-    <label for="section-9cc3ec6d88705686bc94595daa8aa25e" class="flex justify-between">
+    <input type="checkbox" id="section-def011b742c3bb564ed84bad958a8bb9" class="toggle"  />
+    <label for="section-def011b742c3bb564ed84bad958a8bb9" class="flex justify-between">
       <a role="button" class="">FineTuning</a>
     </label>
   
@@ -4919,8 +4966,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-7b3c994f2c17601a215b6b57dc71b7ef" class="toggle"  />
-    <label for="section-7b3c994f2c17601a215b6b57dc71b7ef" class="flex justify-between">
+    <input type="checkbox" id="section-b1c6c40bb101131e4fe5a95225175846" class="toggle"  />
+    <label for="section-b1c6c40bb101131e4fe5a95225175846" class="flex justify-between">
       <a role="button" class="">Instruct Tuning</a>
     </label>
   
@@ -4976,8 +5023,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ebf0a5559cc09bbc171db379534a7dc9" class="toggle"  />
-    <label for="section-ebf0a5559cc09bbc171db379534a7dc9" class="flex justify-between">
+    <input type="checkbox" id="section-a5f257b0a67dc566e55c98245e32a9a3" class="toggle"  />
+    <label for="section-a5f257b0a67dc566e55c98245e32a9a3" class="flex justify-between">
       <a role="button" class="">实践 *</a>
     </label>
   
@@ -5051,8 +5098,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0082251d40c765323fa32be9b3686aa0" class="toggle"  />
-    <label for="section-0082251d40c765323fa32be9b3686aa0" class="flex justify-between">
+    <input type="checkbox" id="section-bc06fe507152e253f2b8fedc786f69f9" class="toggle"  />
+    <label for="section-bc06fe507152e253f2b8fedc786f69f9" class="flex justify-between">
       <a role="button" class="">PEFT *</a>
     </label>
   
@@ -5252,8 +5299,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d763501d6c35330245339b6c8531cf7c" class="toggle"  />
-    <label for="section-d763501d6c35330245339b6c8531cf7c" class="flex justify-between">
+    <input type="checkbox" id="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="toggle"  />
+    <label for="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="flex justify-between">
       <a role="button" class="">Data</a>
     </label>
   
@@ -5512,8 +5559,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-284de0efced75cd016672664a17456be" class="toggle"  />
-    <label for="section-284de0efced75cd016672664a17456be" class="flex justify-between">
+    <input type="checkbox" id="section-ec440fd30b4fccc02d2866bf269d3c1c" class="toggle"  />
+    <label for="section-ec440fd30b4fccc02d2866bf269d3c1c" class="flex justify-between">
       <a role="button" class="">AI Native</a>
     </label>
   
@@ -5623,8 +5670,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a67b63d6d594556c363a35d7d38cd355" class="toggle"  />
-    <label for="section-a67b63d6d594556c363a35d7d38cd355" class="flex justify-between">
+    <input type="checkbox" id="section-c4d50087126f44db07d7a7f0faa67711" class="toggle"  />
+    <label for="section-c4d50087126f44db07d7a7f0faa67711" class="flex justify-between">
       <a role="button" class="">Langchain</a>
     </label>
   
@@ -5716,8 +5763,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3926c431ee2abb31fef9cd9185588ed0" class="toggle"  />
-    <label for="section-3926c431ee2abb31fef9cd9185588ed0" class="flex justify-between">
+    <input type="checkbox" id="section-461a4404ae59395291876d9268139c73" class="toggle"  />
+    <label for="section-461a4404ae59395291876d9268139c73" class="flex justify-between">
       <a role="button" class="">Application</a>
     </label>
   
@@ -5863,8 +5910,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="toggle"  />
-    <label for="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="flex justify-between">
+    <input type="checkbox" id="section-3ce504245d1c08bb826d2f16a7a9180c" class="toggle"  />
+    <label for="section-3ce504245d1c08bb826d2f16a7a9180c" class="flex justify-between">
       <a role="button" class="">其他</a>
     </label>
   
@@ -6063,40 +6110,40 @@ https://github.com/alex-shpak/hugo-book
 <p>每开启一个新 session，Agent 就像经历了一次「脑叶切除术」——SOP 要重新讲一遍、项目背景要重新铺垫、输出格式要重新约定。人类用户被迫成了 Agent 的「记忆外挂」，一遍又一遍地重复那些本该被记住的事情。</p>
 <p>现有的 RAG（检索增强生成）方案在「找到什么」这个问题上已经做得足够好，但它无法回答更关键的问题：</p>
 <table>
-	<thead>
-			<tr>
-					<th>问题</th>
-					<th>RAG 的回答</th>
-					<th>实际需要的回答</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>这条信息该给哪个 Agent？</td>
-					<td>❌ 不感知 Agent 身份</td>
-					<td>✅ 按角色精确分发</td>
-			</tr>
-			<tr>
-					<td>哪个版本的知识是当前有效的？</td>
-					<td>❌ Chunk 没有版本概念</td>
-					<td>✅ 带版本号、带状态</td>
-			</tr>
-			<tr>
-					<td>这段经验是用户偏好还是事实约束？</td>
-					<td>❌ 扁平文本块，语义模糊</td>
-					<td>✅ 分层结构，类型明确</td>
-			</tr>
-			<tr>
-					<td>这段记忆谁能看、谁能改？</td>
-					<td>❌ 无权限模型</td>
-					<td>✅ 四级 ACL 体系</td>
-			</tr>
-			<tr>
-					<td>改这个代码文件会影响哪些模块？</td>
-					<td>❌ 文本匹配，无调用关系</td>
-					<td>✅ 符号级调用图</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>问题</th>
+          <th>RAG 的回答</th>
+          <th>实际需要的回答</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>这条信息该给哪个 Agent？</td>
+          <td>❌ 不感知 Agent 身份</td>
+          <td>✅ 按角色精确分发</td>
+      </tr>
+      <tr>
+          <td>哪个版本的知识是当前有效的？</td>
+          <td>❌ Chunk 没有版本概念</td>
+          <td>✅ 带版本号、带状态</td>
+      </tr>
+      <tr>
+          <td>这段经验是用户偏好还是事实约束？</td>
+          <td>❌ 扁平文本块，语义模糊</td>
+          <td>✅ 分层结构，类型明确</td>
+      </tr>
+      <tr>
+          <td>这段记忆谁能看、谁能改？</td>
+          <td>❌ 无权限模型</td>
+          <td>✅ 四级 ACL 体系</td>
+      </tr>
+      <tr>
+          <td>改这个代码文件会影响哪些模块？</td>
+          <td>❌ 文本匹配，无调用关系</td>
+          <td>✅ 符号级调用图</td>
+      </tr>
+  </tbody>
 </table>
 <p><strong>TencentDB Agent Memory 的定位恰恰在此：它不是要「存更多」，而是要「存得对、取得准、管得好」。</strong></p>
 <p>本文将深入源码层面，拆解这套记忆系统的架构设计、数据模型、召回策略和治理体系，看看它是如何让 Agent 团队拥有「继承式记忆」的——后入职的 Agent 不必从零开始，而是站在前辈的肩膀上工作。</p>
@@ -6212,55 +6259,55 @@ https://github.com/alex-shpak/hugo-book
 </h4>
 <p>从 <code>MemoryCore/src/core/store/</code> 源码可以看到，SQLite 主要承载<strong>元数据和索引</strong>：</p>
 <table>
-	<thead>
-			<tr>
-					<th>表类别</th>
-					<th>典型表</th>
-					<th>用途</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>对话表</td>
-					<td><code>conversations</code>, <code>messages</code></td>
-					<td>L0 原始对话的元数据（ID、时间、session 映射）</td>
-			</tr>
-			<tr>
-					<td>原子表</td>
-					<td><code>atoms</code>, <code>atom_embeddings</code></td>
-					<td>L1 原子记忆的文本 + 向量嵌入</td>
-			</tr>
-			<tr>
-					<td>场景表</td>
-					<td><code>scenarios</code>, <code>scenario_atoms</code></td>
-					<td>L2 场景分组及场景与原子的关联</td>
-			</tr>
-			<tr>
-					<td>画像表</td>
-					<td><code>personas</code>, <code>persona_patterns</code></td>
-					<td>L3 用户画像和长期模式</td>
-			</tr>
-			<tr>
-					<td>知识表</td>
-					<td><code>knowledge_assets</code>, <code>knowledge_links</code></td>
-					<td>Wiki 页面和链接关系</td>
-			</tr>
-			<tr>
-					<td>资产表</td>
-					<td><code>skills</code>, <code>skill_versions</code>, <code>skill_resources</code></td>
-					<td>Skill 版本和资源文件</td>
-			</tr>
-			<tr>
-					<td>治理表</td>
-					<td><code>users</code>, <code>teams</code>, <code>agents</code>, <code>assets</code>, <code>permissions</code></td>
-					<td>用户/团队/Agent/权限模型</td>
-			</tr>
-			<tr>
-					<td>代码图表</td>
-					<td><code>codegraph_symbols</code>, <code>codegraph_calls</code></td>
-					<td>符号和调用关系索引</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>表类别</th>
+          <th>典型表</th>
+          <th>用途</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>对话表</td>
+          <td><code>conversations</code>, <code>messages</code></td>
+          <td>L0 原始对话的元数据（ID、时间、session 映射）</td>
+      </tr>
+      <tr>
+          <td>原子表</td>
+          <td><code>atoms</code>, <code>atom_embeddings</code></td>
+          <td>L1 原子记忆的文本 + 向量嵌入</td>
+      </tr>
+      <tr>
+          <td>场景表</td>
+          <td><code>scenarios</code>, <code>scenario_atoms</code></td>
+          <td>L2 场景分组及场景与原子的关联</td>
+      </tr>
+      <tr>
+          <td>画像表</td>
+          <td><code>personas</code>, <code>persona_patterns</code></td>
+          <td>L3 用户画像和长期模式</td>
+      </tr>
+      <tr>
+          <td>知识表</td>
+          <td><code>knowledge_assets</code>, <code>knowledge_links</code></td>
+          <td>Wiki 页面和链接关系</td>
+      </tr>
+      <tr>
+          <td>资产表</td>
+          <td><code>skills</code>, <code>skill_versions</code>, <code>skill_resources</code></td>
+          <td>Skill 版本和资源文件</td>
+      </tr>
+      <tr>
+          <td>治理表</td>
+          <td><code>users</code>, <code>teams</code>, <code>agents</code>, <code>assets</code>, <code>permissions</code></td>
+          <td>用户/团队/Agent/权限模型</td>
+      </tr>
+      <tr>
+          <td>代码图表</td>
+          <td><code>codegraph_symbols</code>, <code>codegraph_calls</code></td>
+          <td>符号和调用关系索引</td>
+      </tr>
+  </tbody>
 </table>
 <p>这种分层存储策略体现了 DDIA 中的**「多模型存储」**思想——不同访问模式的记忆数据采用最适合的存储方式：高频检索的用向量索引，关系查询的用 SQL 表，大文本的走文件系统。</p>
 <h4 id="本地文件存储">
@@ -6299,7 +6346,7 @@ https://github.com/alex-shpak/hugo-book
          ▼ (不存在时)
 环境变量 + 内置默认值                        ← 最低优先级
 </code></pre><p>配置文件支持 YAML 和 JSON 两种格式，核心配置项包括：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># tdai-gateway.yaml 示例</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># tdai-gateway.yaml 示例</span>
 </span></span><span style="display:flex;"><span><span style="color:#f92672">server</span>:
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">port</span>: <span style="color:#ae81ff">8420</span>
 </span></span><span style="display:flex;"><span>  <span style="color:#f92672">host</span>: <span style="color:#e6db74">&#34;0.0.0.0&#34;</span>
@@ -6365,45 +6412,45 @@ https://github.com/alex-shpak/hugo-book
   <a class="anchor" href="#%e5%90%84%e5%b1%82%e8%af%a6%e8%a7%a3">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>层级</th>
-					<th>存储内容</th>
-					<th>数据结构</th>
-					<th>主要用途</th>
-					<th>典型大小</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>L0</strong> Conversation</td>
-					<td>原始对话完整上下文（含时间戳、角色、工具调用）</td>
-					<td>结构化消息列表</td>
-					<td>核验精确措辞、追溯决策来源</td>
-					<td>单轮数百~数千 Token</td>
-			</tr>
-			<tr>
-					<td><strong>L1</strong> Atom</td>
-					<td>事实/偏好/约束/事件的原子单元</td>
-					<td><code>{type, content, confidence, timestamp, source}</code></td>
-					<td>精确召回可执行信息，支持 BM25 + 向量混合检索</td>
-					<td>单条 10~500 Token</td>
-			</tr>
-			<tr>
-					<td><strong>L2</strong> Scenario</td>
-					<td>按项目/场景组织的知识块集合</td>
-					<td><code>{scenario_id, name, atom_refs, context_block}</code></td>
-					<td>快速恢复工作上下文（&ldquo;上周做的 XX 项目进展到…&quot;）</td>
-					<td>单场景 500~3000 Token</td>
-			</tr>
-			<tr>
-					<td><strong>L3</strong> Persona</td>
-					<td>长期画像、稳定模式、用户偏好</td>
-					<td><code>{pattern_id, description, frequency, last_seen}</code></td>
-					<td>Agent 快速进入用户/团队语境（&ldquo;用户偏好 Python 而非 Go&rdquo;）</td>
-					<td>画像 200~1000 Token</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>层级</th>
+          <th>存储内容</th>
+          <th>数据结构</th>
+          <th>主要用途</th>
+          <th>典型大小</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>L0</strong> Conversation</td>
+          <td>原始对话完整上下文（含时间戳、角色、工具调用）</td>
+          <td>结构化消息列表</td>
+          <td>核验精确措辞、追溯决策来源</td>
+          <td>单轮数百~数千 Token</td>
+      </tr>
+      <tr>
+          <td><strong>L1</strong> Atom</td>
+          <td>事实/偏好/约束/事件的原子单元</td>
+          <td><code>{type, content, confidence, timestamp, source}</code></td>
+          <td>精确召回可执行信息，支持 BM25 + 向量混合检索</td>
+          <td>单条 10~500 Token</td>
+      </tr>
+      <tr>
+          <td><strong>L2</strong> Scenario</td>
+          <td>按项目/场景组织的知识块集合</td>
+          <td><code>{scenario_id, name, atom_refs, context_block}</code></td>
+          <td>快速恢复工作上下文（&ldquo;上周做的 XX 项目进展到…&quot;）</td>
+          <td>单场景 500~3000 Token</td>
+      </tr>
+      <tr>
+          <td><strong>L3</strong> Persona</td>
+          <td>长期画像、稳定模式、用户偏好</td>
+          <td><code>{pattern_id, description, frequency, last_seen}</code></td>
+          <td>Agent 快速进入用户/团队语境（&ldquo;用户偏好 Python 而非 Go&rdquo;）</td>
+          <td>画像 200~1000 Token</td>
+      </tr>
+  </tbody>
 </table>
 <h4 id="召回策略矩阵">
   召回策略矩阵
@@ -6579,34 +6626,34 @@ https://github.com/alex-shpak/hugo-book
   <a class="anchor" href="#agent-%e4%bd%bf%e7%94%a8%e5%9c%ba%e6%99%af">#</a>
 </h4>
 <table>
-	<thead>
-			<tr>
-					<th>场景</th>
-					<th>CodeGraph 提供的能力</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td>代码理解</td>
-					<td>查看函数定义、调用者、被调用者</td>
-			</tr>
-			<tr>
-					<td>影响分析</td>
-					<td>修改前评估影响范围</td>
-			</tr>
-			<tr>
-					<td>重构辅助</td>
-					<td>识别未被调用的死代码</td>
-			</tr>
-			<tr>
-					<td>依赖分析</td>
-					<td>查看模块间依赖关系</td>
-			</tr>
-			<tr>
-					<td>Bug 定位</td>
-					<td>从报错符号反向追踪调用链</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>CodeGraph 提供的能力</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>代码理解</td>
+          <td>查看函数定义、调用者、被调用者</td>
+      </tr>
+      <tr>
+          <td>影响分析</td>
+          <td>修改前评估影响范围</td>
+      </tr>
+      <tr>
+          <td>重构辅助</td>
+          <td>识别未被调用的死代码</td>
+      </tr>
+      <tr>
+          <td>依赖分析</td>
+          <td>查看模块间依赖关系</td>
+      </tr>
+      <tr>
+          <td>Bug 定位</td>
+          <td>从报错符号反向追踪调用链</td>
+      </tr>
+  </tbody>
 </table>
 <p>这种**「不只是代码在这里，而是改这个会影响那些」**的能力，是纯文本 RAG 无法提供的。</p>
 <hr>
@@ -6664,45 +6711,45 @@ https://github.com/alex-shpak/hugo-book
 </h3>
 <p>符号记忆在多个基准测试中展现了显著效果：</p>
 <table>
-	<thead>
-			<tr>
-					<th>基准测试</th>
-					<th>未启用</th>
-					<th>启用</th>
-					<th>相对提升</th>
-					<th>Token 下降</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>WideSearch</strong></td>
-					<td>33%</td>
-					<td>50%</td>
-					<td><strong>+51.52%</strong></td>
-					<td>-61.38%</td>
-			</tr>
-			<tr>
-					<td><strong>SWE-bench</strong></td>
-					<td>58.4%</td>
-					<td>64.2%</td>
-					<td><strong>+9.93%</strong></td>
-					<td>-33.09%</td>
-			</tr>
-			<tr>
-					<td><strong>AA-LCR</strong></td>
-					<td>44.0%</td>
-					<td>47.5%</td>
-					<td><strong>+7.95%</strong></td>
-					<td>-30.98%</td>
-			</tr>
-			<tr>
-					<td><strong>PersonaMem</strong></td>
-					<td>48%</td>
-					<td>76%</td>
-					<td><strong>+59%</strong></td>
-					<td>—</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>基准测试</th>
+          <th>未启用</th>
+          <th>启用</th>
+          <th>相对提升</th>
+          <th>Token 下降</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>WideSearch</strong></td>
+          <td>33%</td>
+          <td>50%</td>
+          <td><strong>+51.52%</strong></td>
+          <td>-61.38%</td>
+      </tr>
+      <tr>
+          <td><strong>SWE-bench</strong></td>
+          <td>58.4%</td>
+          <td>64.2%</td>
+          <td><strong>+9.93%</strong></td>
+          <td>-33.09%</td>
+      </tr>
+      <tr>
+          <td><strong>AA-LCR</strong></td>
+          <td>44.0%</td>
+          <td>47.5%</td>
+          <td><strong>+7.95%</strong></td>
+          <td>-30.98%</td>
+      </tr>
+      <tr>
+          <td><strong>PersonaMem</strong></td>
+          <td>48%</td>
+          <td>76%</td>
+          <td><strong>+59%</strong></td>
+          <td>—</td>
+      </tr>
+  </tbody>
 </table>
 <p>数据解读：</p>
 <ul>
@@ -6770,45 +6817,45 @@ https://github.com/alex-shpak/hugo-book
 </h3>
 <p>记忆系统的权限模型不是简单的「公开/私有」二元选择，而是四级精细控制：</p>
 <table>
-	<thead>
-			<tr>
-					<th>可见性</th>
-					<th>语义</th>
-					<th>谁可以读</th>
-					<th>谁可以写</th>
-					<th>典型场景</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>private</code></td>
-					<td>仅 Owner</td>
-					<td>创建者自己</td>
-					<td>创建者自己</td>
-					<td>个人笔记、未验证的想法</td>
-			</tr>
-			<tr>
-					<td><code>team</code></td>
-					<td>团队成员</td>
-					<td>同团队所有成员</td>
-					<td>创建者 + 团队管理员</td>
-					<td>项目文档、团队规范</td>
-			</tr>
-			<tr>
-					<td><code>restricted</code></td>
-					<td>ACL 控制</td>
-					<td>通过 User/Role/Agent ACL 精确指定</td>
-					<td>ACL 定义</td>
-					<td>敏感信息、分角色知识</td>
-			</tr>
-			<tr>
-					<td><code>agent</code></td>
-					<td>精准分发</td>
-					<td>同团队特定 Agent</td>
-					<td>系统 + 管理员</td>
-					<td>Agent 专属记忆、角色装备</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>可见性</th>
+          <th>语义</th>
+          <th>谁可以读</th>
+          <th>谁可以写</th>
+          <th>典型场景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>private</code></td>
+          <td>仅 Owner</td>
+          <td>创建者自己</td>
+          <td>创建者自己</td>
+          <td>个人笔记、未验证的想法</td>
+      </tr>
+      <tr>
+          <td><code>team</code></td>
+          <td>团队成员</td>
+          <td>同团队所有成员</td>
+          <td>创建者 + 团队管理员</td>
+          <td>项目文档、团队规范</td>
+      </tr>
+      <tr>
+          <td><code>restricted</code></td>
+          <td>ACL 控制</td>
+          <td>通过 User/Role/Agent ACL 精确指定</td>
+          <td>ACL 定义</td>
+          <td>敏感信息、分角色知识</td>
+      </tr>
+      <tr>
+          <td><code>agent</code></td>
+          <td>精准分发</td>
+          <td>同团队特定 Agent</td>
+          <td>系统 + 管理员</td>
+          <td>Agent 专属记忆、角色装备</td>
+      </tr>
+  </tbody>
 </table>
 <p>源码中的权限检查逻辑大致如下：</p>
 <pre tabindex="0"><code>请求 (user_id, agent_id, team_id, asset_id)
@@ -6853,35 +6900,35 @@ Owner ✓ / ✗
 └─────────┘ └────────┘ └──────────┘ └──────────┘
 </code></pre><p>各适配器的实现方式：</p>
 <table>
-	<thead>
-			<tr>
-					<th>框架</th>
-					<th>适配方式</th>
-					<th>源码位置</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>OpenClaw</strong></td>
-					<td><code>openclaw-plugin/</code> 轻量客户端适配器</td>
-					<td>插件形式加载</td>
-			</tr>
-			<tr>
-					<td><strong>Hermes</strong></td>
-					<td><code>hermes-plugin/</code> Memory Provider</td>
-					<td>Provider 接口实现</td>
-			</tr>
-			<tr>
-					<td><strong>Claude Code / CodeBuddy</strong></td>
-					<td>Proxy 中间层代理</td>
-					<td>代理转发请求</td>
-			</tr>
-			<tr>
-					<td><strong>自定义应用</strong></td>
-					<td>TypeScript / Python SDK</td>
-					<td>直接调用 API</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>框架</th>
+          <th>适配方式</th>
+          <th>源码位置</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>OpenClaw</strong></td>
+          <td><code>openclaw-plugin/</code> 轻量客户端适配器</td>
+          <td>插件形式加载</td>
+      </tr>
+      <tr>
+          <td><strong>Hermes</strong></td>
+          <td><code>hermes-plugin/</code> Memory Provider</td>
+          <td>Provider 接口实现</td>
+      </tr>
+      <tr>
+          <td><strong>Claude Code / CodeBuddy</strong></td>
+          <td>Proxy 中间层代理</td>
+          <td>代理转发请求</td>
+      </tr>
+      <tr>
+          <td><strong>自定义应用</strong></td>
+          <td>TypeScript / Python SDK</td>
+          <td>直接调用 API</td>
+      </tr>
+  </tbody>
 </table>
 <h3 id="62-适配器的三个核心职责">
   6.2 适配器的三个核心职责
@@ -6920,58 +6967,58 @@ Owner ✓ / ✗
 </h3>
 <p>系统提供了两套 API：v2（遗留）和 v3（推荐）。新集成应使用 v3 API：</p>
 <table>
-	<thead>
-			<tr>
-					<th>API 前缀</th>
-					<th>用途</th>
-					<th>核心端点</th>
-					<th>状态</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><code>/v3/conversation/*</code></td>
-					<td>L0 对话管理</td>
-					<td><code>POST /create</code>, <code>GET /query</code>, <code>POST /search</code>, <code>DELETE /:id</code>, <code>GET /count</code></td>
-					<td>✅ 推荐</td>
-			</tr>
-			<tr>
-					<td><code>/v3/atomic/*</code></td>
-					<td>L1 原子记忆</td>
-					<td><code>GET /query</code>, <code>POST /search</code>, <code>PUT /:id</code>, <code>DELETE /:id</code>, <code>GET /count</code></td>
-					<td>✅ 推荐</td>
-			</tr>
-			<tr>
-					<td><code>/v3/scenario/*</code></td>
-					<td>L2 场景记忆</td>
-					<td>场景读写、场景内原子管理</td>
-					<td>✅ 推荐</td>
-			</tr>
-			<tr>
-					<td><code>/v3/core/*</code></td>
-					<td>L3 画像记忆</td>
-					<td>画像读写、模式提取</td>
-					<td>✅ 推荐</td>
-			</tr>
-			<tr>
-					<td><code>/v3/skill/*</code></td>
-					<td>Skill 管理</td>
-					<td>创建/搜索/版本/资源/提取</td>
-					<td>Stable</td>
-			</tr>
-			<tr>
-					<td><code>/v3/meta/*</code></td>
-					<td>管理平面</td>
-					<td>用户/团队/Agent/任务/资产/权限</td>
-					<td>管理平面</td>
-			</tr>
-			<tr>
-					<td><code>/v3/knowledge/*</code></td>
-					<td>知识资产</td>
-					<td>Wiki/CodeGraph 元数据注册</td>
-					<td>管理平面</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>API 前缀</th>
+          <th>用途</th>
+          <th>核心端点</th>
+          <th>状态</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>/v3/conversation/*</code></td>
+          <td>L0 对话管理</td>
+          <td><code>POST /create</code>, <code>GET /query</code>, <code>POST /search</code>, <code>DELETE /:id</code>, <code>GET /count</code></td>
+          <td>✅ 推荐</td>
+      </tr>
+      <tr>
+          <td><code>/v3/atomic/*</code></td>
+          <td>L1 原子记忆</td>
+          <td><code>GET /query</code>, <code>POST /search</code>, <code>PUT /:id</code>, <code>DELETE /:id</code>, <code>GET /count</code></td>
+          <td>✅ 推荐</td>
+      </tr>
+      <tr>
+          <td><code>/v3/scenario/*</code></td>
+          <td>L2 场景记忆</td>
+          <td>场景读写、场景内原子管理</td>
+          <td>✅ 推荐</td>
+      </tr>
+      <tr>
+          <td><code>/v3/core/*</code></td>
+          <td>L3 画像记忆</td>
+          <td>画像读写、模式提取</td>
+          <td>✅ 推荐</td>
+      </tr>
+      <tr>
+          <td><code>/v3/skill/*</code></td>
+          <td>Skill 管理</td>
+          <td>创建/搜索/版本/资源/提取</td>
+          <td>Stable</td>
+      </tr>
+      <tr>
+          <td><code>/v3/meta/*</code></td>
+          <td>管理平面</td>
+          <td>用户/团队/Agent/任务/资产/权限</td>
+          <td>管理平面</td>
+      </tr>
+      <tr>
+          <td><code>/v3/knowledge/*</code></td>
+          <td>知识资产</td>
+          <td>Wiki/CodeGraph 元数据注册</td>
+          <td>管理平面</td>
+      </tr>
+  </tbody>
 </table>
 <p>API 设计体现了<strong>RESTful + RPC 混合</strong>的风格——对 CRUD 操作使用 RESTful 路由（<code>/v3/atomic/:id</code>），对复杂操作使用 RPC 风格（<code>/v3/atomic/search</code>）。</p>
 <h3 id="72-身份隔离">
@@ -7000,70 +7047,70 @@ Owner ✓ / ✗
     style A fill:#ff9999
     style B fill:#99ff99</pre>
 <table>
-	<thead>
-			<tr>
-					<th>能力维度</th>
-					<th>Chat History</th>
-					<th>标准 RAG</th>
-					<th>TencentDB Agent Memory</th>
-			</tr>
-	</thead>
-	<tbody>
-			<tr>
-					<td><strong>跨会话用户理解</strong></td>
-					<td>△ 仅当前会话</td>
-					<td>△ 依赖文档内容</td>
-					<td>✅ Chat Memory 分层存储</td>
-			</tr>
-			<tr>
-					<td><strong>可执行经验蒸馏</strong></td>
-					<td>— 无</td>
-					<td>— 无</td>
-					<td>✅ Skill 工作流定义</td>
-			</tr>
-			<tr>
-					<td><strong>文档结构与关系</strong></td>
-					<td>— 无</td>
-					<td>△ Chunk 检索（扁平）</td>
-					<td>✅ Wiki + 链接图下钻</td>
-			</tr>
-			<tr>
-					<td><strong>代码调用图与影响范围</strong></td>
-					<td>— 无</td>
-					<td>△ 文本匹配（无语义）</td>
-					<td>✅ CodeGraph 符号级索引</td>
-			</tr>
-			<tr>
-					<td><strong>所有权/版本/状态</strong></td>
-					<td>— 无</td>
-					<td>— 无</td>
-					<td>✅ 完整生命周期管理</td>
-			</tr>
-			<tr>
-					<td><strong>团队共享与 Agent 分发</strong></td>
-					<td>— 无</td>
-					<td>— 无</td>
-					<td>✅ 按角色精准分发</td>
-			</tr>
-			<tr>
-					<td><strong>精细权限控制</strong></td>
-					<td>— 无</td>
-					<td>△ 依赖外部系统</td>
-					<td>✅ 四级可见性 + ACL</td>
-			</tr>
-			<tr>
-					<td><strong>Token 优化</strong></td>
-					<td>— 无</td>
-					<td>△ 有限</td>
-					<td>✅ 符号记忆卸载</td>
-			</tr>
-			<tr>
-					<td><strong>外部依赖</strong></td>
-					<td>N/A</td>
-					<td>⚠️ 向量库+ES+Redis</td>
-					<td>✅ 零外部依赖</td>
-			</tr>
-	</tbody>
+  <thead>
+      <tr>
+          <th>能力维度</th>
+          <th>Chat History</th>
+          <th>标准 RAG</th>
+          <th>TencentDB Agent Memory</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>跨会话用户理解</strong></td>
+          <td>△ 仅当前会话</td>
+          <td>△ 依赖文档内容</td>
+          <td>✅ Chat Memory 分层存储</td>
+      </tr>
+      <tr>
+          <td><strong>可执行经验蒸馏</strong></td>
+          <td>— 无</td>
+          <td>— 无</td>
+          <td>✅ Skill 工作流定义</td>
+      </tr>
+      <tr>
+          <td><strong>文档结构与关系</strong></td>
+          <td>— 无</td>
+          <td>△ Chunk 检索（扁平）</td>
+          <td>✅ Wiki + 链接图下钻</td>
+      </tr>
+      <tr>
+          <td><strong>代码调用图与影响范围</strong></td>
+          <td>— 无</td>
+          <td>△ 文本匹配（无语义）</td>
+          <td>✅ CodeGraph 符号级索引</td>
+      </tr>
+      <tr>
+          <td><strong>所有权/版本/状态</strong></td>
+          <td>— 无</td>
+          <td>— 无</td>
+          <td>✅ 完整生命周期管理</td>
+      </tr>
+      <tr>
+          <td><strong>团队共享与 Agent 分发</strong></td>
+          <td>— 无</td>
+          <td>— 无</td>
+          <td>✅ 按角色精准分发</td>
+      </tr>
+      <tr>
+          <td><strong>精细权限控制</strong></td>
+          <td>— 无</td>
+          <td>△ 依赖外部系统</td>
+          <td>✅ 四级可见性 + ACL</td>
+      </tr>
+      <tr>
+          <td><strong>Token 优化</strong></td>
+          <td>— 无</td>
+          <td>△ 有限</td>
+          <td>✅ 符号记忆卸载</td>
+      </tr>
+      <tr>
+          <td><strong>外部依赖</strong></td>
+          <td>N/A</td>
+          <td>⚠️ 向量库+ES+Redis</td>
+          <td>✅ 零外部依赖</td>
+      </tr>
+  </tbody>
 </table>
 <hr>
 <h2 id="9-部署与接入指南">
@@ -7075,7 +7122,7 @@ Owner ✓ / ✗
   <a class="anchor" href="#91-%e4%b8%80%e9%94%ae%e9%83%a8%e7%bd%b2">#</a>
 </h3>
 <p>项目提供了全球镜像部署方案，适合快速体验和生产部署：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 1. 克隆仓库</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 1. 克隆仓库</span>
 </span></span><span style="display:flex;"><span>git clone https://github.com/TencentCloud/TencentDB-Agent-Memory.git
 </span></span><span style="display:flex;"><span>cd TencentDB-Agent-Memory/deploy/global-images
 </span></span><span style="display:flex;"><span>
@@ -7106,7 +7153,7 @@ Owner ✓ / ✗
   <a class="anchor" href="#92-openclaw-%e6%8e%a5%e5%85%a5">#</a>
 </h3>
 <p>对于 OpenClaw 用户，接入过程仅需三步：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 1. 安装插件</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 1. 安装插件</span>
 </span></span><span style="display:flex;"><span>openclaw plugins install @tencentdb-agent-memory/memory-tencentdb
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e"># 2. 重启 Gateway</span>
@@ -7121,7 +7168,7 @@ Owner ✓ / ✗
   <a class="anchor" href="#93-%e6%95%b0%e6%8d%ae%e8%bf%81%e7%a7%bbv2--v3">#</a>
 </h3>
 <p>如果已有 v2 数据，可以使用内置迁移脚本：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 1. 先做 dry-run（只检查，不修改数据）</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 1. 先做 dry-run（只检查，不修改数据）</span>
 </span></span><span style="display:flex;"><span>python scripts/migrate-v2-to-v3/v2-to-v3-migrate.py <span style="color:#ae81ff">\
 </span></span></span><span style="display:flex;"><span>  ~/.memory-tencentdb/memory-tdai <span style="color:#ae81ff">\
 </span></span></span><span style="display:flex;"><span>  --dry-run
