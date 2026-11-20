@@ -226,19 +226,19 @@ conversation.
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#343a40">
 <meta name="color-scheme" content="light dark"><meta property="og:url" content="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/1-compress/claude-compress/">
-	<meta property="og:site_name" content="Modern Agent">
-	<meta property="og:title" content="Claude Code - Compact summary">
-	<meta property="og:description" content="Claude Code - Compact summary#Compact summary ⎿ This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+  <meta property="og:site_name" content="Modern Agent">
+  <meta property="og:title" content="Claude Code - Compact summary">
+  <meta property="og:description" content="Claude Code - Compact summary # Compact summary ⎿ This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
 Summary:1. Primary Request and Intent:The user issued a /goal command to integrate OpenAI Codex as a new harness in the meta-harness project. Specific requirements:- Adapt to codex app-server interfaces (JSON-RPC 2.0 over WebSocket)- Enable selecting &#39;Codex&#39; as a harness option in the frontend Agent page- Provide basic chat functionality and event display in the frontend &#39;Transcript&#39; and &#39;Debug&#39; tabs- meta-harness is started via `start-console.sh`- Codex is deployed at 124.221.28.203 in a container, SSH credentials: root/1qaZxsw@- Codex app-server accessible via WebSocket on port 5432- Codex deployment scripts are in `codex-ext\remote\`- Use Python for the SSH connection; code should go in `meta-harness-ext\ssh\`- Create a `codex` branch from `master` in meta-harness to implement this feature2. Key Technical Concepts:- meta-harness architecture: Go platform server (oma-server at :8787) &#43; Python harness sidecar (at :8090) &#43; Console SPA- Harness Registry pattern: `KindDefaultLoop` / `KindHermes` / `KindOpenClaw` / `KindDeepSeek` / `KindFake` with `RegistryConfig` and `NewRegistry`- `HarnessState` struct advertised via `GET /v1/config/harnesses` for console UI grey-out- Codex app-server protocol: JSON-RPC 2.0 over WebSocket (flow: initialize → thread/start → turn/start → wait for turn/completed)- OMA event types: `agent.message`, `agent.thinking`, `agent.tool_use`, `agent.tool_result`, `session.error`- Codex notifications mapped: `item/agentMessage/delta`, `item/reasoning/textDelta`, `item/started`, `item/completed`, `turn/completed`- SSH tunneling via paramiko (direct-tcpip channels)- Python asyncio &#43; websockets for async WebSocket client- `http.server.ThreadingHTTPServer` for the Python bridge HTTP endpoint- Frontend harness dropdown uses `__managed_&lt;kind&gt;__` sentinel values3. Files and Code Sections:- `C:\mine\workspacePy\meta-harness\meta-harness\` (actual meta-harness project root, nested)- `C:\mine\workspacePy\meta-harness\meta-harness\start-console.sh` — Startup script; sets env vars (OMA_FAKE_HARNESS, HARNESS_URL,DATABASE_URL, OMA_LISTEN_ADDR=:8787), runs auth sidecar, starts Go server.- `C:\mine\workspacePy\meta-harness\meta-harness\README.md` &amp; `readme-zh.md` — Full architecture documentation coveringplatform/harness/SDK layers, request flow, and configuration env vars.- `C:\mine\workspacePy\meta-harness\meta-harness\internal\harness\registry.go` — **MODIFIED**. Added:- `KindCodex Kind = &#34;codex&#34;` constant- `codexClient Client` field to Registry struct- `Codex Client` field to RegistryConfig struct- `KindCodex` to normalizeKind&#39;s case statement- `KindCodex` case in ClientFor (returns codexClient or ManagedClient stub)- `Codex bool` field to HarnessState- Added `cc CodexConfig` parameter to `HarnessAvailability`- New `CodexConfig` struct: `BridgeURL string`, `Disabled bool`- `C:\mine\workspacePy\meta-harness\meta-harness\internal\harness\hermes_client.go` — Reference implementation showing the pattern:`HermesClient` struct, SSE streaming, event mapping (`tool.started` → `agent.tool_use`, `message.delta` → `agent.message`, etc.)- `C:\mine\workspacePy\meta-harness\meta-harness\internal\harness\client.go` — Defines `Client`, `StreamingClient`, `EventHandler`,`TurnRequest`, `TurnResponse`, `TurnUsage`, `FakeClient` interfaces.- `C:\mine\workspacePy\meta-harness\meta-harness\internal\harness\codex_client.go` — **NEW**. HTTP client that POSTs TurnRequest to thePython bridge at `BridgeURL/codex/turn`. Uses `codexBridgeTurnRequest`/`codexBridgeTurnResponse` wire shapes. Implements `RunTurn` (nostreaming yet).```gotype CodexClient struct {BridgeURL stringHTTP *http.Client}func (c *CodexClient) RunTurn(ctx context.Context, req TurnRequest) (TurnResponse, error)```- `C:\mine\workspacePy\meta-harness\meta-harness\cmd\oma-server\main.go` — **MODIFIED**. Added:```gocodexCfg := harness.CodexConfig{BridgeURL: os.Getenv(&#34;OMA_CODEX_BRIDGE_URL&#34;),Disabled: envDisabled(&#34;OMA_CODEX_ENABLED&#34;),}```Added `Codex: harnessCodexClient(codexCfg)` to RegistryConfig. Updated `HarnessAvailability(openclawCfg, hermesCfg, deepseekCfg,codexCfg)`. Added helper:```gofunc harnessCodexClient(cfg harness.CodexConfig) harness.Client {if cfg.Disabled || cfg.BridgeURL == &#34;&#34; { return nil }return &amp;harness.CodexClient{BridgeURL: cfg.BridgeURL}}```- `C:\mine\workspacePy\meta-harness\meta-harness\console\src\types\agent.ts` — AgentRecord interface with `_oma.harness` union (needs`&#34;codex&#34;` added).- `C:\mine\workspacePy\meta-harness\meta-harness\console\src\pages\agents\AgentFormDialog.tsx` — Harness dropdown uses `managedAgent`state with type `&#34;&#34; | &#34;hermes&#34; | &#34;openclaw&#34; | &#34;deepseek&#34;` (needs `&#34;codex&#34;` added), uses `__managed_&lt;kind&gt;__` sentinel values.- `C:\mine\workspacePy\meta-harness\meta-harness\console\src\pages\session-detail\EventRow.tsx` — `categorizeEvent()` function needsCodex event types.- `C:\mine\workspacePy\meta-harness\meta-harness\internal\api\harness_config.go` — Mounts `GET /v1/config/harnesses` endpoint.- `C:\mine\workspacePy\meta-harness\meta-harness\internal\api\harness_config_test.go` — Test file with `TestHarnessAvailability` thatcalls `harness.HarnessAvailability(c.oc, c.hc, c.ds)` — needs updating.- `C:\mine\workspacePy\meta-harness\codext\analysis\app-server-api-reference.md` — Full JSON-RPC 2.0 protocol reference for codexapp-server (~120 methods, 60 notifications). Key methods: `initialize`, `thread/start`, `turn/start`, `turn/steer`, `turn/interrupt`. Keynotifications: `item/agentMessage/delta`, `item/reasoning/textDelta`, `turn/completed`, `item/started`, `item/completed`, `error`.- `C:\mine\workspacePy\meta-harness\codex-ext\remote\client\poc_direct.py` — PoC showing direct WebSocket flow:```pythonresp = await rpc_call(ws, {&#34;jsonrpc&#34;: &#34;2.0&#34;, &#34;id&#34;: 1, &#34;method&#34;: &#34;initialize&#34;, &#34;params&#34;: {&#34;protocolVersion&#34;: 1, &#34;clientInfo&#34;: {...}}})resp = await rpc_call(ws, {&#34;jsonrpc&#34;: &#34;2.0&#34;, &#34;id&#34;: 2, &#34;method&#34;: &#34;thread/start&#34;, &#34;params&#34;: {}})resp = await rpc_call(ws, {&#34;jsonrpc&#34;: &#34;2.0&#34;, &#34;id&#34;: 3, &#34;method&#34;: &#34;turn/start&#34;, &#34;params&#34;: {&#34;threadId&#34;: thread_id, &#34;input&#34;: [{&#34;type&#34;:&#34;text&#34;, &#34;text&#34;: prompt}]}})```Uses port 8765, token `codex-poc-token-2024`. Wait loop handles `item/reasoning/textDelta`, `item/agentMessage/delta`,`turn/completed`.- `C:\mine\workspacePy\meta-harness\codex-ext\remote\client\ssh.py` — Existing `RemoteHost` class using paramiko with retry,`get_remote_host()` factory for `124.221.28.203`.- `C:\mine\workspacePy\meta-harness\meta-harness-ext\ssh\client.py` — Existing `SSHClient` with paramiko, `SSHResult` dataclass.- `C:\mine\workspacePy\meta-harness\meta-harness-ext\ssh\codex_client.py` — **NEW**. `CodexClient` async class, `CodexConfig` dataclass(ws_url, token, model, timeouts), `CodexTurnResult` dataclass. Event mapping helpers: `_agent_message_event`, `_agent_thinking_event`,`_session_error_event`, `_item_started_to_tool_use`, `_item_completed_to_tool_result`. Handles `commandExecution` → bash tool_use,`fileChange` → edit tool_use, `mcpToolCall` → mcp_tool_use.- `C:\mine\workspacePy\meta-harness\meta-harness-ext\ssh\codex_tunnel.py` — **NEW**. `SSHTunnel` dataclass using paramiko&#39;s direct-tcpipchannels. `_TunnelServer` (TCPServer) &#43; `_TunnelHandler` (BaseRequestHandler) &#43; `_pipe()` bidirectional socket copy. Exposes `local_url`as `ws://127.0.0.1:&lt;allocated&gt;`.- `C:\mine\workspacePy\meta-harness\meta-harness-ext\ssh\codex_bridge.py` — **NEW**. HTTP bridge on :8092 (default). `_ConnPool` classmanages per-session CodexClient instances, each with its own asyncio event loop in a daemon thread. `_Handler` handles `POST /codex/turn`and `GET /health`. Env vars: `CODEX_WS_URL`, `CODEX_WS_TOKEN`, `CODEX_SSH_HOST`, `CODEX_SSH_USER`, `CODEX_SSH_PASSWORD`,`CODEX_REMOTE_PORT`, `CODEX_LISTEN`, `CODEX_TURN_TIMEOUT`, `CODEX_MODEL`.- `C:\mine\workspacePy\meta-harness\meta-harness-ext\ssh\__init__.py` — **UPDATED**. Added exports for `CodexClient`, `CodexConfig`,`CodexTurnResult`, `SSHTunnel`.- `C:\mine\workspacePy\meta-harness\meta-harness-ext\__init__.py` — **NEW** (parent package init).- `C:\mine\workspacePy\meta-harness\meta-harness-ext\start-codex-bridge.sh` — **NEW** startup script with env var defaults(CODEX_SSH_HOST=124.221.28.203, CODEX_SSH_USER=root, CODEX_SSH_PASSWORD=1qaZxsw@, CODEX_REMOTE_PORT=5432).4. Errors and fixes:- **Path confusion**: Initially assumed paths like `C:\mine\workspacePy\codex\` existed but actual layout had everything nested under`C:\mine\workspacePy\meta-harness\`. Fixed by using `Get-ChildItem C:\mine\workspacePy -Depth 0` and `Get-ChildItemC:\mine\workspacePy\meta-harness -Depth 0` to discover the actual layout. The workspace root at `C:\mine\workspacePy\` contains`awsome-harness`, `legal`, `linux-install`, `meta-harness`, `new-api`, `nginx-route`, `notebookLM`. Then `meta-harness` contains the nested`codex`, `codex-ext`, `meta-harness`, `meta-harness-ext`, etc.- **Glob tool returned paths relative to workspace root, not the `path` parameter**: Glob results were prefixed with `meta-harness\`,`codex\`, etc. regardless of the path argument, leading to confusion. Fixed by using PowerShell `Get-ChildItem` for reliable directorylisting.- **Read tool failing with &#34;File does not exist&#34;**: When trying to read files at guessed paths, they didn&#39;t exist. The actual correctpaths required the nested `meta-harness\meta-harness\` prefix. Fixed by discovering the correct layout via PowerShell.- **Glob timed out** on broad searches like `C:/mine/workspacePy *` — used more specific patterns instead.5. Problem Solving:- Designed a two-layer architecture: Go `CodexClient` → Python bridge (HTTP) → WebSocket → Codex app-server, optionally tunneled viaSSH. This satisfies the user&#39;s requirement to use Python for SSH while keeping the Go backend&#39;s harness client pattern uniform withHermes/OpenClaw/DeepSeek.- Used per-session asyncio event loops in daemon threads to allow the sync HTTP server to drive async WebSocket calls.- Event mapping strategy: map Codex notifications to OMA events incrementally (delta-by-delta accumulation) so the UI can streamcontent.6. All user messages:- `/model` command: Set model to `qwen3.7-plus` and saved as default.- `/goal` (first): Integrate @codex as new harness; adapt to codex app-server interfaces; frontend &#39;Codex&#39; harness option; basic chat &#43;events in Transcript/Debug tabs; start via @start-console.sh; codex at 124.221.28.203 with SSH root/1qaZxsw@, websocket port 5432;deployment scripts in @codex-ext\remote\; use Python for SSH in @meta-harness-ext\ssh\.- [Request interrupted by user for tool use] — user rejected Glob on `C:/mine/workspacePy/codex`.- `/goal` (updated, final): Same as first but added &#34;@meta-harness 要从 master 分支拉一个 codex 分支 来实现 这个 feature&#34; (Create codexbranch from master in meta-harness).- Final message: Request for this summary (text only, no tool calls).7. Pending Tasks:- **Task #4 (in progress)**: Finish Go side — update `internal/api/harness_config_test.go` to pass `codexCfg` to `HarnessAvailability`(currently `harness.HarnessAvailability(c.oc, c.hc, c.ds)` needs `c.cc`).- **Task #5**: Console frontend changes:- Add `&#34;codex&#34;` to `types/agent.ts` `_oma.harness` union- Add `&#34;codex&#34;` to `AgentFormDialog.tsx` `managedAgent` state type (`&#34;&#34; | &#34;hermes&#34; | &#34;openclaw&#34; | &#34;deepseek&#34; | &#34;codex&#34;`)- Add `__managed_codex__` option in the harness dropdown&#39;s `&lt;Select&gt;`- Update `flatKinds` array from `[&#34;hermes&#34;, &#34;openclaw&#34;, &#34;deepseek&#34;]` to include `&#34;codex&#34;`- Add Codex handling in the managed agent helper text- Update `EventRow.tsx` `categorizeEvent()` for any Codex-specific event types- Add `codex` field to the managedHarness state in BasicTab- **Task #6**: Smoke test — build console, start services, verify Codex appears in harness dropdown, send a chat message, verify eventsrender in Transcript/Debug tabs.8. Current Work:Immediately before this summary request, I was finishing Task #4 (Go codex harness client). I had just:- Added `KindCodex` constant, `codexClient` field, `CodexConfig` struct to `registry.go`- Updated `NewRegistry`, `normalizeKind`, `ClientFor`, `HarnessState`, `HarnessAvailability` to include Codex- Created `codex_client.go` HTTP client to the Python bridge- Updated `cmd/oma-server/main.go`: added `codexCfg` (reading `OMA_CODEX_BRIDGE_URL` / `OMA_CODEX_ENABLED` env vars), wired it into`RegistryConfig{Codex: harnessCodexClient(codexCfg)}`, updated `HarnessAvailability(...)` call, added `harnessCodexClient` helper function.The last successful edit was adding `harnessCodexClient` after `harnessGatewayClient` in `cmd/oma-server/main.go`.9. Optional Next Step:Update `internal/api/harness_config_test.go` to pass the new `codexCfg` parameter to `HarnessAvailability`. The test currently has:```got := harness.HarnessAvailability(c.oc, c.hc, c.ds)```and needs to become:```got := harness.HarnessAvailability(c.oc, c.hc, c.ds, c.cc)```(or similar with a CodexConfig field added to the test case struct). After that, proceed to Task #5 (console frontend changes). This isdirectly in line with the user&#39;s explicit request to integrate Codex as a new harness, which requires the Go backend to compile cleanlybefore the frontend can be tested end-to-end.Direct quote from the most recent assistant action: &#34;Now add the `harnessCodexClient` helper and update the test.&#34; The helper was added;updating the test is the immediate next step.If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the fulltranscript at: C:\Users\Wei.Wang\.claude\projects\C--mine-workspacePy-meta-harness\f736c43d-6e0c-4929-89c5-fe79e7c6a32b.jsonlContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge thesummary, do not recap what was happening, do not preface with &#34;I&#39;ll continue&#34; or similar. Pick up the last task as if the break neverhappened.">
-	<meta property="og:locale" content="en">
-	<meta property="og:type" content="website">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="website">
 <title>Claude Code - Compact summary | Modern Agent</title>
 <link rel="icon" href="/www6vAIGC/favicon.png" >
 <link rel="manifest" href="/www6vAIGC/manifest.json">
 <link rel="canonical" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/1-compress/claude-compress/">
-<link rel="stylesheet" href="/www6vAIGC/book.min.6c8b9d2a1fc95075ed7da46ca81060b39add8fff6741ac51259f768929281e2c.css" integrity="sha256-bIudKh/JUHXtfaRsqBBgs5rdj/9nQaxRJZ92iSkoHiw=" crossorigin="anonymous">
+<link rel="stylesheet" href="/www6vAIGC/book.min.3257a7ce7c061eb5dfc72257c356229b1470dc77ce9b982ac220c02542f9f04f.css" integrity="sha256-MlenznwGHrXfxyJXw1YimxRw3HfOm5gqwiDAJUL58E8=" crossorigin="anonymous">
   <script defer src="/www6vAIGC/fuse.min.js"></script>
-  <script defer src="/www6vAIGC/en.search.min.098fc84fb5f2d73245448a13b563a7fdef11aa2fe77c75559ab4d4b4ee01ddc8.js" integrity="sha256-CY/IT7Xy1zJFRIoTtWOn/e8Rqi/nfHVVmrTUtO4B3cg=" crossorigin="anonymous"></script>
+  <script defer src="/www6vAIGC/en.search.min.f4d624c00d51fd1369ee1eba42609783f6ff9a8d8849c9093576378f24b766fc.js" integrity="sha256-9NYkwA1R/RNp7h66QmCXg/b/mo2ISckJNXY3jyS3Zvw=" crossorigin="anonymous"></script>
 <link rel="alternate" type="application/rss+xml" href="https://www6v.github.io/www6vAIGC/docs/Harness-engineering/1-compress/claude-compress/index.xml" title="Modern Agent" />
 <!--
 Made with Book Theme
@@ -291,8 +291,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="toggle"  />
-    <label for="section-5e76a18428c8d5b2aea5f0326c35a8e9" class="flex justify-between">
+    <input type="checkbox" id="section-8eeae87632e610dbb7fc73d309f4a86d" class="toggle"  />
+    <label for="section-8eeae87632e610dbb7fc73d309f4a86d" class="flex justify-between">
       <a role="button" class="">RAG</a>
     </label>
   
@@ -307,8 +307,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c551263d461ebff83b9463dc3a94952c" class="toggle"  />
-    <label for="section-c551263d461ebff83b9463dc3a94952c" class="flex justify-between">
+    <input type="checkbox" id="section-098fde1b4be868f62390668d03d7d338" class="toggle"  />
+    <label for="section-098fde1b4be868f62390668d03d7d338" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -418,8 +418,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6d871616372a4994f42a7668d9af7715" class="toggle"  />
-    <label for="section-6d871616372a4994f42a7668d9af7715" class="flex justify-between">
+    <input type="checkbox" id="section-7c089cd98011270279a8c4693580483e" class="toggle"  />
+    <label for="section-7c089cd98011270279a8c4693580483e" class="flex justify-between">
       <a role="button" class="">实战 *</a>
     </label>
   
@@ -655,8 +655,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd42bffd52a5c198755daef56da179f9" class="toggle"  />
-    <label for="section-cd42bffd52a5c198755daef56da179f9" class="flex justify-between">
+    <input type="checkbox" id="section-00e0992ed3785617d99441f38424d443" class="toggle"  />
+    <label for="section-00e0992ed3785617d99441f38424d443" class="flex justify-between">
       <a role="button" class="">Pattern</a>
     </label>
   
@@ -856,8 +856,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-afec0c322e2a85b11a48111f0dba315c" class="toggle"  />
-    <label for="section-afec0c322e2a85b11a48111f0dba315c" class="flex justify-between">
+    <input type="checkbox" id="section-5e6438c77671b5eb480dd2c40a29deb4" class="toggle"  />
+    <label for="section-5e6438c77671b5eb480dd2c40a29deb4" class="flex justify-between">
       <a role="button" class="">phase *</a>
     </label>
   
@@ -1057,8 +1057,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="toggle"  />
-    <label for="section-dde1a5f5203bb06ba45cb7fd0fbb0b8f" class="flex justify-between">
+    <input type="checkbox" id="section-1205a3b6d7d0d892a149b0be18b55680" class="toggle"  />
+    <label for="section-1205a3b6d7d0d892a149b0be18b55680" class="flex justify-between">
       <a role="button" class="">案例</a>
     </label>
   
@@ -1119,8 +1119,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="toggle"  />
-    <label for="section-d26a30bd292e0c95e3c0b3b4ec3d4261" class="flex justify-between">
+    <input type="checkbox" id="section-2853751cf001bfb0dbbd0927de99f326" class="toggle"  />
+    <label for="section-2853751cf001bfb0dbbd0927de99f326" class="flex justify-between">
       <a role="button" class="">Agent Infra</a>
     </label>
   
@@ -1135,8 +1135,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="toggle"  />
-    <label for="section-cd719c9a5c8a05a3db4ca499f0eca6b9" class="flex justify-between">
+    <input type="checkbox" id="section-4277410225f2a82b8e3d740cbc19c27a" class="toggle"  />
+    <label for="section-4277410225f2a82b8e3d740cbc19c27a" class="flex justify-between">
       <a role="button" class="">Dify</a>
     </label>
   
@@ -1210,8 +1210,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d35a724145e4438b19d0128310151060" class="toggle"  />
-    <label for="section-d35a724145e4438b19d0128310151060" class="flex justify-between">
+    <input type="checkbox" id="section-21f3c925847a2d764db6eed92d3a72d8" class="toggle"  />
+    <label for="section-21f3c925847a2d764db6eed92d3a72d8" class="flex justify-between">
       <a role="button" class="">产品</a>
     </label>
   
@@ -1249,8 +1249,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d8fb1e2742348190fede849f378398c8" class="toggle"  />
-    <label for="section-d8fb1e2742348190fede849f378398c8" class="flex justify-between">
+    <input type="checkbox" id="section-781abe85b1b1e35a22f023c37cdc2d1e" class="toggle"  />
+    <label for="section-781abe85b1b1e35a22f023c37cdc2d1e" class="flex justify-between">
       <a role="button" class="">API</a>
     </label>
   
@@ -1306,8 +1306,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="toggle"  />
-    <label for="section-ae6ca83c7e1a9f8dc10f6e35f08aedda" class="flex justify-between">
+    <input type="checkbox" id="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="toggle"  />
+    <label for="section-6a9dcd0bf41cf5d59e7dda4446ded9c9" class="flex justify-between">
       <a role="button" class="">Sandbox</a>
     </label>
   
@@ -1363,8 +1363,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="toggle"  />
-    <label for="section-6ca6b9b66d4c84ecdb7f52c41ff453c0" class="flex justify-between">
+    <input type="checkbox" id="section-c1654de4801752aac71344ec5dc9df88" class="toggle"  />
+    <label for="section-c1654de4801752aac71344ec5dc9df88" class="flex justify-between">
       <a role="button" class="">SDK</a>
     </label>
   
@@ -1425,8 +1425,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-465ebbe8c8eae209a571787ecebad2c0" class="toggle"  />
-    <label for="section-465ebbe8c8eae209a571787ecebad2c0" class="flex justify-between">
+    <input type="checkbox" id="section-0883be528cd603181ff8e3bbd53972c2" class="toggle"  />
+    <label for="section-0883be528cd603181ff8e3bbd53972c2" class="flex justify-between">
       <a role="button" class="">Agent</a>
     </label>
   
@@ -1441,8 +1441,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f76aa66a03b4f060262d5e206195edee" class="toggle"  />
-    <label for="section-f76aa66a03b4f060262d5e206195edee" class="flex justify-between">
+    <input type="checkbox" id="section-60cbe7eba0e55272c2f7e88142209eee" class="toggle"  />
+    <label for="section-60cbe7eba0e55272c2f7e88142209eee" class="flex justify-between">
       <a role="button" class="">Overview</a>
     </label>
   
@@ -1498,8 +1498,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d28aa4a73439b10799fd7621d99b09a8" class="toggle"  />
-    <label for="section-d28aa4a73439b10799fd7621d99b09a8" class="flex justify-between">
+    <input type="checkbox" id="section-34b90f1a802a08434ef79ad7e69c7bec" class="toggle"  />
+    <label for="section-34b90f1a802a08434ef79ad7e69c7bec" class="flex justify-between">
       <a role="button" class="">Practice</a>
     </label>
   
@@ -1591,8 +1591,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="toggle"  />
-    <label for="section-d99b41ca4c967f1d2dfcc888b2b04abf" class="flex justify-between">
+    <input type="checkbox" id="section-d23f53c64147d40d7800ad362d50d826" class="toggle"  />
+    <label for="section-d23f53c64147d40d7800ad362d50d826" class="flex justify-between">
       <a role="button" class="">Reflection</a>
     </label>
   
@@ -1630,8 +1630,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c1c7bf1336ea4ad525ce468e5624159f" class="toggle"  />
-    <label for="section-c1c7bf1336ea4ad525ce468e5624159f" class="flex justify-between">
+    <input type="checkbox" id="section-071bdfde77f8dcb0258746094eb4b7ab" class="toggle"  />
+    <label for="section-071bdfde77f8dcb0258746094eb4b7ab" class="flex justify-between">
       <a role="button" class="">Planning</a>
     </label>
   
@@ -1723,8 +1723,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-8d2e3ad83d2ebb1f4b91a13ee959ab5d" class="toggle"  />
-    <label for="section-8d2e3ad83d2ebb1f4b91a13ee959ab5d" class="flex justify-between">
+    <input type="checkbox" id="section-2c61271ac7c69202973604b49e414561" class="toggle"  />
+    <label for="section-2c61271ac7c69202973604b49e414561" class="flex justify-between">
       <a role="button" class="">Data Agent</a>
     </label>
   
@@ -1834,8 +1834,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="toggle"  />
-    <label for="section-2e3b654f7622ae3e0bbe1278ae5e77f4" class="flex justify-between">
+    <input type="checkbox" id="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="toggle"  />
+    <label for="section-8db98d9b7b3b5bc904fcaee34fa4a644" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1850,8 +1850,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e338773a0b87bd3d5520b81d5b88db62" class="toggle"  />
-    <label for="section-e338773a0b87bd3d5520b81d5b88db62" class="flex justify-between">
+    <input type="checkbox" id="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="toggle"  />
+    <label for="section-1dd36dd668ebb93c63553fbec7d7cfdf" class="flex justify-between">
       <a role="button" class="">Agent Memory</a>
     </label>
   
@@ -1915,8 +1915,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9d0fe56670c342283f8f972214b72137" class="toggle"  />
-    <label for="section-9d0fe56670c342283f8f972214b72137" class="flex justify-between">
+    <input type="checkbox" id="section-fb50c7bc07294aad8ab163e5c05043d7" class="toggle"  />
+    <label for="section-fb50c7bc07294aad8ab163e5c05043d7" class="flex justify-between">
       <a role="button" class="">Hermes</a>
     </label>
   
@@ -1990,8 +1990,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a9773226cdddc85ff8f10cae8bdb49a2" class="toggle"  />
-    <label for="section-a9773226cdddc85ff8f10cae8bdb49a2" class="flex justify-between">
+    <input type="checkbox" id="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="toggle"  />
+    <label for="section-fe0d26d5667b83e3ed5841c29f53c3ba" class="flex justify-between">
       <a role="button" class="">managed agents</a>
     </label>
   
@@ -2047,8 +2047,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-041a0b369c13985983a2e78e073f1143" class="toggle"  />
-    <label for="section-041a0b369c13985983a2e78e073f1143" class="flex justify-between">
+    <input type="checkbox" id="section-f0d84b83965f02340d4fc81e88ba04ab" class="toggle"  />
+    <label for="section-f0d84b83965f02340d4fc81e88ba04ab" class="flex justify-between">
       <a role="button" class="">Memory *</a>
     </label>
   
@@ -2205,8 +2205,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-360e9d19bffa35d5db5a46e0c0c05a65" class="toggle"  />
-    <label for="section-360e9d19bffa35d5db5a46e0c0c05a65" class="flex justify-between">
+    <input type="checkbox" id="section-66d86d5f38d04ef58ebb26728c026d4e" class="toggle"  />
+    <label for="section-66d86d5f38d04ef58ebb26728c026d4e" class="flex justify-between">
       <a role="button" class="">Openclaw</a>
     </label>
   
@@ -2244,8 +2244,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="toggle"  />
-    <label for="section-27864b0db84e5f6a1c29a85c4c64bc3e" class="flex justify-between">
+    <input type="checkbox" id="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="toggle"  />
+    <label for="section-d02c8da5ca78fc1fcc547c20ea51c96e" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
@@ -2324,8 +2324,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="toggle"  />
-    <label for="section-c91e5a298cc51bf64e1f8d8e0c16f2cb" class="flex justify-between">
+    <input type="checkbox" id="section-f9cf8c4489e32d49710bcbde19d88feb" class="toggle"  />
+    <label for="section-f9cf8c4489e32d49710bcbde19d88feb" class="flex justify-between">
       <a role="button" class="">Multi Agent</a>
     </label>
   
@@ -2340,8 +2340,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-e496587d113a69d69794ccf2791a9ec7" class="toggle"  />
-    <label for="section-e496587d113a69d69794ccf2791a9ec7" class="flex justify-between">
+    <input type="checkbox" id="section-7eb50204504aa47e2bb008fa842d839e" class="toggle"  />
+    <label for="section-7eb50204504aa47e2bb008fa842d839e" class="flex justify-between">
       <a role="button" class="">Agent编排</a>
     </label>
   
@@ -2397,8 +2397,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-386b9d0b04e254d93a6bcfe648c4dabb" class="toggle"  />
-    <label for="section-386b9d0b04e254d93a6bcfe648c4dabb" class="flex justify-between">
+    <input type="checkbox" id="section-f36497092f145d804086d65929bc2e21" class="toggle"  />
+    <label for="section-f36497092f145d804086d65929bc2e21" class="flex justify-between">
       <a role="button" class="">Multi-agent</a>
     </label>
   
@@ -2490,8 +2490,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3b952b230f5462315a195fb221f48926" class="toggle"  />
-    <label for="section-3b952b230f5462315a195fb221f48926" class="flex justify-between">
+    <input type="checkbox" id="section-68da3356eb5814cf26b079259a3868f0" class="toggle"  />
+    <label for="section-68da3356eb5814cf26b079259a3868f0" class="flex justify-between">
       <a role="button" class="">OpenClaw *</a>
     </label>
   
@@ -2565,8 +2565,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d1f7a2a771a519d5e8b989f2e775ff25" class="toggle"  />
-    <label for="section-d1f7a2a771a519d5e8b989f2e775ff25" class="flex justify-between">
+    <input type="checkbox" id="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="toggle"  />
+    <label for="section-4c93d5ddcb3b0ed713d122abc43f0bc9" class="flex justify-between">
       <a role="button" class="">subagent *</a>
     </label>
   
@@ -2622,8 +2622,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b8e7621552172a9013b3c0dae0dba198" class="toggle"  />
-    <label for="section-b8e7621552172a9013b3c0dae0dba198" class="flex justify-between">
+    <input type="checkbox" id="section-88a7a1de323948713dc3ef284015e786" class="toggle"  />
+    <label for="section-88a7a1de323948713dc3ef284015e786" class="flex justify-between">
       <a role="button" class="">Teams *</a>
     </label>
   
@@ -2684,8 +2684,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="toggle"  />
-    <label for="section-0c3c97ba5c37bb4aff22ac0190b7e85f" class="flex justify-between">
+    <input type="checkbox" id="section-32002b3a68174992b401de86ca7466b5" class="toggle"  />
+    <label for="section-32002b3a68174992b401de86ca7466b5" class="flex justify-between">
       <a role="button" class="">Tool &amp; Skill</a>
     </label>
   
@@ -2718,8 +2718,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5cca64c106a3667481dd63b47c86e87a" class="toggle"  />
-    <label for="section-5cca64c106a3667481dd63b47c86e87a" class="flex justify-between">
+    <input type="checkbox" id="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="toggle"  />
+    <label for="section-0f9cd5f0dd3b17e38fd9164403f8733d" class="flex justify-between">
       <a role="button" class="">Survey &amp; SFT</a>
     </label>
   
@@ -2811,8 +2811,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c655fd9062845f96cffb72685b2fd696" class="toggle"  />
-    <label for="section-c655fd9062845f96cffb72685b2fd696" class="flex justify-between">
+    <input type="checkbox" id="section-80682025fb6883cc3c0dd48368b5f7e2" class="toggle"  />
+    <label for="section-80682025fb6883cc3c0dd48368b5f7e2" class="flex justify-between">
       <a role="button" class="">Tool 演进</a>
     </label>
   
@@ -2850,8 +2850,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-412785899ca57a1289f566e38e9ac427" class="toggle"  />
-    <label for="section-412785899ca57a1289f566e38e9ac427" class="flex justify-between">
+    <input type="checkbox" id="section-906763a3f2cf8396c71a61e320169919" class="toggle"  />
+    <label for="section-906763a3f2cf8396c71a61e320169919" class="flex justify-between">
       <a role="button" class="">tools</a>
     </label>
   
@@ -2889,8 +2889,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="toggle"  />
-    <label for="section-3d633d50312cfe4f3ad1c3a8e6e9b5a2" class="flex justify-between">
+    <input type="checkbox" id="section-92f9fae5d8ab88847e6e20bd4d125306" class="toggle"  />
+    <label for="section-92f9fae5d8ab88847e6e20bd4d125306" class="flex justify-between">
       <a role="button" class="">MCP *</a>
     </label>
   
@@ -2982,8 +2982,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-c6539a231f240297ca68f7a55605c776" class="toggle"  />
-    <label for="section-c6539a231f240297ca68f7a55605c776" class="flex justify-between">
+    <input type="checkbox" id="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="toggle"  />
+    <label for="section-f8dbbffe9c6bc3d5d07d0a50c35945ea" class="flex justify-between">
       <a role="button" class="">integrate *</a>
     </label>
   
@@ -3016,8 +3016,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-efd004ff6efd6d01576ed8f1a0e02adf" class="toggle"  />
-    <label for="section-efd004ff6efd6d01576ed8f1a0e02adf" class="flex justify-between">
+    <input type="checkbox" id="section-10c047fd3087cf2b29cccd85fa867912" class="toggle"  />
+    <label for="section-10c047fd3087cf2b29cccd85fa867912" class="flex justify-between">
       <a role="button" class="">skill *</a>
     </label>
   
@@ -3122,8 +3122,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="toggle"  />
-    <label for="section-ca2421a81c77cacd8e949e9ea5b7eae0" class="flex justify-between">
+    <input type="checkbox" id="section-8f63915fcb39ad7378f7bc5015f45f65" class="toggle"  />
+    <label for="section-8f63915fcb39ad7378f7bc5015f45f65" class="flex justify-between">
       <a role="button" class="">Agent Eval</a>
     </label>
   
@@ -3156,8 +3156,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a89b3f08479487c94e6a45e37e72a862" class="toggle"  />
-    <label for="section-a89b3f08479487c94e6a45e37e72a862" class="flex justify-between">
+    <input type="checkbox" id="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="toggle"  />
+    <label for="section-ef6f9ffa8dba082fd7e2a13ed316c994" class="flex justify-between">
       <a role="button" class="">Demystifying Evals for AI Agents</a>
     </label>
   
@@ -3208,8 +3208,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-83c0821b846e1dac2e8bfc2d8d45e825" class="toggle"  />
-    <label for="section-83c0821b846e1dac2e8bfc2d8d45e825" class="flex justify-between">
+    <input type="checkbox" id="section-6a8786ba009ef23a5dd033a252f02f8b" class="toggle"  />
+    <label for="section-6a8786ba009ef23a5dd033a252f02f8b" class="flex justify-between">
       <a role="button" class="">langfuse</a>
     </label>
   
@@ -3247,8 +3247,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9c20639ed9ed4feb764f4bac9cac218f" class="toggle"  />
-    <label for="section-9c20639ed9ed4feb764f4bac9cac218f" class="flex justify-between">
+    <input type="checkbox" id="section-159965614aff9bed370d992d243d0f28" class="toggle"  />
+    <label for="section-159965614aff9bed370d992d243d0f28" class="flex justify-between">
       <a role="button" class="">ragas</a>
     </label>
   
@@ -3286,8 +3286,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-f0f5dda3ea316a50f6d522c3904406d7" class="toggle"  />
-    <label for="section-f0f5dda3ea316a50f6d522c3904406d7" class="flex justify-between">
+    <input type="checkbox" id="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="toggle"  />
+    <label for="section-a0cd4418d29de5847b2f6ad7a37fb5fa" class="flex justify-between">
       <a role="button" class="">llm-as-judge</a>
     </label>
   
@@ -3439,8 +3439,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="toggle" checked />
-    <label for="section-0fc9d1c9d6dcdc555abdd573da38cfd4" class="flex justify-between">
+    <input type="checkbox" id="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="toggle" checked />
+    <label for="section-86cf0c8c6cbc16a0ffd6e45b26caaf58" class="flex justify-between">
       <a role="button" class="">Harness engineering</a>
     </label>
   
@@ -3455,8 +3455,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-53e18e8da65544a0d16d3fa3773885be" class="toggle" checked />
-    <label for="section-53e18e8da65544a0d16d3fa3773885be" class="flex justify-between">
+    <input type="checkbox" id="section-104617d101dbf375f60fa698eeb5966a" class="toggle" checked />
+    <label for="section-104617d101dbf375f60fa698eeb5966a" class="flex justify-between">
       <a role="button" class="">Compress *</a>
     </label>
   
@@ -3584,8 +3584,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-da7d8a4161d9e2f9a1a873757c86620e" class="toggle"  />
-    <label for="section-da7d8a4161d9e2f9a1a873757c86620e" class="flex justify-between">
+    <input type="checkbox" id="section-f957c352b7370ac61b04758ecb52fade" class="toggle"  />
+    <label for="section-f957c352b7370ac61b04758ecb52fade" class="flex justify-between">
       <a role="button" class="">可靠性 *</a>
     </label>
   
@@ -3659,8 +3659,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-8b8325280d2033764e57e09faf3af608" class="toggle"  />
-    <label for="section-8b8325280d2033764e57e09faf3af608" class="flex justify-between">
+    <input type="checkbox" id="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="toggle"  />
+    <label for="section-b7c7bdf9b3f3644f9c9dc2b67a505177" class="flex justify-between">
       <a role="button" class="">Harness</a>
     </label>
   
@@ -3716,8 +3716,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="toggle"  />
-    <label for="section-ae68648ad0c8923d0a77a633d6d9e4ff" class="flex justify-between">
+    <input type="checkbox" id="section-a0f0941605053d7b5666363df4970351" class="toggle"  />
+    <label for="section-a0f0941605053d7b5666363df4970351" class="flex justify-between">
       <a role="button" class="">OpenClaw</a>
     </label>
   
@@ -3863,8 +3863,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-946abd4062c933c072a8c623969add46" class="toggle"  />
-    <label for="section-946abd4062c933c072a8c623969add46" class="flex justify-between">
+    <input type="checkbox" id="section-7185e230a37938c1265b025f647037ad" class="toggle"  />
+    <label for="section-7185e230a37938c1265b025f647037ad" class="flex justify-between">
       <a role="button" class="">Hermes Agent</a>
     </label>
   
@@ -3974,14 +3974,50 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-fcf812d87768431bb3ab86201a4222e2" class="toggle"  />
-    <label for="section-fcf812d87768431bb3ab86201a4222e2" class="flex justify-between">
+    <input type="checkbox" id="section-9d52e8079db1067f4a0c448c7b68b11b" class="toggle"  />
+    <label for="section-9d52e8079db1067f4a0c448c7b68b11b" class="flex justify-between">
       <a role="button" class="">Claude Code</a>
     </label>
   
 
           
   <ul>
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/session-mgr/" class="">Claude Code 会话效率指南</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
+    
+      
+        <li>
+          
+  
+  
+
+  
+    <a href="/www6vAIGC/docs/Harness-engineering/Claude-Code/steer/" class="">Claude Code 指南</a>
+  
+
+          
+  <ul>
+    
+  </ul>
+
+        </li>
+      
     
       
         <li>
@@ -4085,8 +4121,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-02af4685675e68e6f8179d748eeb6c5a" class="toggle"  />
-    <label for="section-02af4685675e68e6f8179d748eeb6c5a" class="flex justify-between">
+    <input type="checkbox" id="section-484bcac8c98a52dc9d58366512e4159a" class="toggle"  />
+    <label for="section-484bcac8c98a52dc9d58366512e4159a" class="flex justify-between">
       <a role="button" class="">Codex</a>
     </label>
   
@@ -4119,8 +4155,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-7b4eb57325a2b2a77e7753390fc7d915" class="toggle"  />
-    <label for="section-7b4eb57325a2b2a77e7753390fc7d915" class="flex justify-between">
+    <input type="checkbox" id="section-bb4ccb54455a606ed07ce1fdab4ac532" class="toggle"  />
+    <label for="section-bb4ccb54455a606ed07ce1fdab4ac532" class="flex justify-between">
       <a role="button" class="">Pi Agent</a>
     </label>
   
@@ -4202,8 +4238,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-eec787204d3e675b4351db6ec0be7bc8" class="toggle"  />
-    <label for="section-eec787204d3e675b4351db6ec0be7bc8" class="flex justify-between">
+    <input type="checkbox" id="section-27894a1d29427c9d52d1df6110020b8e" class="toggle"  />
+    <label for="section-27894a1d29427c9d52d1df6110020b8e" class="flex justify-between">
       <a role="button" class="">实战</a>
     </label>
   
@@ -4241,8 +4277,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3fdf63fc5a948eac31aa792d78361346" class="toggle"  />
-    <label for="section-3fdf63fc5a948eac31aa792d78361346" class="flex justify-between">
+    <input type="checkbox" id="section-8488d215ee4dde3fcb569ebf074c8d99" class="toggle"  />
+    <label for="section-8488d215ee4dde3fcb569ebf074c8d99" class="flex justify-between">
       <a role="button" class="">JEV</a>
     </label>
   
@@ -4316,8 +4352,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-b41552d83299a260ffc5181fd5bf1177" class="toggle"  />
-    <label for="section-b41552d83299a260ffc5181fd5bf1177" class="flex justify-between">
+    <input type="checkbox" id="section-1f82435e89939f7232e02729b008213e" class="toggle"  />
+    <label for="section-1f82435e89939f7232e02729b008213e" class="flex justify-between">
       <a role="button" class="">Loops engineering</a>
     </label>
   
@@ -4332,8 +4368,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1a4757bdd1099e1149094c77f1470e5d" class="toggle"  />
-    <label for="section-1a4757bdd1099e1149094c77f1470e5d" class="flex justify-between">
+    <input type="checkbox" id="section-bf010a926485186e47c6ea2d2776a45f" class="toggle"  />
+    <label for="section-bf010a926485186e47c6ea2d2776a45f" class="flex justify-between">
       <a role="button" class="">goal</a>
     </label>
   
@@ -4389,8 +4425,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-eca2bd358c3e27c981a441ba4e158cb3" class="toggle"  />
-    <label for="section-eca2bd358c3e27c981a441ba4e158cb3" class="flex justify-between">
+    <input type="checkbox" id="section-013b791baed028e00c3cd685450d1255" class="toggle"  />
+    <label for="section-013b791baed028e00c3cd685450d1255" class="flex justify-between">
       <a role="button" class="">loop engineering</a>
     </label>
   
@@ -4446,8 +4482,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-27d39407dbc0d87e956d19638a0f1da3" class="toggle"  />
-    <label for="section-27d39407dbc0d87e956d19638a0f1da3" class="flex justify-between">
+    <input type="checkbox" id="section-b284ec03b7c672cfde434851c4ea7377" class="toggle"  />
+    <label for="section-b284ec03b7c672cfde434851c4ea7377" class="flex justify-between">
       <a role="button" class="">长程任务</a>
     </label>
   
@@ -4516,8 +4552,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-689fa0c955be06dbb890852c4c2826e8" class="toggle"  />
-    <label for="section-689fa0c955be06dbb890852c4c2826e8" class="flex justify-between">
+    <input type="checkbox" id="section-4211c6654bc32161daa2abe28c73b06e" class="toggle"  />
+    <label for="section-4211c6654bc32161daa2abe28c73b06e" class="flex justify-between">
       <a role="button" class="">Meta Harness</a>
     </label>
   
@@ -4532,8 +4568,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-524d9cf59683da54d7ecc3c0ff6519ce" class="toggle"  />
-    <label for="section-524d9cf59683da54d7ecc3c0ff6519ce" class="flex justify-between">
+    <input type="checkbox" id="section-c81a15018d7ae452140c88ff216be77d" class="toggle"  />
+    <label for="section-c81a15018d7ae452140c88ff216be77d" class="flex justify-between">
       <a role="button" class="">Managed Agent</a>
     </label>
   
@@ -4661,8 +4697,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="toggle"  />
-    <label for="section-cf63d6bc1ecf5b5e7ab0aeec3632e02c" class="flex justify-between">
+    <input type="checkbox" id="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="toggle"  />
+    <label for="section-bcd77cd26b1ec4b90b39b88dbd1a3464" class="flex justify-between">
       <a role="button" class="">Omnigent</a>
     </label>
   
@@ -4705,8 +4741,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="toggle"  />
-    <label for="section-5729edc8cc5d309e1de27ff9c2bcf6e2" class="flex justify-between">
+    <input type="checkbox" id="section-920c2fa3546aca5261a01784a53ddff3" class="toggle"  />
+    <label for="section-920c2fa3546aca5261a01784a53ddff3" class="flex justify-between">
       <a role="button" class="">Context Engineering</a>
     </label>
   
@@ -4775,8 +4811,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="toggle"  />
-    <label for="section-d3edaa123fbdfb3b3ab0a17d42562bd1" class="flex justify-between">
+    <input type="checkbox" id="section-0563b2fd6005bd3ffd431bec1f81b423" class="toggle"  />
+    <label for="section-0563b2fd6005bd3ffd431bec1f81b423" class="flex justify-between">
       <a role="button" class="">Plan mode</a>
     </label>
   
@@ -4832,8 +4868,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-4a730712863635107d9ac9a5d3e3abd6" class="toggle"  />
-    <label for="section-4a730712863635107d9ac9a5d3e3abd6" class="flex justify-between">
+    <input type="checkbox" id="section-ceda1f30ce03531a336a1f1ebb026a63" class="toggle"  />
+    <label for="section-ceda1f30ce03531a336a1f1ebb026a63" class="flex justify-between">
       <a role="button" class="">Prompting caching *</a>
     </label>
   
@@ -4876,8 +4912,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-98dd33716c353fd55829a04c54d5e57e" class="toggle"  />
-    <label for="section-98dd33716c353fd55829a04c54d5e57e" class="flex justify-between">
+    <input type="checkbox" id="section-097abb2131971a92a13c1e53f850eb30" class="toggle"  />
+    <label for="section-097abb2131971a92a13c1e53f850eb30" class="flex justify-between">
       <a role="button" class="">Prompt Engineering</a>
     </label>
   
@@ -5041,8 +5077,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ad26e82e3d025c385444444a93d72502" class="toggle"  />
-    <label for="section-ad26e82e3d025c385444444a93d72502" class="flex justify-between">
+    <input type="checkbox" id="section-951bebaba4a0e7ffcc11ac548251e389" class="toggle"  />
+    <label for="section-951bebaba4a0e7ffcc11ac548251e389" class="flex justify-between">
       <a role="button" class="">DeepResearch</a>
     </label>
   
@@ -5224,8 +5260,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-9cc3ec6d88705686bc94595daa8aa25e" class="toggle"  />
-    <label for="section-9cc3ec6d88705686bc94595daa8aa25e" class="flex justify-between">
+    <input type="checkbox" id="section-def011b742c3bb564ed84bad958a8bb9" class="toggle"  />
+    <label for="section-def011b742c3bb564ed84bad958a8bb9" class="flex justify-between">
       <a role="button" class="">FineTuning</a>
     </label>
   
@@ -5240,8 +5276,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-7b3c994f2c17601a215b6b57dc71b7ef" class="toggle"  />
-    <label for="section-7b3c994f2c17601a215b6b57dc71b7ef" class="flex justify-between">
+    <input type="checkbox" id="section-b1c6c40bb101131e4fe5a95225175846" class="toggle"  />
+    <label for="section-b1c6c40bb101131e4fe5a95225175846" class="flex justify-between">
       <a role="button" class="">Instruct Tuning</a>
     </label>
   
@@ -5297,8 +5333,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-ebf0a5559cc09bbc171db379534a7dc9" class="toggle"  />
-    <label for="section-ebf0a5559cc09bbc171db379534a7dc9" class="flex justify-between">
+    <input type="checkbox" id="section-a5f257b0a67dc566e55c98245e32a9a3" class="toggle"  />
+    <label for="section-a5f257b0a67dc566e55c98245e32a9a3" class="flex justify-between">
       <a role="button" class="">实践 *</a>
     </label>
   
@@ -5372,8 +5408,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-0082251d40c765323fa32be9b3686aa0" class="toggle"  />
-    <label for="section-0082251d40c765323fa32be9b3686aa0" class="flex justify-between">
+    <input type="checkbox" id="section-bc06fe507152e253f2b8fedc786f69f9" class="toggle"  />
+    <label for="section-bc06fe507152e253f2b8fedc786f69f9" class="flex justify-between">
       <a role="button" class="">PEFT *</a>
     </label>
   
@@ -5573,8 +5609,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-d763501d6c35330245339b6c8531cf7c" class="toggle"  />
-    <label for="section-d763501d6c35330245339b6c8531cf7c" class="flex justify-between">
+    <input type="checkbox" id="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="toggle"  />
+    <label for="section-e5a2d91bf05e0b3fb062aa63c1e16e24" class="flex justify-between">
       <a role="button" class="">Data</a>
     </label>
   
@@ -5833,8 +5869,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-284de0efced75cd016672664a17456be" class="toggle"  />
-    <label for="section-284de0efced75cd016672664a17456be" class="flex justify-between">
+    <input type="checkbox" id="section-ec440fd30b4fccc02d2866bf269d3c1c" class="toggle"  />
+    <label for="section-ec440fd30b4fccc02d2866bf269d3c1c" class="flex justify-between">
       <a role="button" class="">AI Native</a>
     </label>
   
@@ -5962,8 +5998,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-a67b63d6d594556c363a35d7d38cd355" class="toggle"  />
-    <label for="section-a67b63d6d594556c363a35d7d38cd355" class="flex justify-between">
+    <input type="checkbox" id="section-c4d50087126f44db07d7a7f0faa67711" class="toggle"  />
+    <label for="section-c4d50087126f44db07d7a7f0faa67711" class="flex justify-between">
       <a role="button" class="">Langchain</a>
     </label>
   
@@ -6055,8 +6091,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-3926c431ee2abb31fef9cd9185588ed0" class="toggle"  />
-    <label for="section-3926c431ee2abb31fef9cd9185588ed0" class="flex justify-between">
+    <input type="checkbox" id="section-461a4404ae59395291876d9268139c73" class="toggle"  />
+    <label for="section-461a4404ae59395291876d9268139c73" class="flex justify-between">
       <a role="button" class="">Application</a>
     </label>
   
@@ -6112,8 +6148,8 @@ https://github.com/alex-shpak/hugo-book
   
 
   
-    <input type="checkbox" id="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="toggle"  />
-    <label for="section-1f0b1b85b7cf653169e0e77dc8b399f4" class="flex justify-between">
+    <input type="checkbox" id="section-3ce504245d1c08bb826d2f16a7a9180c" class="toggle"  />
+    <label for="section-3ce504245d1c08bb826d2f16a7a9180c" class="flex justify-between">
       <a role="button" class="">其他</a>
     </label>
   
